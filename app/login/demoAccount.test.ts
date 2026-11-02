@@ -28,10 +28,19 @@ describe('loginDemoAccount', () => {
     expect(loginDemoAccount()).toEqual({ email: GUS_ADMIN_EMAIL, password: GUS_DEMO_PASSWORD });
   });
 
-  it("falls back to Manors' demo administrator for any other login organization", () => {
+  it("points a run with no login organization (the historical local default) or Manors at Manors' demo administrator", () => {
     process.env.DATA_ADAPTER = 'mock';
     process.env.AUTH_ADAPTER = 'identity';
     expect(loginDemoAccount()?.email).toBe(MOCK_LOGIN_EMAIL);
+    process.env.LOGIN_ORGANIZATION_ID = 'managed-cremations';
+    expect(loginDemoAccount()?.email).toBe(MOCK_LOGIN_EMAIL);
+  });
+
+  it("never advertises another funeral home's demo account for a third funeral home (2026-11)", () => {
+    process.env.DATA_ADAPTER = 'mock';
+    process.env.AUTH_ADAPTER = 'identity';
+    process.env.LOGIN_ORGANIZATION_ID = 'evergreen-memorial-group';
+    expect(loginDemoAccount()).toBeNull();
   });
 
   it('shows nothing with real Wix data', () => {

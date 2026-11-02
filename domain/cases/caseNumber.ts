@@ -14,7 +14,7 @@
  * want.
  */
 
-import { getRegisteredOrganizationProfile, hasRegisteredOrganizationProfile } from '../organization/organizationProfiles';
+import { getRegisteredOrganizationProfile, hasRegisteredOrganizationProfile, MANORS_ORGANIZATION_ID } from '../organization/organizationProfiles';
 
 /**
  * The prefix an organization's case numbers carry.
@@ -76,6 +76,36 @@ export function resolveCaseNumberPrefix(
     if (fromRegistry) return fromRegistry;
   }
   return DEFAULT_CASE_NUMBER_PREFIX;
+}
+
+/** A new case can't be numbered: the organization has no case number
+    prefix of its own (record or registered profile). Never guessed. */
+export class CaseNumberPrefixNotConfiguredError extends Error {
+  constructor(organizationId: string) {
+    super(`Case numbering is not set up for organization ${organizationId}: set its case number prefix before creating cases. No case was created.`);
+    this.name = 'CaseNumberPrefixNotConfiguredError';
+  }
+}
+
+/**
+ * Multi-tenant hardening (2026-11). The prefix for a NEW case number. Same
+ * resolution as `resolveCaseNumberPrefix`, except the legacy 'B' fallback
+ * applies only to Manors (whose numbers have always been B…). Any other
+ * funeral home without a prefix of its own is refused rather than silently
+ * numbered like Manors.
+ */
+export function prefixForNewCaseNumber(
+  organization: { id?: string | null; caseNumberPrefix?: string | null } | null | undefined,
+  organizationId: string,
+): string {
+  const fromRecord = normalizedValidPrefix(organization?.caseNumberPrefix);
+  if (fromRecord) return fromRecord;
+  if (hasRegisteredOrganizationProfile(organizationId)) {
+    const fromRegistry = normalizedValidPrefix(getRegisteredOrganizationProfile(organizationId).caseNumberPrefix);
+    if (fromRegistry) return fromRegistry;
+  }
+  if (organizationId === MANORS_ORGANIZATION_ID) return DEFAULT_CASE_NUMBER_PREFIX;
+  throw new CaseNumberPrefixNotConfiguredError(organizationId);
 }
 
 function caseNumberPattern(prefix: string): RegExp {

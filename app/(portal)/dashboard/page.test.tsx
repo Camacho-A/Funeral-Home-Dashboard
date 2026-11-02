@@ -11,6 +11,13 @@ import { STAGES } from '@/domain/cases/stages';
 import { presentedStageLabels } from '@/domain/organization/workflowStagePresentation';
 import type { Case } from '@/types/case';
 
+// These tests build the second organization's cases by copying Manors'
+// fixture cases (Manors snapshots included), so it keeps the fixed stage list.
+vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) =>
+  (await import('@/lib/testing/globalStagesProfile')).withGlobalStages(await importOriginal(), (await import('@/services/__mocks__/organizationIds')).SECOND_MOCK_ORGANIZATION_ID),
+);
+
+
 /**
  * Manors go-live cleanup (2026-09): the Main Dashboard's own page-level
  * test file. Mocks lib/reportsClient.ts#fetchDashboard directly (the same
@@ -47,7 +54,9 @@ function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <DashboardPage />
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+        <DashboardPage />
+      </OrganizationProvider>
     </QueryClientProvider>,
   );
 }

@@ -5,6 +5,7 @@ import { EditServicesModal } from './EditServicesModal';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
 import type { CaseOrder, CaseOrderLineItem } from '@/types/caseOrder';
+import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 /**
  * Custom ("Additional") item round-trip (2026-10). EditServicesModal is the
@@ -76,7 +77,7 @@ function renderModal(options: { order: CaseOrder | null; lineItems?: CaseOrderLi
   const queryClient = new QueryClient();
   render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
         <EditServicesModal
           caseId="case-1"
           order={options.order}

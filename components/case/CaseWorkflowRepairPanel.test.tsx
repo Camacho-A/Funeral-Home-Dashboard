@@ -3,6 +3,7 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CaseWorkflowRepairPanel } from './CaseWorkflowRepairPanel';
 import { OrganizationProvider } from '@/hooks/useOrganization';
+import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 /**
  * Case repair UI (2026-09). Covers the checkpoint's TESTS items A-F.
@@ -30,7 +31,7 @@ function renderPanel(caseId = 'case-1') {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
         <CaseWorkflowRepairPanel caseId={caseId} />
       </OrganizationProvider>
     </QueryClientProvider>,

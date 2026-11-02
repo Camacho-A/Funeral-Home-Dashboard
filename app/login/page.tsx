@@ -3,6 +3,7 @@ import { GUS_ADMIN_EMAIL, GUS_DEMO_PASSWORD, GUS_DIRECTOR_EMAIL, GUS_ORGANIZATIO
 import { MOCK_LOGIN_EMAIL, MOCK_LOGIN_PASSWORD } from '@/services/__mocks__/authFixtures';
 import { MANORS_ADMIN_DEMO_PASSWORD, SANDBOX_READ_ONLY_EMAIL } from '@/services/__mocks__/identityFixtures';
 import { isSandboxEnabled } from '@/lib/sandbox';
+import { MANORS_ORGANIZATION_ID } from '@/domain/organization/organizationProfiles';
 
 /** SOLIS sandbox sign-ins (lib/sandbox.ts) — fictional demo accounts, one per role worth trying. */
 /** The sandbox's fictional sign-ins for the funeral home it serves (2026-11). */
@@ -11,10 +12,14 @@ const GUS_SANDBOX_SIGN_IN_ACCOUNTS = [
   `${GUS_DIRECTOR_EMAIL} (Jordan, funeral director)`,
   `${GUS_VIEWER_EMAIL} (Riley, read-only)`,
 ];
+/** Gus's accounts for a Gus sandbox, Manors' for a Manors (or unset — the
+    historical default) sandbox, none for any other funeral home: a third
+    home's sandbox never lists another home's sign-ins (2026-11). */
 function sandboxSignInAccounts(): { password: string; accounts: readonly string[] } {
-  return getLoginOrganizationId() === GUS_ORGANIZATION_ID
-    ? { password: GUS_DEMO_PASSWORD, accounts: GUS_SANDBOX_SIGN_IN_ACCOUNTS }
-    : { password: MANORS_ADMIN_DEMO_PASSWORD, accounts: SANDBOX_SIGN_IN_ACCOUNTS };
+  const loginOrganizationId = getLoginOrganizationId();
+  if (loginOrganizationId === GUS_ORGANIZATION_ID) return { password: GUS_DEMO_PASSWORD, accounts: GUS_SANDBOX_SIGN_IN_ACCOUNTS };
+  if (!loginOrganizationId || loginOrganizationId === MANORS_ORGANIZATION_ID) return { password: MANORS_ADMIN_DEMO_PASSWORD, accounts: SANDBOX_SIGN_IN_ACCOUNTS };
+  return { password: '', accounts: [] };
 }
 
 const SANDBOX_SIGN_IN_ACCOUNTS = [
@@ -199,7 +204,7 @@ export default async function LoginPage({
             Local demo data — sign in with {demoAccount.email} / {demoAccount.password}
           </p>
         )}
-        {authAdapter === 'identity' && isSandboxEnabled() && (
+        {authAdapter === 'identity' && isSandboxEnabled() && sandboxAccounts.accounts.length > 0 && (
           <p className={styles.hint}>
             Sandbox — fictional accounts only. Password for each: {sandboxAccounts.password}
             <br />

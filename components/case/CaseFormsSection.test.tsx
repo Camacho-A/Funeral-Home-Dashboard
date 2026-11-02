@@ -3,6 +3,7 @@ import { render, screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CaseFormsSection } from './CaseFormsSection';
 import { OrganizationProvider } from '@/hooks/useOrganization';
+import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 /**
  * Case repair UI (2026-09) — "Retry Jotform PDF." Covers the checkpoint's
@@ -54,7 +55,7 @@ function renderSection(caseId = 'case-1') {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
         <CaseFormsSection caseId={caseId} />
       </OrganizationProvider>
     </QueryClientProvider>,

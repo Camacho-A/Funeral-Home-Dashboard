@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CaseOrderCard } from './CaseOrderCard';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import { serviceCatalogFixtures } from '@/services/__mocks__/pricingFixtures';
+import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). CaseOrderCard
@@ -85,7 +86,7 @@ function renderCard(handlers: FetchHandlers = {}) {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
         <CaseOrderCard caseId="case-1" caseName="Robert Ellison" caseNumber="B2026-001" />
       </OrganizationProvider>
     </QueryClientProvider>,

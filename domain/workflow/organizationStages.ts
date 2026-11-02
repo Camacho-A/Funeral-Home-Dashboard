@@ -3,7 +3,7 @@ import type { CaseWorkflowSnapshot, WorkflowTemplate } from '../../types/workflo
 import { STAGES, isBottleneckStage, rawStagesForDisplayStage } from '../cases/stages';
 import { getSlaTargetDays } from '../cases/sla';
 import { presentedStages } from '../organization/workflowStagePresentation';
-import { isWorkflowByServiceType } from './selectWorkflowTemplate';
+import { usesTemplateStages } from './selectWorkflowTemplate';
 import { isApprovedVersion } from './snapshot';
 import { displayStagesInOrder, findStageByRawStage, lastDisplayStage } from './resolveStages';
 
@@ -90,7 +90,7 @@ export function resolveOrganizationStages(
   organizationId: string,
   templates: readonly WorkflowTemplate[],
 ): OrganizationStageModel {
-  if (!isWorkflowByServiceType(organizationId)) return globalModel(organizationId);
+  if (!usesTemplateStages(organizationId)) return globalModel(organizationId);
 
   const ordered = [...templates.filter((t) => t.organizationId === organizationId)].sort(
     (a, b) => Number(b.isEnabled) - Number(a.isEnabled),

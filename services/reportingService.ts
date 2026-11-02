@@ -6,7 +6,7 @@ import type { PaymentRecordStatus } from '../types/payment';
 import { buildCaseViewModel } from '../domain/cases/viewModel';
 import { STAGES, LAST_DISPLAY_STAGE } from '../domain/cases/stages';
 import { presentedStages } from '../domain/organization/workflowStagePresentation';
-import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '../domain/workflow/selectWorkflowTemplate';
 import { caseIsInOrganizationStage, resolveOrganizationStages } from '../domain/workflow/organizationStages';
 import { listOrganizationWorkflowTemplates } from './organizationWorkflowTemplates';
 import {
@@ -122,7 +122,7 @@ export async function countActiveCases(
   const views = await loadCaseViewModels(organizationId, dataAdapterMode);
   // Service-specific workflows (2026-10): "active" is "not on its own
   // workflow's terminal stage" for an organization with several templates.
-  const isActive = isWorkflowByServiceType(organizationId)
+  const isActive = usesTemplateStages(organizationId)
     ? (c: CaseViewModel) => !isCaseViewOnTerminalStage(c)
     : (c: CaseViewModel) => c.displayStage < LAST_DISPLAY_STAGE;
   return views.filter(
@@ -154,7 +154,7 @@ async function terminalStageChangeEvents(
 ): Promise<Array<{ caseId: string; createdAt: string }>> {
   // Service-specific workflows (2026-10): every template's own terminal
   // stage name counts (activity labels come from the case's snapshot).
-  const terminalLabels = isWorkflowByServiceType(organizationId)
+  const terminalLabels = usesTemplateStages(organizationId)
     ? new Set(
         resolveOrganizationStages(organizationId, await listOrganizationWorkflowTemplates(organizationId, dataAdapterMode))
           .stages.filter((stage) => stage.isTerminal)
@@ -248,7 +248,7 @@ export async function caseCountsByStage(organizationId: string, dataAdapterMode:
   // membership as the Dashboard — at the stage its view model shows it
   // (reportStageRef), like Manors' rows below and the active/completed
   // figures. `displayStage` is the row's position.
-  if (isWorkflowByServiceType(organizationId)) {
+  if (usesTemplateStages(organizationId)) {
     const [cases, staffList, templates] = await Promise.all([
       casesService.listForOrganization(organizationId, dataAdapterMode),
       staffProfileService.list(organizationId, dataAdapterMode),
@@ -281,7 +281,7 @@ export async function caseCountsByStage(organizationId: string, dataAdapterMode:
     the live, currently-in-stage snapshot (see this metric's own registry
     description for how it differs from `averageCaseCycleDays`). */
 export async function averageDaysInStageSnapshot(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<StageBreakdownRow[]> {
-  if (isWorkflowByServiceType(organizationId)) {
+  if (usesTemplateStages(organizationId)) {
     const [cases, staffList, templates] = await Promise.all([
       casesService.listForOrganization(organizationId, dataAdapterMode),
       staffProfileService.list(organizationId, dataAdapterMode),

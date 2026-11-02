@@ -5,7 +5,7 @@ import { presentedStages } from '../organization/workflowStagePresentation';
 import { getSlaTargetDays, formatSlaTarget } from '../cases/sla';
 import { VA_STEPS } from '../cases/veteran';
 import type { Case } from '../../types/case';
-import { isWorkflowByServiceType } from '../workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '../workflow/selectWorkflowTemplate';
 import { caseIsInOrganizationStage, type OrganizationStageModel } from '../workflow/organizationStages';
 import { findStageByRawStage } from '../workflow/resolveStages';
 
@@ -33,7 +33,7 @@ export function computeKpis(cases: CaseViewModel[], organizationId?: string) {
   // Service-specific workflows (2026-10): per-case terminal stage for an
   // organization with service workflows; the global constant (unchanged)
   // for everyone else, including every caller that passes no organization.
-  const perCase = organizationId !== undefined && isWorkflowByServiceType(organizationId);
+  const perCase = organizationId !== undefined && usesTemplateStages(organizationId);
   const isCompleted = perCase ? isCaseViewOnTerminalStage : (c: CaseViewModel) => c.displayStage === LAST_DISPLAY_STAGE;
   const isActive = perCase ? (c: CaseViewModel) => !isCaseViewOnTerminalStage(c) : (c: CaseViewModel) => c.displayStage < LAST_DISPLAY_STAGE;
   const active = cases.filter(isActive);
@@ -191,7 +191,7 @@ export function computeStaffWorkload(
   organizationId?: string,
 ): StaffWorkloadRow[] {
   const isActive =
-    organizationId && isWorkflowByServiceType(organizationId)
+    organizationId && usesTemplateStages(organizationId)
       ? (c: CaseViewModel) => !isCaseViewOnTerminalStage(c)
       : (c: CaseViewModel) => c.displayStage < LAST_DISPLAY_STAGE;
   return staffList.map((staff) => {

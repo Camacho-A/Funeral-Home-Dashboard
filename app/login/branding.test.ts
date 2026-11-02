@@ -135,4 +135,17 @@ describe('loadLoginOrganization', () => {
     withHost('solis.manorscremation.com');
     expect(await loadLoginOrganization()).toBeNull();
   });
+
+  it("never shows a funeral home this deployment doesn't serve, even when its host is mapped (2026-11)", async () => {
+    process.env.DEPLOYMENT_ORGANIZATION_IDS = 'gus-camacho-jr';
+    try {
+      withHost('solis.manorscremation.com');
+      expect(await loadLoginOrganization()).toBeNull();
+      expect(getBranding).not.toHaveBeenCalled();
+      withHost('gus.example.com');
+      expect(await loadLoginOrganization()).toEqual({ name: 'Gus Camacho Jr. Funeral Home', logoUrl: 'https://blob.example.com/gus.png' });
+    } finally {
+      delete process.env.DEPLOYMENT_ORGANIZATION_IDS;
+    }
+  });
 });

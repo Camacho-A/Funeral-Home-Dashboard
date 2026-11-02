@@ -46,7 +46,7 @@ import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateErro
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import { touchesWorkflowCompletion } from '@/domain/cases/workflowCompletion';
 import { completionTransition } from '@/domain/cases/completionEligibility';
-import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
 import { snapshotStageLabel } from '@/domain/workflow/organizationStages';
 import { notifyCaseCompleted } from '@/services/caseNotifications';
 import { composeDecedentName } from '@/domain/cases/decedentName';
@@ -153,7 +153,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
 function stageLabel(rawStage: number, case_?: Case | null): string {
   // Service-specific workflows (2026-10): an organization whose cases run
   // on several templates names the stage from the case's OWN snapshot.
-  if (case_ && isWorkflowByServiceType(case_.organizationId)) {
+  if (case_ && usesTemplateStages(case_.organizationId)) {
     return snapshotStageLabel(case_.workflowSnapshot, rawStage) ?? `Stage ${rawStage}`;
   }
   return STAGES[toDisplayStage(rawStage)] ?? `Stage ${rawStage}`;

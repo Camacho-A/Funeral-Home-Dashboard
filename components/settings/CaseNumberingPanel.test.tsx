@@ -83,7 +83,7 @@ function mockFetchFor(options: {
   });
 }
 
-function renderPanel(organizationId?: string, options: { retry?: boolean } = {}) {
+function renderPanel(organizationId: string = 'managed-cremations', options: { retry?: boolean } = {}) {
   const queryClient = options.retry === false ? new QueryClient({ defaultOptions: { queries: { retry: false } } }) : new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>

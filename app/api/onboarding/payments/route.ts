@@ -3,6 +3,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { createPaymentIntegrationPlaceholder, markStepCompleted, type PaymentSetupChoice } from '@/services/organizationProvisioningService';
+import { isValidCloverReference } from '@/lib/clover/cloverConfig';
 
 const VALID_CHOICES: PaymentSetupChoice[] = ['clover', 'not_configured', 'configure_later'];
 
@@ -30,6 +31,14 @@ export async function PATCH(request: Request) {
 
   if (typeof b.choice !== 'string' || !(VALID_CHOICES as string[]).includes(b.choice)) {
     return NextResponse.json({ error: `choice must be one of: ${VALID_CHOICES.join(', ')}.` }, { status: 400 });
+  }
+
+  // Only Clover variable names may be stored as references (2026-11).
+  for (const field of ['merchantIdReference', 'credentialReference', 'webhookSecretReference'] as const) {
+    const value = b[field];
+    if (value !== undefined && value !== '' && !isValidCloverReference(value)) {
+      return NextResponse.json({ error: `${field} must name a Clover environment variable (CLOVER_ followed by capital letters, digits or underscores).` }, { status: 400 });
+    }
   }
 
   const dataAdapterMode = getDataAdapterMode();

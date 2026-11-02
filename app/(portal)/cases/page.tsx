@@ -12,7 +12,7 @@ import { useAdvanceCaseStage } from '@/hooks/useAdvanceCaseStage';
 import { useOrganization } from '@/hooks/useOrganization';
 import { STAGES } from '@/domain/cases/stages';
 import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
-import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
 import { organizationStageLabels, resolveOrganizationStages } from '@/domain/workflow/organizationStages';
 import {
   canonicalDisplayStagesForPresentedLabel,
@@ -64,10 +64,10 @@ function CasesPageContent() {
   const { organizationId } = useOrganization();
   const searchParams = useSearchParams();
   const stageParam = searchParams.get('stage');
-  const { data: workflowTemplates } = useWorkflowTemplates({ enabled: isWorkflowByServiceType(organizationId) });
+  const { data: workflowTemplates } = useWorkflowTemplates({ enabled: usesTemplateStages(organizationId) });
   const organizationStages = useMemo(
     () =>
-      isWorkflowByServiceType(organizationId)
+      usesTemplateStages(organizationId)
         ? organizationStageLabels(resolveOrganizationStages(organizationId, workflowTemplates ?? []))
         : null,
     [organizationId, workflowTemplates],

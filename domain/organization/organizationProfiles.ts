@@ -58,6 +58,9 @@ export const MANORS_ORGANIZATION_ID = 'managed-cremations';
 /** Gus Camacho Jr. Funeral Home. Case prefix `M`. */
 export const GUS_CAMACHO_ORGANIZATION_ID = 'gus-camacho-jr';
 
+/** An official document generated from an organization's own template. */
+export type OfficialDocumentKind = 'envelope' | 'certificate_of_cremation';
+
 /** A role override an organization's profile requires (2026-11). */
 export type StandingRoleOverride = { roleKey: string; permissionKey: PermissionKey; action: 'grant' | 'revoke'; reason: string };
 
@@ -293,6 +296,19 @@ export type OrganizationFeaturePreferences = {
       Platform default: on. Manors: off until approved — its edits keep
       re-pricing every line at the current price, as today. */
   orderLinePriceLock: boolean;
+  /** The official documents (2026-11) SOLIS generates automatically from
+      this organization's own templates (domain/documents/
+      officialDocumentTriggers.ts). Platform default: none — the templates
+      are an organization's own legal forms (Manors' carry its signature
+      and seal), so no other home ever receives them by default. */
+  officialDocuments: readonly OfficialDocumentKind[];
+  /** Stage lists come from the organization's own workflow templates
+      (2026-11): the Dashboard, Cases filter, counts, Reports, activity and
+      portal stage names, and bulk "advance" bounded by each case's own
+      snapshot. Platform default: on — a funeral home sees its own stages.
+      Manors: off — it keeps the fixed platform stage list (STAGES) it has
+      always used. Always on where `workflowByServiceType` is on. */
+  stagesFromWorkflowTemplates: boolean;
   /** Role overrides this organization's configuration requires (2026-11),
       written at onboarding by services/roleService.ts#seedDefaultRoles
       (before missing default grants are filled in) and present in the
@@ -407,6 +423,8 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   pricingPermissionModel: 'granular',
   orderLinePriceLock: true,
   standingRoleOverrides: [],
+  officialDocuments: [],
+  stagesFromWorkflowTemplates: true,
   enforceHiddenModulesServerSide: false,
   workflowApprovalRequired: false,
 });
@@ -485,6 +503,10 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     priceCatalogManagement: false,
     pricingPermissionModel: 'legacy',
     orderLinePriceLock: false,
+    // Its fixed seven-stage list, exactly as today.
+    stagesFromWorkflowTemplates: false,
+    // Its own Envelope and Certificate of Cremation templates.
+    officialDocuments: ['envelope', 'certificate_of_cremation'],
     manateeDeathCertificateApplication: true,
     caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the

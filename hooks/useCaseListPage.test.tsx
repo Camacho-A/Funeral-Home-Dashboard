@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { act } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -7,6 +7,13 @@ import { OrganizationProvider } from './useOrganization';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { Case } from '@/types/case';
+
+// These tests build the second organization's cases by copying Manors'
+// fixture cases (Manors snapshots included), so it keeps the fixed stage list.
+vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) =>
+  (await import('@/lib/testing/globalStagesProfile')).withGlobalStages(await importOriginal(), (await import('@/services/__mocks__/organizationIds')).SECOND_MOCK_ORGANIZATION_ID),
+);
+
 
 /**
  * Case list scalability, Phase 3 (2026-09). The pagination contract the

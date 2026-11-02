@@ -26,6 +26,14 @@ export function isWorkflowByServiceType(organizationId: string | null | undefine
   return getRegisteredOrganizationProfile(organizationId).features.workflowByServiceType;
 }
 
+/** Whether this organization's stage names and stage lists come from its
+    workflow templates (each case's snapshot) rather than the fixed
+    platform list (2026-11). See `features.stagesFromWorkflowTemplates`. */
+export function usesTemplateStages(organizationId: string | null | undefined): boolean {
+  const { features } = getRegisteredOrganizationProfile(organizationId);
+  return features.workflowByServiceType || features.stagesFromWorkflowTemplates;
+}
+
 export function isWorkflowApprovalRequired(organizationId: string | null | undefined): boolean {
   return getRegisteredOrganizationProfile(organizationId).features.workflowApprovalRequired;
 }

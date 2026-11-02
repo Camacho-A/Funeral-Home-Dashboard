@@ -7,7 +7,7 @@ import { listForOrganization as listDocumentsForOrganization, renderHtmlToPdfBuf
 import { getForOrganization as getOrganization } from './organizationsService';
 import { STAGES, toDisplayStage } from '../domain/cases/stages';
 import { presentedStageLabels, toPresentedStageIndex } from '../domain/organization/workflowStagePresentation';
-import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '../domain/workflow/selectWorkflowTemplate';
 import { snapshotStageLabel } from '../domain/workflow/organizationStages';
 
 /** The user-facing label for a case's current stage — see
@@ -16,7 +16,7 @@ import { snapshotStageLabel } from '../domain/workflow/organizationStages';
 function presentedCurrentStageLabel(organizationId: string, rawStage: number, case_?: Case): string {
   // Service-specific workflows (2026-10): the case's own snapshot names
   // its stage for an organization whose cases run on several templates.
-  if (case_ && isWorkflowByServiceType(organizationId)) {
+  if (case_ && usesTemplateStages(organizationId)) {
     return snapshotStageLabel(case_.workflowSnapshot, rawStage) ?? '';
   }
   const displayStage = toDisplayStage(rawStage);

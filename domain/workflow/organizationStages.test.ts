@@ -24,10 +24,10 @@ const GUS = 'gus-camacho-jr';
 const MANORS = 'managed-cremations';
 const EVERGREEN = 'evergreen-memorial-group';
 
-describe('organizations without service workflows — identical to the STAGES surfaces', () => {
-  it.each([MANORS, EVERGREEN])('%s: global labels, raw stages and attention flags match today exactly', (org) => {
-    const templates = org === MANORS ? [standardCremationWorkflowTemplateFixture] : [secondOrgWorkflowTemplateFixture];
-    const model = resolveOrganizationStages(org, templates);
+describe('Manors — the fixed platform stage list, exactly as today', () => {
+  it('global labels, raw stages and attention flags match the STAGES surfaces', () => {
+    const org = MANORS;
+    const model = resolveOrganizationStages(org, [standardCremationWorkflowTemplateFixture]);
     expect(model.kind).toBe('global');
     expect(organizationStageLabels(model)).toEqual(presentedStageLabels(org, STAGES));
     for (const stage of model.stages) {
@@ -39,6 +39,15 @@ describe('organizations without service workflows — identical to the STAGES su
     expect(model.stages.map((s) => s.label)).toEqual(presentedStages(org, STAGES).map((s) => s.label));
   });
 
+  it('any other single-workflow funeral home sees ITS OWN stages, never Manors\' (2026-11)', () => {
+    const model = resolveOrganizationStages(EVERGREEN, [secondOrgWorkflowTemplateFixture]);
+    expect(model.kind).toBe('per_template');
+    expect(organizationStageLabels(model)).toEqual(['Intake', 'Preparation', 'Service Scheduled']);
+    expect(model.stages.find((s) => s.label === 'Preparation')!.isAttentionStage).toBe(true);
+    for (const manorsLabel of STAGES) expect(organizationStageLabels(model)).not.toContain(manorsLabel);
+    // Only its own templates count — Manors' template is never used for it.
+    expect(organizationStageLabels(resolveOrganizationStages(EVERGREEN, [standardCremationWorkflowTemplateFixture]))).toEqual([]);
+  });
   it('Manors still presents its combined intake stage (presentation overlay untouched)', () => {
     expect(organizationStageLabels(resolveOrganizationStages(MANORS, []))[0]).toBe('Intake & JotForm');
   });

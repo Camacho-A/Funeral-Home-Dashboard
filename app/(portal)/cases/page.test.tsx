@@ -11,6 +11,13 @@ import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services
 import { STAGES } from '@/domain/cases/stages';
 import type { Case } from '@/types/case';
 
+// These tests build the second organization's cases by copying Manors'
+// fixture cases (Manors snapshots included), so it keeps the fixed stage list.
+vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) =>
+  (await import('@/lib/testing/globalStagesProfile')).withGlobalStages(await importOriginal(), (await import('@/services/__mocks__/organizationIds')).SECOND_MOCK_ORGANIZATION_ID),
+);
+
+
 /**
  * Case list scalability, Phase 3 — UX correction (2026-09). The dedicated
  * case-list route — this file carries the pagination/search/Load-More/

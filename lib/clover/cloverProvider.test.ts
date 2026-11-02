@@ -8,9 +8,9 @@ const INTEGRATION: PaymentIntegration = {
   organizationId: 'org-1',
   provider: 'clover',
   environment: 'sandbox',
-  merchantIdReference: 'TEST_CLOVER_MERCHANT_ID',
-  credentialReference: 'TEST_CLOVER_PRIVATE_KEY',
-  webhookSecretReference: 'TEST_CLOVER_WEBHOOK_SECRET',
+  merchantIdReference: 'CLOVER_MOCK_FIXTURE_MERCHANT_ID',
+  credentialReference: 'CLOVER_MOCK_FIXTURE_PRIVATE_KEY',
+  webhookSecretReference: 'CLOVER_MOCK_FIXTURE_WEBHOOK_SECRET',
   isEnabled: true,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -43,15 +43,15 @@ const RECORD: PaymentRecord = {
 };
 
 beforeEach(() => {
-  process.env.TEST_CLOVER_MERCHANT_ID = 'merchant-abc';
-  process.env.TEST_CLOVER_PRIVATE_KEY = 'fake-private-key';
-  process.env.TEST_CLOVER_WEBHOOK_SECRET = 'fake-webhook-secret';
+  process.env.CLOVER_MOCK_FIXTURE_MERCHANT_ID = 'merchant-abc';
+  process.env.CLOVER_MOCK_FIXTURE_PRIVATE_KEY = 'fake-private-key';
+  process.env.CLOVER_MOCK_FIXTURE_WEBHOOK_SECRET = 'fake-webhook-secret';
 });
 
 afterEach(() => {
-  delete process.env.TEST_CLOVER_MERCHANT_ID;
-  delete process.env.TEST_CLOVER_PRIVATE_KEY;
-  delete process.env.TEST_CLOVER_WEBHOOK_SECRET;
+  delete process.env.CLOVER_MOCK_FIXTURE_MERCHANT_ID;
+  delete process.env.CLOVER_MOCK_FIXTURE_PRIVATE_KEY;
+  delete process.env.CLOVER_MOCK_FIXTURE_WEBHOOK_SECRET;
   vi.unstubAllGlobals();
 });
 

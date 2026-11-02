@@ -2,6 +2,7 @@ import { getAuthAdapterMode, getDataAdapterMode, getLoginOrganizationId } from '
 import { GUS_ORGANIZATION_ID, GUS_ADMIN_EMAIL, GUS_DEMO_PASSWORD } from '@/services/__mocks__/gusFixtures';
 import { MANORS_ADMIN_DEMO_PASSWORD } from '@/services/__mocks__/identityFixtures';
 import { MOCK_LOGIN_EMAIL } from '@/services/__mocks__/authFixtures';
+import { MANORS_ORGANIZATION_ID } from '@/domain/organization/organizationProfiles';
 
 export type LoginDemoAccount = { email: string; password: string };
 
@@ -17,9 +18,11 @@ export type LoginDemoAccount = { email: string; password: string };
  *   its own, separate hint already);
  * - not a production build.
  *
- * The account follows the deployment's configured login organization, so
- * a local Gus run (`LOGIN_ORGANIZATION_ID=gus-camacho-jr`) points at the
- * Gus demo administrator and anything else at Manors' demo administrator.
+ * The account follows the deployment's configured login organization: a
+ * local Gus run (`LOGIN_ORGANIZATION_ID=gus-camacho-jr`) points at the Gus
+ * demo administrator, Manors (or no login organization — the historical
+ * local default) at Manors' demo administrator, and any other funeral home
+ * at nothing: it never advertises another home's demo account (2026-11).
  */
 export function loginDemoAccount(): LoginDemoAccount | null {
   try {
@@ -29,8 +32,12 @@ export function loginDemoAccount(): LoginDemoAccount | null {
     return null;
   }
 
-  if (getLoginOrganizationId() === GUS_ORGANIZATION_ID) {
+  const loginOrganizationId = getLoginOrganizationId();
+  if (loginOrganizationId === GUS_ORGANIZATION_ID) {
     return { email: GUS_ADMIN_EMAIL, password: GUS_DEMO_PASSWORD };
   }
-  return { email: MOCK_LOGIN_EMAIL, password: MANORS_ADMIN_DEMO_PASSWORD };
+  if (!loginOrganizationId || loginOrganizationId === MANORS_ORGANIZATION_ID) {
+    return { email: MOCK_LOGIN_EMAIL, password: MANORS_ADMIN_DEMO_PASSWORD };
+  }
+  return null;
 }

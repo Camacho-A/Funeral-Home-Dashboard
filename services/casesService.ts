@@ -40,6 +40,7 @@ import {
   isWorkflowByServiceType,
   selectWorkflowTemplate,
   WorkflowSelectionError,
+  usesTemplateStages,
 } from '../domain/workflow/selectWorkflowTemplate';
 import {
   caseIsInOrganizationStage,
@@ -120,7 +121,7 @@ function listPageMock(context: OrganizationContext, filters: CaseListPageFilters
   // Service-specific workflows (2026-10): an organization whose cases run
   // on several workflow templates filters by (template, raw stage) pairs
   // — mirrors app/api/cases/route.ts's identical branch.
-  if (isWorkflowByServiceType(context.organizationId)) {
+  if (usesTemplateStages(context.organizationId)) {
     return listPageMockByTemplate(context, filters);
   }
   // Manors intake-stage combination (2026-10): resolved against the
@@ -261,7 +262,7 @@ export async function counts(
     const eligible = caseFixtures.filter(
       (c) => c.organizationId === context.organizationId && !c.isDeleted && matchesCaseSearch(c, searchQuery),
     );
-    if (isWorkflowByServiceType(context.organizationId)) {
+    if (usesTemplateStages(context.organizationId)) {
       return { total: eligible.length, byStage: countCasesByOrganizationStage(context.organizationId, eligible) };
     }
     const byStage: Record<string, number> = {};

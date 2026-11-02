@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { ImportHistoricalCaseModal } from './ImportHistoricalCaseModal';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as externalFormsClient from '@/lib/externalFormsClient';
+import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 /**
  * Task #20 (2026-09, close import window after success). Root cause part
@@ -66,7 +67,7 @@ function renderModal() {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
         <TestHarness />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -122,7 +123,7 @@ describe('ImportHistoricalCaseModal — open/close lifecycle', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     render(
       <QueryClientProvider client={queryClient}>
-        <OrganizationProvider>
+        <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
           <TestHarness />
         </OrganizationProvider>
       </QueryClientProvider>,

@@ -3,6 +3,7 @@ import { getDataAdapterMode, getLoginOrganizationHosts, getLoginOrganizationId }
 import { parseLoginOrganizationHosts, resolveLoginOrganizationId } from '@/domain/organization/loginBranding';
 import { getForOrganization } from '@/services/organizationsService';
 import { getBranding } from '@/services/organizationProvisioningService';
+import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 
 export type LoginOrganization = {
   /** The organization's display name, shown as "<name> Workspace". */
@@ -50,6 +51,10 @@ export async function loadLoginOrganization(): Promise<LoginOrganization | null>
       configuredOrganizationId: getLoginOrganizationId(),
     });
     if (!organizationId) return null;
+    // Multi-tenant hardening (2026-11): a host map or configured id naming an
+    // organization this deployment does not serve never shows that
+    // organization's name or logo.
+    if (!isOrganizationAllowedInDeployment(organizationId)) return null;
 
     const dataAdapterMode = getDataAdapterMode();
     const organization = await getForOrganization(organizationId, dataAdapterMode);

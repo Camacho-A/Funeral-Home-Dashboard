@@ -106,7 +106,7 @@ function renderModal() {
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider>
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
         <SessionProvider value={{ staffId: staffFixtures[0].id, displayName: staffFixtures[0].displayName }}>
           <NewCaseModal open onClose={() => {}} />
         </SessionProvider>

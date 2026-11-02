@@ -7,6 +7,13 @@ import { orgLocalYear } from '@/domain/cases/caseNumber';
 import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import type { Case } from '@/types/case';
 
+// These tests build the second organization's cases by copying Manors'
+// fixture cases (Manors snapshots included), so it keeps the fixed stage list.
+vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) =>
+  (await import('@/lib/testing/globalStagesProfile')).withGlobalStages(await importOriginal(), (await import('@/services/__mocks__/organizationIds')).SECOND_MOCK_ORGANIZATION_ID),
+);
+
+
 const ENV_KEYS = ['DATA_ADAPTER', 'WIX_API_KEY', 'WIX_SITE_ID'] as const;
 let originalEnv: Record<string, string | undefined>;
 

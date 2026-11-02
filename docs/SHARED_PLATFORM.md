@@ -70,7 +70,7 @@ prepare and review packages, and the server refuses to email anyone
   administrator repair (docs/ORDER_VERSIONING.md) — every organization.
 - Unpriced service-type catalog items ("Price not set"; an order with one is
   refused) and Settings › Services & Pricing (profile
-  `serviceCatalogPriceEditing`; off for Manors).
+  `priceCatalogManagement`; off for Manors).
 - Archive/restore refreshes after a revision conflict (the rest of Gus's
   case-revision contract was already here).
 - Hidden modules enforced on the server (`enforceHiddenModulesServerSide`).

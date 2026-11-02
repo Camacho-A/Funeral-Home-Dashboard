@@ -26,7 +26,7 @@ import {
 } from '@/domain/organization/workflowStagePresentation';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
-import { isWorkflowByServiceType, selectWorkflowTemplate, type WorkflowSelectionOptions } from '@/domain/workflow/selectWorkflowTemplate';
+import { isWorkflowByServiceType, selectWorkflowTemplate, type WorkflowSelectionOptions, usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
 import { getServiceCatalog } from '@/services/pricingService';
 import {
   caseIsInOrganizationStage,
@@ -39,7 +39,7 @@ import {
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { serviceTypeItems } from '@/domain/pricing/calculateOrder';
 import { reserveNextCaseNumber, advanceCaseSequencePast } from '@/lib/wixCaseNumberSequence';
-import { orgLocalYear, parseCaseNumber, resolveCaseNumberPrefix, caseNumberMatchesPrefix } from '@/domain/cases/caseNumber';
+import { orgLocalYear, parseCaseNumber, resolveCaseNumberPrefix, caseNumberMatchesPrefix, prefixForNewCaseNumber, CaseNumberPrefixNotConfiguredError } from '@/domain/cases/caseNumber';
 import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { findForbiddenPaymentFields } from '@/lib/paymentFieldGuard';
 import { isValidEmail, getDateOfBirthFutureError, getDateOfDeathFutureError, resolveOrgLocalToday } from '@/utils/inputMask';
@@ -174,7 +174,7 @@ export async function GET(request: Request) {
   // Service-specific workflows (2026-10): an organization whose cases run
   // on several templates resolves its stage label inside the handler
   // below, once its templates are loaded (see organizationStage).
-  const stagesByTemplate = isWorkflowByServiceType(organizationId);
+  const stagesByTemplate = usesTemplateStages(organizationId);
   if (stageParam !== null && !stagesByTemplate) {
     const canonicalDisplayStages = canonicalDisplayStagesForPresentedLabel(organizationId, stageParam, STAGES);
     if (canonicalDisplayStages === null) {
@@ -788,7 +788,9 @@ export async function POST(request: Request) {
       caseNumber = await reserveNextCaseNumber(
         organizationId,
         orgLocalYear(createdAt, organization?.timezone),
-        resolveCaseNumberPrefix(organization, { organizationId }),
+        // Never another home's prefix (2026-11): a funeral home with none of
+        // its own is refused (CaseNumberPrefixNotConfiguredError), not 'B'.
+        prefixForNewCaseNumber(organization, organizationId),
       );
     }
 
@@ -960,6 +962,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ case: created }, { status: 201 });
   } catch (error) {
+    if (error instanceof CaseNumberPrefixNotConfiguredError) {
+      return NextResponse.json({ case: null, error: error.message, reason: 'case_number_prefix_not_configured' }, { status: 409 });
+    }
     // Solis go-live diagnostics: log the full error (message + stack) so an
     // unexpected Wix/network failure is traceable server-side, even though
     // only the short message is ever returned to the client.

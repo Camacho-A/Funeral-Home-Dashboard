@@ -6,7 +6,7 @@ import { buildCaseListWixFilter, buildCaseSearchWixFilter, matchesCaseSearch } f
 import { STAGES, rawStagesForDisplayStage } from '@/domain/cases/stages';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canReadCases, canReadPickup } from '@/services/authorizationPolicyService';
-import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
 import { resolveOrganizationStages, wixFilterForOrganizationStage } from '@/domain/workflow/organizationStages';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { countCasesByOrganizationStage } from '@/services/casesService';
@@ -71,7 +71,7 @@ export async function GET(request: Request) {
     // `$or` of (workflowTemplateId, raw stages) pairs (see
     // domain/workflow/organizationStages.ts). Everyone else takes the
     // unchanged STAGES path below.
-    if (isWorkflowByServiceType(organizationId)) {
+    if (usesTemplateStages(organizationId)) {
       if (adapter === 'mock') {
         const eligible = caseFixtures.filter(
           (c) => c.organizationId === organizationId && !c.isDeleted && matchesCaseSearch(c, searchQuery),

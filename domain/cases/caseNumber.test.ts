@@ -216,3 +216,18 @@ describe('generic, prefix-aware format/parse', () => {
     expect(caseNumberMatchesPrefix('B2026-001', '')).toBe(false);
   });
 });
+
+describe('prefixForNewCaseNumber — never another funeral home\'s prefix (2026-11)', () => {
+  it('uses the organization record first, then its registered profile', async () => {
+    const { prefixForNewCaseNumber } = await import('./caseNumber');
+    expect(prefixForNewCaseNumber({ caseNumberPrefix: 'EVG' }, 'evergreen-memorial-group')).toBe('EVG');
+    expect(prefixForNewCaseNumber(null, 'managed-cremations')).toBe('B');
+    expect(prefixForNewCaseNumber({ caseNumberPrefix: null }, 'gus-camacho-jr')).toBe('M');
+  });
+
+  it("refuses a third funeral home with no prefix of its own rather than numbering it like Manors", async () => {
+    const { prefixForNewCaseNumber, CaseNumberPrefixNotConfiguredError } = await import('./caseNumber');
+    expect(() => prefixForNewCaseNumber({ caseNumberPrefix: null }, 'evergreen-memorial-group')).toThrow(CaseNumberPrefixNotConfiguredError);
+    expect(() => prefixForNewCaseNumber({ caseNumberPrefix: 'not valid' }, 'evergreen-memorial-group')).toThrow(CaseNumberPrefixNotConfiguredError);
+  });
+});

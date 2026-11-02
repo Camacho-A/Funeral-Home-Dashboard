@@ -10,7 +10,7 @@ import { presentedStages } from '@/domain/organization/workflowStagePresentation
 import { computeKpis } from '@/domain/reports/calculations';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
-import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
 import { resolveOrganizationStages } from '@/domain/workflow/organizationStages';
 import { useDashboardData } from '@/hooks/useDashboard';
 import { PageGreetingHeader } from '@/components/dashboard/PageGreetingHeader';
@@ -105,7 +105,7 @@ export default function DashboardPage() {
   // counted server-side per (template, raw stage); the bottleneck flag
   // comes from the templates' own isAttentionStage. Everyone else keeps
   // the STAGES rows below, unchanged.
-  const stagesByTemplate = isWorkflowByServiceType(organizationId);
+  const stagesByTemplate = usesTemplateStages(organizationId);
   const { data: workflowTemplates } = useWorkflowTemplates({ enabled: stagesByTemplate });
   const stageBreakdownRows: StageBarRow[] = useMemo(() => {
     if (stagesByTemplate) {

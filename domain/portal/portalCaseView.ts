@@ -1,7 +1,7 @@
 import type { Case } from '../../types/case';
 import { toDisplayStage, STAGES } from '../cases/stages';
 import { presentedStageLabels, toPresentedStageIndex } from '../organization/workflowStagePresentation';
-import { isWorkflowByServiceType } from '../workflow/selectWorkflowTemplate';
+import { usesTemplateStages } from '../workflow/selectWorkflowTemplate';
 import { snapshotStageLabel } from '../workflow/organizationStages';
 
 /**
@@ -41,11 +41,14 @@ export function buildPortalCaseView(caseRecord: Case): PortalCaseView {
     // untouched. See domain/organization/workflowStagePresentation.ts.
     // Service-specific workflows (2026-10): an organization whose cases
     // run on several templates shows the case's own snapshot stage name.
-    stageLabel: isWorkflowByServiceType(caseRecord.organizationId)
-      ? (snapshotStageLabel(caseRecord.workflowSnapshot, caseRecord.rawStage) ?? '')
-      : (presentedStageLabels(caseRecord.organizationId, STAGES)[
-          toPresentedStageIndex(caseRecord.organizationId, toDisplayStage(caseRecord.rawStage), STAGES)
-        ] ?? STAGES[toDisplayStage(caseRecord.rawStage)]),
+    // A case with no snapshot (none exist outside fictional data) falls
+    // back to the platform name rather than showing families a blank.
+    stageLabel:
+      (usesTemplateStages(caseRecord.organizationId) ? snapshotStageLabel(caseRecord.workflowSnapshot, caseRecord.rawStage) : null) ??
+      presentedStageLabels(caseRecord.organizationId, STAGES)[
+        toPresentedStageIndex(caseRecord.organizationId, toDisplayStage(caseRecord.rawStage), STAGES)
+      ] ??
+      STAGES[toDisplayStage(caseRecord.rawStage)],
     caseType: caseRecord.caseType,
   };
 }

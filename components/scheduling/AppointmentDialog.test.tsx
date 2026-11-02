@@ -8,6 +8,7 @@ import * as identityAuthClient from '@/lib/identityAuthClient';
 import { SchedulingConflictError } from '@/lib/appointmentsClient';
 import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 import type { Appointment } from '@/types/appointment';
+import { OrganizationProvider } from '@/hooks/useOrganization';
 
 vi.mock('@/lib/appointmentsClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/appointmentsClient')>('@/lib/appointmentsClient');
@@ -58,7 +59,9 @@ function renderDialog(props: Partial<Parameters<typeof AppointmentDialog>[0]> = 
   const onClose = vi.fn();
   const utils = render(
     <QueryClientProvider client={queryClient}>
-      <AppointmentDialog open onClose={onClose} organizationId={DEFAULT_ORGANIZATION_ID} {...props} />
+      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+        <AppointmentDialog open onClose={onClose} organizationId={DEFAULT_ORGANIZATION_ID} {...props} />
+      </OrganizationProvider>
     </QueryClientProvider>,
   );
   return { ...utils, onClose };
@@ -165,7 +168,9 @@ describe('AppointmentDialog', () => {
     const onClose = vi.fn();
     const { rerender } = render(
       <QueryClientProvider client={queryClient}>
-        <AppointmentDialog open onClose={onClose} organizationId={DEFAULT_ORGANIZATION_ID} />
+        <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+          <AppointmentDialog open onClose={onClose} organizationId={DEFAULT_ORGANIZATION_ID} />
+        </OrganizationProvider>
       </QueryClientProvider>,
     );
     fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Draft title' } });
@@ -177,7 +182,9 @@ describe('AppointmentDialog', () => {
     );
     rerender(
       <QueryClientProvider client={queryClient}>
-        <AppointmentDialog open onClose={onClose} organizationId={DEFAULT_ORGANIZATION_ID} />
+        <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+          <AppointmentDialog open onClose={onClose} organizationId={DEFAULT_ORGANIZATION_ID} />
+        </OrganizationProvider>
       </QueryClientProvider>,
     );
 

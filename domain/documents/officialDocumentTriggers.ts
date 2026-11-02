@@ -1,5 +1,5 @@
 import type { Case } from '../../types/case';
-import { MANORS_ORGANIZATION_ID } from '../organization/organizationProfiles';
+import { getRegisteredOrganizationProfile, type OfficialDocumentKind } from '../organization/organizationProfiles';
 import { composeDecedentName } from '../cases/decedentName';
 import { caseDateToIso, isoToCaseDate } from '../cases/cremationDates';
 
@@ -25,14 +25,12 @@ import { caseDateToIso, isoToCaseDate } from '../cases/cremationDates';
  * An archived case is history and is never regenerated. Only an
  * organization that has these templates gets them (Manors).
  */
-export type OfficialDocumentKind = 'envelope' | 'certificate_of_cremation';
+export type { OfficialDocumentKind };
 
-const ORGANIZATIONS_WITH_OFFICIAL_DOCUMENTS: Record<string, readonly OfficialDocumentKind[]> = {
-  [MANORS_ORGANIZATION_ID]: ['envelope', 'certificate_of_cremation'],
-};
-
+/** The organization's profile decides (`features.officialDocuments`,
+    2026-11) — no funeral home id is named here. */
 export function officialDocumentsFor(organizationId: string): readonly OfficialDocumentKind[] {
-  return ORGANIZATIONS_WITH_OFFICIAL_DOCUMENTS[organizationId] ?? [];
+  return getRegisteredOrganizationProfile(organizationId).features.officialDocuments;
 }
 
 type Relevant = Pick<

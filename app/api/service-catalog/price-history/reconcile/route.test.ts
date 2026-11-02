@@ -33,6 +33,7 @@ vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => 
 });
 
 const reconcile = await import('./route');
+const history = await import('../route');
 const item = await import('../../[itemId]/route');
 
 const ORG = DEFAULT_ORGANIZATION_ID;
@@ -91,6 +92,17 @@ describe('price history recovery route', () => {
     expect((await postRepair()).status).toBe(200);
     expect(catalogPriceChangeFixtures[0]).toMatchObject({ status: 'not_applied', outcome: 'reconciled_not_applied' });
     expect(serviceCatalogFixtures.find((i) => i.id === ITEM_ID)!.defaultPrice).toBe(priceBefore);
+  });
+
+  it("another organization's price history is refused — the requested organizationId is never trusted on its own", async () => {
+    for (const other of ['gus-camacho-jr', 'evergreen-memorial-group']) {
+      const report = await reconcile.GET(new Request(`http://localhost/api/service-catalog/price-history/reconcile?organizationId=${other}`));
+      expect([403, 404], other).toContain(report.status);
+      const repair = await reconcile.POST(new Request('http://localhost/api/service-catalog/price-history/reconcile', { method: 'POST', headers: HEADERS, body: JSON.stringify({ organizationId: other }) }));
+      expect([403, 404], other).toContain(repair.status);
+      const list = await history.GET(new Request(`http://localhost/api/service-catalog/price-history?organizationId=${other}&itemType=service&itemId=${ITEM_ID}`));
+      expect([403, 404], other).toContain(list.status);
+    }
   });
 
   it('refuses a cross-site POST', async () => {
