@@ -1,4 +1,4 @@
-import { standardPriceRefusal } from '@/lib/priceCatalogRoutes';
+import { standardPriceRefusal, priceChangeJournalErrorResponse } from '@/lib/priceCatalogRoutes';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -49,6 +49,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   for (const field of ['name', 'description', 'category', 'cost', 'retailPrice', 'taxable', 'trackInventory', 'reorderPoint', 'defaultLocationId', 'familyVisible', 'supplierName']) {
     if (body[field] !== undefined) patch[field] = body[field];
   }
+  const idempotencyKey = typeof body.requestKey === 'string' && body.requestKey.trim() ? body.requestKey.trim() : request.headers.get('idempotency-key')?.trim() || null;
+  if (idempotencyKey) patch.requestKey = idempotencyKey.slice(0, 200);
   if ('retailPrice' in patch) {
     const priceRefusal = await standardPriceRefusal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode);
     if (priceRefusal) return priceRefusal;
@@ -58,6 +60,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
     return NextResponse.json({ product });
   } catch (error) {
     if (error instanceof MerchandiseServiceError) return NextResponse.json({ error: error.message }, { status: error.code === 'not_found' ? 404 : 400 });
+    const journal = priceChangeJournalErrorResponse(error);
+    if (journal) return journal;
     throw error;
   }
 }

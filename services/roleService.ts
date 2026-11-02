@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { getRegisteredOrganizationProfile } from '../domain/organization/organizationProfiles';
 import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import { mapWixRoleItem, buildWixRoleData, applyRoleUpdateToWixData, type WixRoleItem } from '../lib/wixRoleMapper';
@@ -347,13 +348,13 @@ export async function seedDefaultRoles(
   organizationId: string,
   dataAdapterMode: DataAdapterMode,
   organizationStatus?: OrganizationStatus,
-): Promise<{ enablements: OrganizationRoleEnablement[]; isNew: boolean; orgScopedGrants: OrgScopedDefaultGrant[] }> {
+): Promise<{ enablements: OrganizationRoleEnablement[]; isNew: boolean; orgScopedGrants: OrgScopedDefaultGrant[]; standingOverrides: string[] }> {
   const before = await listOrganizationRoleEnablements(organizationId, dataAdapterMode);
   const isNew = before.length === 0;
   const stillProvisioning = organizationStatus === 'draft' || organizationStatus === 'onboarding';
 
   if (!isNew && !stillProvisioning) {
-    return { enablements: before, isNew: false, orgScopedGrants: [] };
+    return { enablements: before, isNew: false, orgScopedGrants: [], standingOverrides: [] };
   }
 
   const defaultRoles = await seedPlatformDefaultRoles(dataAdapterMode);
@@ -364,8 +365,12 @@ export async function seedDefaultRoles(
     await insertOrganizationRoleEnablementIdempotent(enablement, dataAdapterMode);
     enablements.push(enablement);
   }
+  // Standing overrides first (2026-11): a revoke the organization's profile
+  // requires must exist before missing default grants are filled in, so
+  // the fill (which never touches an existing tuple) can't pre-empt it.
+  const standingOverrides = await seedStandingRoleOverrides(organizationId, dataAdapterMode);
   const orgScopedGrants = await seedOrganizationScopedDefaultGrants(organizationId, defaultRoles, dataAdapterMode);
-  return { enablements, isNew, orgScopedGrants };
+  return { enablements, isNew, orgScopedGrants, standingOverrides };
 }
 
 // ---------------------------------------------------------------------------
@@ -426,6 +431,41 @@ async function seedOrganizationScopedDefaultGrants(
     };
     await insertOrganizationOverrideIdempotent(override, dataAdapterMode);
     written.push({ roleKey, permissionKey, overrideId: override.id });
+  }
+  return written;
+}
+
+/**
+ * Standing role overrides (2026-11): each override the organization's
+ * profile requires (`features.standingRoleOverrides`) — e.g. Gus's
+ * "catalog changes are Administrator-only" — written while the
+ * organization is new or still provisioning, insert-only with
+ * deterministic ids: an override that already exists for the tuple is
+ * left exactly as it is. Never revokes `organization.manage` (an
+ * organization must always keep an administrator).
+ */
+async function seedStandingRoleOverrides(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<string[]> {
+  const now = nowIso();
+  const written: string[] = [];
+  for (const standing of getRegisteredOrganizationProfile(organizationId).features.standingRoleOverrides) {
+    const roleKey = resolveRoleKeyAlias(standing.roleKey);
+    if (!isDefaultRoleKey(roleKey)) throw new RoleServiceError(`Standing role override names an unknown default role '${standing.roleKey}'.`);
+    if (standing.action === 'revoke' && standing.permissionKey === 'organization.manage') {
+      throw new RoleServiceError('A standing role override may not revoke organization.manage.');
+    }
+    const override: OrganizationRolePermissionOverride = {
+      id: organizationRolePermissionOverrideId(organizationId, roleKey, standing.permissionKey),
+      organizationId,
+      roleKey,
+      permissionKey: standing.permissionKey,
+      action: standing.action,
+      reason: standing.reason,
+      createdAt: now,
+      createdBy: ONBOARDING_SEED_ACTOR,
+      updatedAt: now,
+    };
+    await insertOrganizationOverrideIdempotent(override, dataAdapterMode);
+    written.push(override.id);
   }
   return written;
 }

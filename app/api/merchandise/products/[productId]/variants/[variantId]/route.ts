@@ -1,4 +1,4 @@
-import { standardPriceRefusal } from '@/lib/priceCatalogRoutes';
+import { standardPriceRefusal, priceChangeJournalErrorResponse } from '@/lib/priceCatalogRoutes';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -38,6 +38,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   for (const f of ['name', 'optionValues', 'retailPriceOverride', 'costOverride', 'taxableOverride', 'supplierIdOverride'] as const) {
     if (body[f] !== undefined) patch[f] = body[f];
   }
+  const idempotencyKey = typeof body.requestKey === 'string' && body.requestKey.trim() ? body.requestKey.trim() : request.headers.get('idempotency-key')?.trim() || null;
+  if (idempotencyKey) patch.requestKey = idempotencyKey.slice(0, 200);
   if ('retailPriceOverride' in patch) {
     const priceRefusal = await standardPriceRefusal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode);
     if (priceRefusal) return priceRefusal;
@@ -47,6 +49,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
     return NextResponse.json({ variant });
   } catch (error) {
     if (error instanceof MerchandiseVariantServiceError) return NextResponse.json({ error: error.message, code: error.code }, { status: errorStatus(error.code) });
+    const journal = priceChangeJournalErrorResponse(error);
+    if (journal) return journal;
     throw error;
   }
 }

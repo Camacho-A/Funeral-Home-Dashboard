@@ -8,7 +8,8 @@ import type { OrganizationRoleLock } from '../../types/organizationRoleLock';
 import type { OrganizationRoleWriteClaim } from '../../types/organizationRoleWriteClaim';
 import { PERMISSION_KEYS, PERMISSION_DESCRIPTIONS, permissionCategory } from '../../domain/rbac/permissionCatalog';
 import { DEFAULT_ROLE_DEFINITIONS } from '../../domain/rbac/defaultRoles';
-import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId } from '../../domain/rbac/deterministicIds';
+import { permissionFixtureId, defaultRoleFixtureId, defaultRolePermissionFixtureId, organizationRoleFixtureId, organizationRolePermissionOverrideId } from '../../domain/rbac/deterministicIds';
+import { getRegisteredOrganizationProfile } from '../../domain/organization/organizationProfiles';
 import { DEFAULT_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
 import { mockCollection } from './mockStore';
 
@@ -101,6 +102,25 @@ export const organizationRoleFixtures: OrganizationRoleEnablement[] = mockCollec
 ]);
 
 export const organizationRoleAuditEntryFixtures: OrganizationRoleAuditEntry[] = mockCollection('organizationRoleAuditEntryFixtures', (): OrganizationRoleAuditEntry[] => []);
-export const organizationRolePermissionOverrideFixtures: OrganizationRolePermissionOverride[] = mockCollection('organizationRolePermissionOverrideFixtures', (): OrganizationRolePermissionOverride[] => []);
+/** Each organization's standing role overrides (its profile's
+    `standingRoleOverrides`, 2026-11) are already in place — as
+    `ensureStandingRoleOverrides` leaves them at onboarding. */
+function standingOverrideRows(organizationId: string): OrganizationRolePermissionOverride[] {
+  return getRegisteredOrganizationProfile(organizationId).features.standingRoleOverrides.map((o) => ({
+    id: organizationRolePermissionOverrideId(organizationId, o.roleKey, o.permissionKey),
+    organizationId,
+    roleKey: o.roleKey,
+    permissionKey: o.permissionKey,
+    action: o.action,
+    reason: o.reason,
+    createdAt: '2026-11-01T00:00:00.000Z',
+    createdBy: 'system',
+    updatedAt: '2026-11-01T00:00:00.000Z',
+  }));
+}
+export const organizationRolePermissionOverrideFixtures: OrganizationRolePermissionOverride[] = mockCollection('organizationRolePermissionOverrideFixtures', (): OrganizationRolePermissionOverride[] => [
+  ...standingOverrideRows(DEFAULT_ORGANIZATION_ID),
+  ...standingOverrideRows(GUS_ORGANIZATION_ID),
+]);
 export const organizationRoleLockFixtures: OrganizationRoleLock[] = mockCollection('organizationRoleLockFixtures', (): OrganizationRoleLock[] => []);
 export const organizationRoleWriteClaimFixtures: OrganizationRoleWriteClaim[] = mockCollection('organizationRoleWriteClaimFixtures', (): OrganizationRoleWriteClaim[] => []);

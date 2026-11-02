@@ -6,6 +6,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canConfigureServiceCatalog } from '@/services/authorizationPolicyService';
 import { canPerformPricingAction, isPriceCatalogManaged } from '@/services/pricingAuthorization';
 import { PriceCatalogError, PriceCatalogUnavailableError } from '@/services/priceCatalogService';
+import { CatalogPriceChangeInProgressError, CatalogPriceConflictError, DuplicatePriceChangeRequestError } from '@/services/catalogPriceChangeJournal';
 import type { ActivityContext } from '@/services/activityService';
 import type { DataAdapterMode } from '@/lib/env';
 import type { ResolvePermissionsParams } from '@/services/permissionService';
@@ -100,4 +101,24 @@ export async function standardPriceRefusal(
 ): Promise<Response | null> {
   if (await canPerformPricingAction(caller, dataAdapterMode, 'catalog.price', { merchandise: true })) return null;
   return NextResponse.json({ error: 'You are not allowed to set merchandise prices.', reason: 'price_not_permitted' }, { status: 403 });
+}
+
+/** Price history journal (2026-11) errors as responses, or null for any
+    other error. A repeated request (same idempotency key) whose change was
+    already saved is a success — the price is not changed twice. */
+export function priceChangeJournalErrorResponse(error: unknown): Response | null {
+  if (error instanceof CatalogPriceConflictError) {
+    return NextResponse.json({ error: error.message, reason: 'price_conflict' }, { status: 409 });
+  }
+  if (error instanceof CatalogPriceChangeInProgressError) {
+    return NextResponse.json({ error: error.message, reason: 'price_change_in_progress' }, { status: 409 });
+  }
+  if (error instanceof DuplicatePriceChangeRequestError) {
+    if (error.row.status === 'applied') return NextResponse.json({ duplicate: true, priceChange: error.row });
+    return NextResponse.json(
+      { error: error.message, reason: error.row.status === 'pending' ? 'price_change_in_progress' : 'duplicate_request_not_applied', priceChange: error.row },
+      { status: 409 },
+    );
+  }
+  return null;
 }

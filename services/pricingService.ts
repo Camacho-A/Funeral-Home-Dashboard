@@ -1,6 +1,6 @@
 import type { DataAdapterMode } from '../lib/env';
 import { isOrderLinePriceLocked } from '../domain/pricing/pricingPermissions';
-import { recordCatalogPriceChange } from './catalogPriceHistoryService';
+import { beginCatalogPriceChange, CatalogPriceConflictError, settleCatalogPriceChange, settleFromItem } from './catalogPriceChangeJournal';
 import { formatCentsAsCurrency } from '../utils/format';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, conditionalPatchWixDataItemFields } from '../lib/wixDataApi';
 import {
@@ -2131,17 +2131,10 @@ export function isValidServiceCatalogPrice(value: unknown): value is number | nu
  * calculation on. Records one activity event, best-effort (a failed audit
  * write never fails the edit itself, same as recalculateOrder's).
  */
-/** Price catalog (2026-11). Someone else changed this price after it was
-    read — nothing was written. Routes answer 409. */
-export class CatalogPriceConflictError extends Error {
-  constructor() {
-    super('This price was changed by someone else since you opened it. Nothing was saved — reload and try again.');
-    this.name = 'CatalogPriceConflictError';
-  }
-}
+export { CatalogPriceConflictError } from './catalogPriceChangeJournal';
 
 export async function updateServiceCatalogItemPrice(
-  params: { organizationId: string; itemId: string; defaultPrice: number | null; ctx: ActivityContext; now?: string; reason?: string | null },
+  params: { organizationId: string; itemId: string; defaultPrice: number | null; ctx: ActivityContext; now?: string; reason?: string | null; requestKey?: string | null },
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ item: ServiceCatalogItem; previousPrice: number | null } | null> {
   if (!isValidServiceCatalogPrice(params.defaultPrice)) {
@@ -2151,51 +2144,85 @@ export async function updateServiceCatalogItemPrice(
   let updated: ServiceCatalogItem;
   let previousPrice: number | null;
 
+  const beginChange = (existing: ServiceCatalogItem) =>
+    // Price history first (2026-11): recorded `pending` before the price is
+    // touched; if it can't be recorded, nothing changes. See
+    // services/catalogPriceChangeJournal.ts for the full protocol.
+    beginCatalogPriceChange(
+      params.ctx,
+      { itemType: 'service', itemId: existing.id, itemCode: existing.serviceCode, itemName: existing.displayName, previousPrice: existing.defaultPrice, newPrice: params.defaultPrice, reason: params.reason, requestKey: params.requestKey, now: nowIso },
+      dataAdapterMode,
+    );
+
   if (dataAdapterMode === 'mock') {
     const index = serviceCatalogFixtures.findIndex((item) => item.id === params.itemId && item.organizationId === params.organizationId);
     if (index === -1) return null;
     const existing = serviceCatalogFixtures[index];
     previousPrice = existing.defaultPrice;
-    // Price history first (2026-11): if it can't be written, nothing changes.
-    await recordCatalogPriceChange(
-      params.ctx,
-      { itemType: 'service', itemId: existing.id, itemCode: existing.serviceCode, itemName: existing.displayName, previousPrice, newPrice: params.defaultPrice, reason: params.reason, now: nowIso },
-      dataAdapterMode,
-    );
-    updated = { ...existing, defaultPrice: params.defaultPrice, updatedAt: nowIso };
+    const change = await beginChange(existing);
+    updated = { ...existing, defaultPrice: params.defaultPrice, updatedAt: nowIso, ...(change ? { priceChangeId: change.id } : {}) };
     serviceCatalogFixtures[index] = updated;
+    if (change) await settleCatalogPriceChange(change, 'applied', dataAdapterMode);
   } else {
-    const response = await queryWixDataItems<WixServiceCatalogItem>('serviceCatalog', {
-      filter: { organizationId: params.organizationId, beaconServiceCatalogId: params.itemId },
-      paging: { limit: 1 },
-    });
-    const existingItem = response.dataItems[0];
-    const existing = mapWixServiceCatalogItem(existingItem?.data);
-    // Belt and braces: the query is already org-filtered, but the mapped
-    // row's own organizationId is re-checked before any write.
-    if (!existingItem || !existing || existing.organizationId !== params.organizationId || existing.id !== params.itemId) return null;
+    const readRow = async () => {
+      const response = await queryWixDataItems<WixServiceCatalogItem>('serviceCatalog', {
+        filter: { organizationId: params.organizationId, beaconServiceCatalogId: params.itemId },
+        paging: { limit: 1 },
+      });
+      const item = response.dataItems[0];
+      const mapped = mapWixServiceCatalogItem(item?.data);
+      // Belt and braces: the query is already org-filtered, but the mapped
+      // row's own organizationId is re-checked before any write.
+      if (!item || !mapped || mapped.organizationId !== params.organizationId || mapped.id !== params.itemId) return null;
+      return { item, mapped };
+    };
+    const read = await readRow();
+    if (!read) return null;
+    const { item: existingItem, mapped: existing } = read;
     previousPrice = existing.defaultPrice;
-    await recordCatalogPriceChange(
-      params.ctx,
-      { itemType: 'service', itemId: existing.id, itemCode: existing.serviceCode, itemName: existing.displayName, previousPrice, newPrice: params.defaultPrice, reason: params.reason, now: nowIso },
-      dataAdapterMode,
-    );
-    // Price catalog (2026-11): one field-scoped patch (price + updatedAt
-    // only, never a full replace), applied only while the price is still the
-    // one just read — two administrators can't silently overwrite each other.
-    const written = await conditionalPatchWixDataItemFields<WixServiceCatalogItem>(
-      'serviceCatalog',
-      existingItem.id,
-      { defaultPrice: params.defaultPrice, updatedAt: nowIso },
-      { filter: { organizationId: { $eq: params.organizationId }, beaconServiceCatalogId: { $eq: params.itemId }, defaultPrice: { $eq: previousPrice } } },
-    );
-    if (!written.applied) {
-      if (written.status === 428) throw new CatalogPriceConflictError();
-      throw new Error(`Failed to update service catalog item (HTTP ${written.status}).`);
+    const previousMarker = typeof (existingItem.data as { priceChangeId?: unknown }).priceChangeId === 'string' ? (existingItem.data as { priceChangeId: string }).priceChangeId : null;
+    const change = await beginChange(existing);
+
+    // One field-scoped patch (price, updatedAt and the history marker — never
+    // a full replace), applied only while the price (and marker) are still
+    // the ones just read: two administrators can't silently overwrite each
+    // other, and the marker moves in the same single-item write as the price.
+    const fields: Record<string, unknown> = { defaultPrice: params.defaultPrice, updatedAt: nowIso, ...(change ? { priceChangeId: change.id } : {}) };
+    const filter: Record<string, unknown> = {
+      organizationId: { $eq: params.organizationId },
+      beaconServiceCatalogId: { $eq: params.itemId },
+      defaultPrice: { $eq: previousPrice },
+      ...(change ? { priceChangeId: { $eq: previousMarker } } : {}),
+    };
+    let written: Awaited<ReturnType<typeof conditionalPatchWixDataItemFields<WixServiceCatalogItem>>> | null = null;
+    let failure: unknown = null;
+    try {
+      written = await conditionalPatchWixDataItemFields<WixServiceCatalogItem>('serviceCatalog', existingItem.id, fields, { filter });
+    } catch (error) {
+      failure = error;
     }
-    const mapped = mapWixServiceCatalogItem({ ...existingItem.data, ...written.dataItem?.data, defaultPrice: params.defaultPrice, updatedAt: nowIso });
-    if (!mapped) throw new Error('Failed to update service catalog item.');
-    updated = mapped;
+
+    if (written?.applied) {
+      if (change) await settleCatalogPriceChange(change, 'applied', dataAdapterMode);
+      const mapped = mapWixServiceCatalogItem({ ...existingItem.data, ...written.dataItem?.data, ...fields });
+      if (!mapped) throw new Error('Failed to update service catalog item.');
+      updated = mapped;
+    } else if (written && written.status === 428) {
+      // Someone else changed the price first: definitely not applied.
+      if (change) await settleCatalogPriceChange(change, 'conflict', dataAdapterMode);
+      throw new CatalogPriceConflictError();
+    } else {
+      // Outcome unknown (an error or a lost response): the item's marker
+      // says whether the write landed; the history row is settled from it.
+      const applied = change ? await settleFromItem(change, dataAdapterMode) : false;
+      if (!applied) {
+        if (failure) throw failure;
+        throw new Error(`Failed to update service catalog item (HTTP ${written?.status}).`);
+      }
+      const reread = await readRow();
+      if (!reread) throw new Error('Failed to update service catalog item.');
+      updated = reread.mapped;
+    }
   }
 
   try {

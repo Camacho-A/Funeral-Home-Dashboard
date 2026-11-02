@@ -119,7 +119,7 @@ export function buildWixMerchandiseProductData(product: MerchandiseProduct): Wix
     merged object is produced for `updateWixDataItem`'s full-replace. */
 export function applyMerchandiseProductUpdateToWixData(
   existing: WixMerchandiseProductItem,
-  patch: Partial<Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'isActive' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'imageStorageKey' | 'familyVisible' | 'supplierName' | 'supplierId' | 'hasVariants' | 'updatedAt'>>,
+  patch: Partial<Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'isActive' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'imageStorageKey' | 'familyVisible' | 'supplierName' | 'supplierId' | 'hasVariants' | 'updatedAt' | 'priceChangeId'>>,
 ): WixMerchandiseProductItem {
   const next: WixMerchandiseProductItem = { ...existing };
   if (patch.name !== undefined) next.name = patch.name;
@@ -138,5 +138,7 @@ export function applyMerchandiseProductUpdateToWixData(
   if (patch.supplierId !== undefined) next.supplierId = patch.supplierId;
   if (patch.hasVariants !== undefined) next.hasVariants = patch.hasVariants;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
+  // Price history marker (2026-11): moves only with a recorded price change.
+  if (patch.priceChangeId !== undefined) (next as Record<string, unknown>).priceChangeId = patch.priceChangeId;
   return next;
 }

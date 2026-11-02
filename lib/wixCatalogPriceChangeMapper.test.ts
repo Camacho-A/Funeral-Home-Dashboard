@@ -15,6 +15,10 @@ const row: CatalogPriceChange = {
   changedAt: '2026-11-02T00:00:00.000Z',
   reason: null,
   correlationId: 'corr-1',
+  status: 'applied',
+  outcome: 'applied',
+  settledAt: '2026-11-02T00:00:01.000Z',
+  requestKey: null,
 };
 
 describe('catalogPriceChanges mapper (proposed collection, 2026-11)', () => {
@@ -22,10 +26,16 @@ describe('catalogPriceChanges mapper (proposed collection, 2026-11)', () => {
     expect(mapWixCatalogPriceChangeItem(buildWixCatalogPriceChangeData(row))).toEqual(row);
   });
 
+  it('round-trips a pending row with an idempotency key', () => {
+    const pending: CatalogPriceChange = { ...row, status: 'pending', outcome: null, settledAt: null, requestKey: 'req-1' };
+    expect(mapWixCatalogPriceChangeItem(buildWixCatalogPriceChangeData(pending))).toEqual(pending);
+  });
+
   it('drops a malformed row rather than inventing values', () => {
     expect(mapWixCatalogPriceChangeItem({ ...buildWixCatalogPriceChangeData(row), itemType: 'tax' })).toBeNull();
     expect(mapWixCatalogPriceChangeItem({ ...buildWixCatalogPriceChangeData(row), newPrice: -1 })).toBeNull();
     expect(mapWixCatalogPriceChangeItem({ ...buildWixCatalogPriceChangeData(row), newPrice: 10.5 })).toBeNull();
+    expect(mapWixCatalogPriceChangeItem({ ...buildWixCatalogPriceChangeData(row), status: 'done' })).toBeNull();
     expect(mapWixCatalogPriceChangeItem(undefined)).toBeNull();
   });
 });

@@ -83,6 +83,11 @@ export type MerchandiseProduct = {
       independently of variant lifecycle — `merchandiseVariantService` is its
       sole authority and keeps it consistent with actual active-variant state
       (a reconciliation/structural test detects drift). */
+  /** Price history (2026-11): the catalogPriceChanges row whose write set
+      the current price — written in the same single-item write as the
+      price, so it is exact evidence of which recorded change is in effect.
+      Absent on rows priced before price history existed. */
+  priceChangeId?: string | null;
   hasVariants: boolean;
   createdAt: string;
   updatedAt: string;

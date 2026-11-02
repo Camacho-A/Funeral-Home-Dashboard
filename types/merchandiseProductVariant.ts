@@ -54,6 +54,11 @@ export type MerchandiseProductVariant = {
       and Phase 36 procurement/AP must identify the correct operational supplier.
       Must belong to the same organization and be active when newly assigned;
       historical PO/receipt/AP snapshots are unchanged if this later changes. */
+  /** Price history (2026-11): the catalogPriceChanges row whose write set
+      the current price — written in the same single-item write as the
+      price, so it is exact evidence of which recorded change is in effect.
+      Absent on rows priced before price history existed. */
+  priceChangeId?: string | null;
   supplierIdOverride: string | null;
   isActive: boolean;
   createdAt: string;

@@ -1,6 +1,6 @@
-import { recordCatalogPriceChange } from './catalogPriceHistoryService';
+import { beginCatalogPriceChange, CatalogPriceConflictError, settleCatalogPriceChange, settleFromItem } from './catalogPriceChangeJournal';
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, insertWixDataItem, updateWixDataItem, conditionalPatchWixDataItemFields } from '../lib/wixDataApi';
 import {
   mapWixMerchandiseProductVariantItem,
   buildWixMerchandiseProductVariantData,
@@ -106,7 +106,11 @@ async function persistNewVariant(variant: MerchandiseProductVariant, dataAdapter
   return mapWixMerchandiseProductVariantItem(inserted.data)!;
 }
 
-async function persistVariantUpdate(organizationId: string, variantId: string, fullUpdated: MerchandiseProductVariant, patch: Parameters<typeof applyMerchandiseProductVariantUpdateToWixData>[1], dataAdapterMode: DataAdapterMode): Promise<MerchandiseProductVariant> {
+/** `priceGuard` (price history, 2026-11): set when this write changes the
+    price override — the write is then one field-scoped conditional patch,
+    applied only while the override is still the one read (otherwise
+    CatalogPriceConflictError and nothing is written). */
+async function persistVariantUpdate(organizationId: string, variantId: string, fullUpdated: MerchandiseProductVariant, patch: Parameters<typeof applyMerchandiseProductVariantUpdateToWixData>[1], dataAdapterMode: DataAdapterMode, priceGuard?: { previousPrice: number | null }): Promise<MerchandiseProductVariant> {
   if (dataAdapterMode === 'mock') {
     const idx = merchandiseProductVariantFixtures.findIndex((v) => v.organizationId === organizationId && v.id === variantId);
     if (idx === -1) throw new MerchandiseVariantServiceError('Variant not found.', 'not_found');
@@ -116,6 +120,23 @@ async function persistVariantUpdate(organizationId: string, variantId: string, f
   const response = await queryWixDataItems<WixMerchandiseProductVariantItem>('merchandiseProductVariants', { filter: { organizationId, beaconMerchandiseProductVariantId: variantId }, paging: { limit: 1 } });
   const existingItem = response.dataItems[0];
   if (!existingItem) throw new MerchandiseVariantServiceError('Variant not found.', 'not_found');
+  if (priceGuard) {
+    const fields = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const marker = (existingItem.data as { priceChangeId?: unknown }).priceChangeId;
+    const written = await conditionalPatchWixDataItemFields<WixMerchandiseProductVariantItem>('merchandiseProductVariants', existingItem.id, fields, {
+      filter: {
+        organizationId: { $eq: organizationId },
+        beaconMerchandiseProductVariantId: { $eq: variantId },
+        retailPriceOverride: { $eq: priceGuard.previousPrice },
+        priceChangeId: { $eq: typeof marker === 'string' ? marker : null },
+      },
+    });
+    if (!written.applied) {
+      if (written.status === 428) throw new CatalogPriceConflictError();
+      throw new Error(`Failed to update merchandise variant (HTTP ${written.status}).`);
+    }
+    return mapWixMerchandiseProductVariantItem({ ...existingItem.data, ...fields })!;
+  }
   const merged = applyMerchandiseProductVariantUpdateToWixData(existingItem.data, patch);
   const updated = await updateWixDataItem<WixMerchandiseProductVariantItem>('merchandiseProductVariants', existingItem.id, merged);
   return mapWixMerchandiseProductVariantItem(updated.data)!;
@@ -190,7 +211,7 @@ export async function createVariant(input: CreateVariantInput, ctx: ActivityCont
 
 export type UpdateVariantInput = Partial<
   Pick<MerchandiseProductVariant, 'name' | 'retailPriceOverride' | 'costOverride' | 'taxableOverride' | 'supplierIdOverride'>
-> & { optionValues?: Record<string, string> | null; now?: string };
+> & { optionValues?: Record<string, string> | null; now?: string; /** Idempotency key for a price change (price history). */ requestKey?: string | null };
 
 export async function updateVariant(organizationId: string, variantId: string, patch: UpdateVariantInput, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<MerchandiseProductVariant> {
   const existing = await getVariantById(organizationId, variantId, dataAdapterMode);
@@ -220,20 +241,38 @@ export async function updateVariant(organizationId: string, variantId: string, p
     supplierIdOverride: patch.supplierIdOverride !== undefined ? patch.supplierIdOverride : existing.supplierIdOverride,
     updatedAt: nowIso,
   };
-  // Price history (2026-11): a price override change is recorded first
-  // (null = the variant inherits its product's price).
-  if (changedFields.retailPriceOverride) {
-    await recordCatalogPriceChange(
-      ctx,
-      { itemType: 'merchandise_variant', itemId: existing.id, itemCode: existing.sku, itemName: nextName, previousPrice: existing.retailPriceOverride, newPrice: updated.retailPriceOverride, now: nowIso },
-      dataAdapterMode,
-    );
+  // Price history (2026-11): a price override change is recorded `pending`
+  // first (null = the variant inherits its product's price); the row's id
+  // travels with the price in the same single-item write, then the row is
+  // settled (services/catalogPriceChangeJournal.ts).
+  const priceChange = changedFields.retailPriceOverride
+    ? await beginCatalogPriceChange(
+        ctx,
+        { itemType: 'merchandise_variant', itemId: existing.id, itemCode: existing.sku, itemName: nextName, previousPrice: existing.retailPriceOverride, newPrice: updated.retailPriceOverride, requestKey: patch.requestKey, now: nowIso },
+        dataAdapterMode,
+      )
+    : null;
+  if (priceChange) updated.priceChangeId = priceChange.id;
+  let persisted: MerchandiseProductVariant;
+  try {
+    persisted = await persistVariantUpdate(organizationId, variantId, updated, {
+      name: nextName, optionValues: nextOptionValues,
+      retailPriceOverride: updated.retailPriceOverride, costOverride: updated.costOverride,
+      taxableOverride: updated.taxableOverride, supplierIdOverride: updated.supplierIdOverride, updatedAt: nowIso,
+      ...(priceChange ? { priceChangeId: priceChange.id } : {}),
+    }, dataAdapterMode, priceChange ? { previousPrice: existing.retailPriceOverride } : undefined);
+  } catch (error) {
+    if (priceChange && error instanceof CatalogPriceConflictError) {
+      await settleCatalogPriceChange(priceChange, 'conflict', dataAdapterMode);
+      throw error;
+    }
+    // Outcome unknown: the variant's marker says whether the write landed.
+    if (!priceChange || !(await settleFromItem(priceChange, dataAdapterMode))) throw error;
+    const landed = await getVariantById(organizationId, variantId, dataAdapterMode);
+    if (!landed) throw error;
+    persisted = landed;
   }
-  const persisted = await persistVariantUpdate(organizationId, variantId, updated, {
-    name: nextName, optionValues: nextOptionValues,
-    retailPriceOverride: updated.retailPriceOverride, costOverride: updated.costOverride,
-    taxableOverride: updated.taxableOverride, supplierIdOverride: updated.supplierIdOverride, updatedAt: nowIso,
-  }, dataAdapterMode);
+  if (priceChange) await settleCatalogPriceChange(priceChange, 'applied', dataAdapterMode);
   if (Object.keys(changedFields).length > 0) {
     await bestEffortActivity(() => recordMerchandiseVariantUpdated(ctx, variantId, changedFields, dataAdapterMode));
   }

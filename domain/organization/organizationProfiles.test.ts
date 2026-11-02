@@ -56,6 +56,7 @@ describe('organization profile registry', () => {
       certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
       cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },
       sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured' },
+      standingRoleOverrides: [{ roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke', reason: 'Catalog changes are Administrator-only at first (decided 2026-11).' }],
     });
     expect(gus.pinnedFeatures).toEqual(['familyPortalEnabled', 'signatureRequestsEnabled', 'hiddenModules']);
     expect(gus.receiptFooter).toBeNull();

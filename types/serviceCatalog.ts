@@ -71,6 +71,11 @@ export type ServiceCatalogItem = {
   /** Gus Phase 5C-3. Optimistic-concurrency counter, bumped by every catalog
       edit; absent on rows written before 5C-3, which counts as 0. */
   revision?: number;
+  /** Price history (2026-11): the catalogPriceChanges row whose write set
+      the current price — written in the same single-item write as the
+      price, so it is exact evidence of which recorded change is in effect.
+      Absent on rows priced before price history existed. */
+  priceChangeId?: string | null;
   /** Display/calculation ordering — matches the "Live Itemized Summary"
       example order (base, then weight surcharge, then add-ons). */
   sortOrder: number;

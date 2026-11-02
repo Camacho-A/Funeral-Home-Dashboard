@@ -1,6 +1,6 @@
-import { recordCatalogPriceChange } from './catalogPriceHistoryService';
+import { beginCatalogPriceChange, CatalogPriceConflictError, settleCatalogPriceChange, settleFromItem } from './catalogPriceChangeJournal';
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, conditionalPatchWixDataItemFields } from '../lib/wixDataApi';
 import {
   mapWixMerchandiseProductItem,
   buildWixMerchandiseProductData,
@@ -220,7 +220,7 @@ export async function createProduct(
 
 export type UpdateMerchandiseProductInput = Partial<
   Pick<MerchandiseProduct, 'name' | 'description' | 'category' | 'cost' | 'retailPrice' | 'taxable' | 'trackInventory' | 'reorderPoint' | 'defaultLocationId' | 'familyVisible' | 'supplierName' | 'supplierId'>
-> & { now?: string };
+> & { now?: string; /** Idempotency key for a price change (price history). */ requestKey?: string | null };
 
 export async function updateProduct(
   organizationId: string,
@@ -255,14 +255,16 @@ export async function updateProduct(
     }
   }
 
-  // Price history (2026-11): a retail price change is recorded first.
-  if (changedFields.retailPrice) {
-    await recordCatalogPriceChange(
-      ctx,
-      { itemType: 'merchandise_product', itemId: existing.id, itemCode: existing.sku, itemName: patch.name ?? existing.name, previousPrice: existing.retailPrice, newPrice: patch.retailPrice ?? existing.retailPrice, now: nowIso },
-      dataAdapterMode,
-    );
-  }
+  // Price history (2026-11): a retail price change is recorded `pending`
+  // first (services/catalogPriceChangeJournal.ts); the row's id travels with
+  // the price in the same single-item write, then the row is settled.
+  const priceChange = changedFields.retailPrice
+    ? await beginCatalogPriceChange(
+        ctx,
+        { itemType: 'merchandise_product', itemId: existing.id, itemCode: existing.sku, itemName: patch.name ?? existing.name, previousPrice: existing.retailPrice, newPrice: patch.retailPrice ?? existing.retailPrice, requestKey: patch.requestKey, now: nowIso },
+        dataAdapterMode,
+      )
+    : null;
 
   const updated: MerchandiseProduct = {
     ...existing,
@@ -279,9 +281,12 @@ export async function updateProduct(
     supplierName: patch.supplierName !== undefined ? patch.supplierName : existing.supplierName,
     supplierId: patch.supplierId !== undefined ? patch.supplierId : existing.supplierId,
     updatedAt: nowIso,
+    ...(priceChange ? { priceChangeId: priceChange.id } : {}),
   };
 
-  const persisted = await persistProductUpdate(organizationId, productId, updated, {
+  let persisted: MerchandiseProduct;
+  try {
+    persisted = await persistProductUpdate(organizationId, productId, updated, {
     name: patch.name,
     description: patch.description,
     category: patch.category as MerchandiseCategoryKey | undefined,
@@ -295,7 +300,20 @@ export async function updateProduct(
     supplierName: patch.supplierName,
     supplierId: patch.supplierId,
     updatedAt: nowIso,
-  }, dataAdapterMode);
+    ...(priceChange ? { priceChangeId: priceChange.id } : {}),
+  }, dataAdapterMode, priceChange ? { previousPrice: existing.retailPrice } : undefined);
+  } catch (error) {
+    if (priceChange && error instanceof CatalogPriceConflictError) {
+      await settleCatalogPriceChange(priceChange, 'conflict', dataAdapterMode);
+      throw error;
+    }
+    // Outcome unknown: the product's marker says whether the write landed.
+    if (!priceChange || !(await settleFromItem(priceChange, dataAdapterMode))) throw error;
+    const landed = await getProductById(organizationId, productId, dataAdapterMode);
+    if (!landed) throw error;
+    persisted = landed;
+  }
+  if (priceChange) await settleCatalogPriceChange(priceChange, 'applied', dataAdapterMode);
 
   if (Object.keys(changedFields).length > 0) {
     await bestEffortActivity(() => recordMerchandiseProductUpdated(ctx, productId, changedFields, dataAdapterMode));
@@ -377,6 +395,11 @@ async function persistProductUpdate(
   fullUpdated: MerchandiseProduct,
   patch: Parameters<typeof applyMerchandiseProductUpdateToWixData>[1],
   dataAdapterMode: DataAdapterMode,
+  /** Price history (2026-11): set when this write changes the price. The
+      write is then one field-scoped conditional patch (never a full
+      replace), applied only while the price is still the one read —
+      otherwise CatalogPriceConflictError and nothing is written. */
+  priceGuard?: { previousPrice: number },
 ): Promise<MerchandiseProduct> {
   if (dataAdapterMode === 'mock') {
     const index = merchandiseProductFixtures.findIndex((p) => p.organizationId === organizationId && p.id === productId);
@@ -390,6 +413,25 @@ async function persistProductUpdate(
   });
   const existingItem = response.dataItems[0];
   if (!existingItem) throw new MerchandiseServiceError('Product not found.', 'not_found');
+  if (priceGuard) {
+    const fields = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const marker = (existingItem.data as { priceChangeId?: unknown }).priceChangeId;
+    const written = await conditionalPatchWixDataItemFields<WixMerchandiseProductItem>('merchandiseProducts', existingItem.id, fields, {
+      filter: {
+        organizationId: { $eq: organizationId },
+        beaconMerchandiseProductId: { $eq: productId },
+        retailPrice: { $eq: priceGuard.previousPrice },
+        priceChangeId: { $eq: typeof marker === 'string' ? marker : null },
+      },
+    });
+    if (!written.applied) {
+      if (written.status === 428) throw new CatalogPriceConflictError();
+      throw new Error(`Failed to update merchandise product (HTTP ${written.status}).`);
+    }
+    const mappedPatched = mapWixMerchandiseProductItem({ ...existingItem.data, ...fields });
+    if (!mappedPatched) throw new MerchandiseServiceError('Failed to update merchandise product.', 'invalid_input');
+    return mappedPatched;
+  }
   const merged = applyMerchandiseProductUpdateToWixData(existingItem.data, patch);
   const updated = await updateWixDataItem<WixMerchandiseProductItem>('merchandiseProducts', existingItem.id, merged);
   const mapped = mapWixMerchandiseProductItem(updated.data);

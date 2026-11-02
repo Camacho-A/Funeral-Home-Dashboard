@@ -1,6 +1,7 @@
 import type { Organization } from '../../types/organization';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { HideableModuleKey } from './moduleVisibility';
+import type { PermissionKey } from '../rbac/permissionCatalog';
 import {
   DEFAULT_MINIMUM_PROCESSING_DAYS,
   DEFAULT_PICKUP_WEEKDAYS,
@@ -56,6 +57,9 @@ export const MANORS_ORGANIZATION_ID = 'managed-cremations';
 
 /** Gus Camacho Jr. Funeral Home. Case prefix `M`. */
 export const GUS_CAMACHO_ORGANIZATION_ID = 'gus-camacho-jr';
+
+/** A role override an organization's profile requires (2026-11). */
+export type StandingRoleOverride = { roleKey: string; permissionKey: PermissionKey; action: 'grant' | 'revoke'; reason: string };
 
 // ---------------------------------------------------------------------------
 // Capability config shapes (owned here; re-exported by each capability
@@ -289,6 +293,13 @@ export type OrganizationFeaturePreferences = {
       Platform default: on. Manors: off until approved — its edits keep
       re-pricing every line at the current price, as today. */
   orderLinePriceLock: boolean;
+  /** Role overrides this organization's configuration requires (2026-11),
+      written at onboarding by services/roleService.ts#seedDefaultRoles
+      (before missing default grants are filled in) and present in the
+      fictional data. Only missing overrides are ever created; one an
+      administrator later changed is left as they set it. Platform
+      default: none. */
+  standingRoleOverrides: readonly StandingRoleOverride[];
   /** Whether `hiddenModules` is also enforced SERVER-SIDE (pages + APIs
       answer 404), not just removed from navigation
       (lib/auth/hiddenModuleGuard.ts). Platform default: false — the
@@ -395,6 +406,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   priceCatalogManagement: true,
   pricingPermissionModel: 'granular',
   orderLinePriceLock: true,
+  standingRoleOverrides: [],
   enforceHiddenModulesServerSide: false,
   workflowApprovalRequired: false,
 });
@@ -595,6 +607,13 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // Prepared and reviewed in SOLIS, never emailed until Gus's recipients,
     // Outlook mailbox and authorization document source are set up.
     sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured' },
+    // Catalog changes are Administrator-only to begin with (decided
+    // 2026-11): its Manager keeps viewing the catalog and custom order
+    // items. Prices, deactivation and repricing are Administrator-only by
+    // the platform defaults already.
+    standingRoleOverrides: [
+      { roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke', reason: 'Catalog changes are Administrator-only at first (decided 2026-11).' },
+    ],
   },
   // Decided by the funeral home: no Family Portal or e-signatures, and these
   // modules hidden — an Organization record value can't switch them back on.

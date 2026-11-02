@@ -206,7 +206,16 @@ const PLATFORM_ADMIN = 'platform-admin-1';
 const LIVE_GAP = [
   { roleKey: 'administrator', permissionKey: 'caseNumber.manage' },
   { roleKey: 'funeralDirector', permissionKey: 'caseNumber.manage' },
+  // The 2026-11 pricing keys: absent from the live shared rows (read
+  // 2026-11-01) and deliberately never added there.
+  { roleKey: 'administrator', permissionKey: 'serviceCatalog.price' },
+  { roleKey: 'administrator', permissionKey: 'serviceCatalog.deactivate' },
+  { roleKey: 'administrator', permissionKey: 'caseOrder.customItems' },
+  { roleKey: 'administrator', permissionKey: 'caseOrder.reprice' },
+  { roleKey: 'manager', permissionKey: 'caseOrder.customItems' },
 ] as const;
+/** Gus's standing override (its profile): catalog changes are Administrator-only. */
+const GUS_STANDING = [{ roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke' }] as const;
 
 function put(collectionName: string, id: string, data: Row) {
   let c = fake.store.get(collectionName);
@@ -364,14 +373,18 @@ describe('full onboarding of gus-camacho-jr against a shared backend holding Man
     expect([...manorsAdminAfter].sort()).toEqual([...manorsAdminBefore].sort());
     expect([...manorsFdAfter].sort()).toEqual([...manorsFdBefore].sort());
     expect(manorsAdminAfter.has('caseNumber.manage')).toBe(false);
+    for (const key of ['serviceCatalog.price', 'serviceCatalog.deactivate', 'caseOrder.customItems', 'caseOrder.reprice'] as const) {
+      expect(manorsAdminAfter.has(key), key).toBe(false);
+    }
 
     for (const def of DEFAULT_ROLE_DEFINITIONS) {
       const gus = await resolvePermissions({ identityId: 'x', organizationId: GUS, roleKey: def.key }, 'wix');
-      expect([...gus].sort(), def.key).toEqual([...def.permissions].sort());
+      const revoked = new Set<string>(GUS_STANDING.filter((s) => s.roleKey === def.key).map((s) => s.permissionKey));
+      expect([...gus].sort(), def.key).toEqual(def.permissions.filter((p) => !revoked.has(p)).sort());
     }
     const overrides = [...(fake.store.get('organizationRolePermissionOverrides')?.values() ?? [])].filter((o) => o.organizationId === GUS);
     expect(overrides.map((o) => `${o.roleKey}:${o.permissionKey}:${o.action}`).sort()).toEqual(
-      LIVE_GAP.map((g) => `${g.roleKey}:${g.permissionKey}:grant`).sort(),
+      [...LIVE_GAP.map((g) => `${g.roleKey}:${g.permissionKey}:grant`), ...GUS_STANDING.map((s) => `${s.roleKey}:${s.permissionKey}:${s.action}`)].sort(),
     );
   });
 

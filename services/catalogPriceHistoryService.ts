@@ -3,22 +3,19 @@ import type { DataAdapterMode } from '../lib/env';
 import type { CatalogPriceChange, CatalogPriceItemType } from '../types/catalogPriceChange';
 import type { ActivityContext } from './activityService';
 import { catalogPriceChangeFixtures } from './__mocks__/pricingFixtures';
-import { insertWixDataItem, queryAllWixDataItems } from '../lib/wixDataApi';
-import { buildWixCatalogPriceChangeData, mapWixCatalogPriceChangeItem, type WixCatalogPriceChangeItem } from '../lib/wixCatalogPriceChangeMapper';
+import { listItemPriceChanges } from './catalogPriceChangeJournal';
+
+export { isCatalogPriceHistoryLive } from './catalogPriceChangeJournal';
 
 /**
- * Price catalog (2026-11). The append-only price history. Written BEFORE the
- * price itself changes (the same "audit first" rule the catalog's activity
- * events follow): if the history can't be written, the price isn't changed.
- *
- * Live Wix: the `catalogPriceChanges` collection does not exist yet — it is
- * part of the schema proposal awaiting approval (docs/PRICE_CATALOG.md).
- * Until it is created and this switch is turned on, live price changes are
- * recorded by their activity event only (which also carries the previous
- * and new price); nothing here touches Wix.
+ * Price catalog (2026-11). Price history reads, and the record of a price
+ * set by a catalog write that only exists on fictional (mock) data — the
+ * administrator catalog's item create/edit (services/priceCatalogService.ts,
+ * whose live writes answer 501 until the schema is approved). Those writes
+ * are one in-memory step, so their change is recorded already `applied`.
+ * Every write that can reach live Wix goes through the pending → applied
+ * journal instead (services/catalogPriceChangeJournal.ts).
  */
-export const CATALOG_PRICE_HISTORY_LIVE = false;
-
 export async function recordCatalogPriceChange(
   ctx: ActivityContext,
   change: {
@@ -33,9 +30,13 @@ export async function recordCatalogPriceChange(
   },
   dataAdapterMode: DataAdapterMode,
 ): Promise<CatalogPriceChange | null> {
+  if (dataAdapterMode !== 'mock') {
+    throw new Error('recordCatalogPriceChange is for fictional-data catalog writes only; live price writes use the price change journal.');
+  }
   if (change.previousPrice === change.newPrice) return null;
+  const changedAt = change.now ?? new Date().toISOString();
   const row: CatalogPriceChange = {
-    id: crypto.randomUUID(),
+    id: `cpc-${crypto.randomUUID()}`,
     organizationId: ctx.organizationId,
     itemType: change.itemType,
     itemId: change.itemId,
@@ -44,38 +45,24 @@ export async function recordCatalogPriceChange(
     previousPrice: change.previousPrice,
     newPrice: change.newPrice,
     changedBy: ctx.actorIdentityId ?? null,
-    changedAt: change.now ?? new Date().toISOString(),
+    changedAt,
     reason: change.reason?.trim() ? change.reason.trim() : null,
     correlationId: ctx.correlationId,
+    status: 'applied',
+    outcome: 'applied',
+    settledAt: changedAt,
+    requestKey: null,
   };
-  if (dataAdapterMode === 'mock') {
-    catalogPriceChangeFixtures.push(row);
-    return row;
-  }
-  if (!CATALOG_PRICE_HISTORY_LIVE) return null;
-  await insertWixDataItem<WixCatalogPriceChangeItem>('catalogPriceChanges', buildWixCatalogPriceChangeData(row), row.id);
+  catalogPriceChangeFixtures.push(row);
   return row;
 }
 
-/** One item's price history, newest first — organization-scoped. */
+/** One item's price history, newest first — organization-scoped. Includes
+    each change's status, so a change that was not applied is shown as such. */
 export async function listCatalogPriceHistory(
   organizationId: string,
   item: { itemType: CatalogPriceItemType; itemId: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<CatalogPriceChange[]> {
-  let rows: CatalogPriceChange[];
-  if (dataAdapterMode === 'mock') {
-    rows = catalogPriceChangeFixtures.filter((r) => r.organizationId === organizationId && r.itemType === item.itemType && r.itemId === item.itemId);
-  } else {
-    if (!CATALOG_PRICE_HISTORY_LIVE) return [];
-    const items = await queryAllWixDataItems<WixCatalogPriceChangeItem>('catalogPriceChanges', {
-      organizationId,
-      itemType: item.itemType,
-      itemId: item.itemId,
-    });
-    rows = items
-      .map((i) => mapWixCatalogPriceChangeItem(i.data))
-      .filter((r): r is CatalogPriceChange => r !== null && r.organizationId === organizationId);
-  }
-  return [...rows].sort((a, b) => (a.changedAt < b.changedAt ? 1 : a.changedAt > b.changedAt ? -1 : 0));
+  return listItemPriceChanges(organizationId, item, dataAdapterMode);
 }

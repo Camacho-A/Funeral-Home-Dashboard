@@ -95,7 +95,7 @@ export function applyMerchandiseProductVariantUpdateToWixData(
   patch: Partial<
     Pick<
       MerchandiseProductVariant,
-      'name' | 'optionValues' | 'retailPriceOverride' | 'costOverride' | 'taxableOverride' | 'supplierIdOverride' | 'isActive' | 'updatedAt'
+      'name' | 'optionValues' | 'retailPriceOverride' | 'costOverride' | 'taxableOverride' | 'supplierIdOverride' | 'isActive' | 'updatedAt' | 'priceChangeId'
     >
   >,
 ): WixMerchandiseProductVariantItem {
@@ -108,5 +108,7 @@ export function applyMerchandiseProductVariantUpdateToWixData(
   if (patch.supplierIdOverride !== undefined) next.supplierIdOverride = patch.supplierIdOverride;
   if (patch.isActive !== undefined) next.isActive = patch.isActive;
   if (patch.updatedAt !== undefined) next.updatedAt = patch.updatedAt;
+  // Price history marker (2026-11): moves only with a recorded price change.
+  if (patch.priceChangeId !== undefined) (next as Record<string, unknown>).priceChangeId = patch.priceChangeId;
   return next;
 }
