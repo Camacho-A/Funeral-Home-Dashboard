@@ -88,7 +88,7 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       label: 'Services & Pricing',
       description: 'Set the price of each service your organization offers.',
       href: '/settings/services-pricing',
-      visible: permissions.includes('serviceCatalog.edit'),
+      visible: getRegisteredOrganizationProfile(organizationId).features.serviceCatalogPriceEditing && permissions.includes('serviceCatalog.edit'),
     },
     {
       key: 'workflow-templates',

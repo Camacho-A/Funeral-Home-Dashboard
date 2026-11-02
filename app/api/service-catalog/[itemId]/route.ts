@@ -1,3 +1,4 @@
+import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
@@ -43,6 +44,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ it
   const authResult = await requireAuthorizedOrganization(b.organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId, userId, role } = authResult.context;
+  // Only where the organization edits its prices in SOLIS (not Manors).
+  if (!getRegisteredOrganizationProfile(organizationId).features.serviceCatalogPriceEditing) {
+    return NextResponse.json({ error: 'Not found.' }, { status: 404 });
+  }
 
   const dataAdapterMode = getDataAdapterMode();
   if (!(await canEditServiceCatalog({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {

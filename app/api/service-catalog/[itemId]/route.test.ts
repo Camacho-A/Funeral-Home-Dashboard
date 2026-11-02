@@ -16,6 +16,21 @@ vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
 }));
 
+// These cases exercise the route itself on the default mock organization
+// (Manors' fixtures), so price editing is switched on for it here; the real
+// Manors profile keeps it off (see route.manors.test.ts).
+const priceEditing = vi.hoisted(() => ({ on: true }));
+vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/domain/organization/organizationProfiles')>();
+  return {
+    ...actual,
+    getRegisteredOrganizationProfile: (organizationId: string) => {
+      const profile = actual.getRegisteredOrganizationProfile(organizationId);
+      return { ...profile, features: { ...profile.features, serviceCatalogPriceEditing: priceEditing.on } };
+    },
+  };
+});
+
 const { PATCH } = await import('./route');
 
 const SAME_ORIGIN_HEADERS = { origin: 'http://localhost', host: 'localhost' };
