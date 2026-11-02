@@ -48,12 +48,20 @@ const BASE_LINE_ITEMS: CaseOrderLineItem[] = [
 
 type Captured = { method: string; body: Record<string, unknown> };
 
-function renderModal(options: { order: CaseOrder | null; lineItems?: CaseOrderLineItem[] }) {
+/** Gus Phase 5C-3 (finalization): custom items are an Administrator/Manager
+    capability (serviceCatalog.edit). These tests run as such a user unless
+    `permissions` says otherwise. */
+const MANAGER_PERMISSIONS = ['caseOrder.read', 'caseOrder.update', 'serviceCatalog.read', 'serviceCatalog.edit'];
+
+function renderModal(options: { order: CaseOrder | null; lineItems?: CaseOrderLineItem[]; permissions?: string[] }) {
   const captured: Captured[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/rbac/my-permissions')) {
+        return Promise.resolve({ ok: true, json: async () => ({ identityId: 'staff-1', roleKey: 'manager', permissions: options.permissions ?? MANAGER_PERMISSIONS }) });
+      }
       if (url.includes('/service-catalog')) {
         return Promise.resolve({ ok: true, json: async () => ({ catalog: serviceCatalogFixtures }) });
       }
@@ -235,5 +243,19 @@ describe('EditServicesModal — non-destructive order versioning (2026-10)', () 
     await addCustomItem('Extra memorial folder', '45.50');
     fireEvent.click(saveButton());
     expect(await screen.findByText(/changed by someone else while you were editing\. Nothing was saved\./)).toBeTruthy();
+  });
+});
+
+describe('EditServicesModal — Manors pricing is unchanged (legacy model)', () => {
+  it('previews an existing order at today\'s catalog price, as edits always have', async () => {
+    // Saved at $800.00; the catalog row now says $890.00 — Manors re-prices.
+    const saved = [{ ...BASE_LINE_ITEMS[0], unitPrice: 80_000, lineTotal: 80_000 }];
+    renderModal({ order: { ...ORDER, subtotal: 80_000, total: 80_000, balanceDue: 80_000 }, lineItems: saved });
+    expect(await screen.findAllByText('$890.00')).not.toHaveLength(0);
+  });
+
+  it('anyone who may edit the order (caseOrder.update) may add a custom item', async () => {
+    renderModal({ order: ORDER, permissions: ['caseOrder.read', 'caseOrder.update', 'serviceCatalog.read'] });
+    expect(await screen.findByLabelText('Custom item description')).toBeInTheDocument();
   });
 });

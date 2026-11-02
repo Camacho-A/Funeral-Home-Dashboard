@@ -1,3 +1,4 @@
+import { standardPriceRefusal } from '@/lib/priceCatalogRoutes';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -47,6 +48,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   const patch: Record<string, unknown> = {};
   for (const field of ['name', 'description', 'category', 'cost', 'retailPrice', 'taxable', 'trackInventory', 'reorderPoint', 'defaultLocationId', 'familyVisible', 'supplierName']) {
     if (body[field] !== undefined) patch[field] = body[field];
+  }
+  if ('retailPrice' in patch) {
+    const priceRefusal = await standardPriceRefusal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode);
+    if (priceRefusal) return priceRefusal;
   }
   try {
     const product = await updateProduct(organizationId, productId, patch, ctx, dataAdapterMode);

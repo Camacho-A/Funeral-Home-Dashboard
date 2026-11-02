@@ -132,7 +132,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
       return NextResponse.json({ error: error.message, ...(error.conflict ? { reason: 'order_conflict' } : {}), needsRepair: !error.compensated }, { status: error.conflict ? 409 : 503 });
     }
     // 2026-10: a carried-forward service whose price has since been cleared
-    // (Settings › Services & Pricing) — the order can't be re-saved until
+    // (Settings › Price Catalog) — the order can't be re-saved until
     // it's priced again. Never persisted at an invented amount.
     if (error instanceof UnpricedCatalogItemError) return NextResponse.json({ error: error.message }, { status: 422 });
     const operationResponse = caseOrderOperationErrorResponse(error);

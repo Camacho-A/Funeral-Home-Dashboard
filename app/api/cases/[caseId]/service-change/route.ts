@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { canEditCase, canEditCaseOrder } from '@/services/authorizationPolicyService';
+import { canEditCase, canEditCaseOrder, canEditCustomOrderItems } from '@/services/authorizationPolicyService';
 import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
 import { changeCaseService } from '@/services/caseServiceChangeService';
 import { CASE_REVISION_REQUIRED_MESSAGE, CASE_REVISION_REQUIRED_REASON, parseExpectedRevisionValue } from '@/domain/cases/caseRevisionConflict';
@@ -111,6 +111,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
         confirm,
         idempotencyKey: typeof b.idempotencyKey === 'string' ? b.idempotencyKey.trim() : null,
         ...(expectedRevision !== undefined ? { expectedRevision } : {}),
+        // Gus Phase 5C-3 (finalization): resolved only when the request names custom items at all.
+        canEditCustomItems: 'customItems' in (b.selections as Record<string, unknown>) ? await canEditCustomOrderItems(caller, adapter) : false,
       },
       adapter,
     );

@@ -1,3 +1,4 @@
+import { standardPriceRefusal } from '@/lib/priceCatalogRoutes';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -48,6 +49,10 @@ export async function POST(request: Request) {
   if (!(await canManageMerchandise({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage merchandise for this organization.' }, { status: 403 });
   }
+
+  // Gus Phase 5C-3 (finalization): a new product carries a retail price.
+  const priceRefusal = await standardPriceRefusal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode);
+  if (priceRefusal) return priceRefusal;
 
   const ctx = { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() };
   try {

@@ -6,7 +6,7 @@ import { activityEventFixtures } from '@/services/__mocks__/activityEventFixture
 
 /**
  * 2026-10 (Gus Camacho Jr. service catalog). PATCH /api/service-catalog/[itemId]
- * — Settings › Services & Pricing price editing: auth, permission
+ * — Settings › Price Catalog price editing: auth, permission
  * (`serviceCatalog.edit`), organization scoping, validation, and mock
  * persistence.
  */
@@ -16,20 +16,11 @@ vi.mock('@/lib/auth/session', () => ({
   getSession: async () => mockSession,
 }));
 
-// These cases exercise the route itself on the default mock organization
-// (Manors' fixtures), so price editing is switched on for it here; the real
-// Manors profile keeps it off (see route.manors.test.ts).
-const priceEditing = vi.hoisted(() => ({ on: true }));
-vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/domain/organization/organizationProfiles')>();
-  return {
-    ...actual,
-    getRegisteredOrganizationProfile: (organizationId: string) => {
-      const profile = actual.getRegisteredOrganizationProfile(organizationId);
-      return { ...profile, features: { ...profile.features, serviceCatalogPriceEditing: priceEditing.on } };
-    },
-  };
-});
+// The default fixture organization on the platform pricing defaults
+// (granular); the real Manors profile is covered by route.manors.test.ts.
+vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) =>
+  (await import('@/lib/testing/granularPricingProfile')).withGranularPricing(await importOriginal(), (await import('@/services/__mocks__/organizationIds')).DEFAULT_ORGANIZATION_ID),
+);
 
 const { PATCH } = await import('./route');
 

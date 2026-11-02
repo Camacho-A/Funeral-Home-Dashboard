@@ -7,7 +7,7 @@ import { listProductsForOrganization } from './merchandiseService';
 import { listCashAdvanceItems, sumCashAdvances } from './cashAdvanceService';
 import { getSupplementalConfig } from './billingConfigService';
 import { createOrgDocument } from './orgDocumentService';
-import { classifyServiceItem } from '../domain/billing/ftcClassification';
+import { classifyServiceItem, classifyServiceLine } from '../domain/billing/ftcClassification';
 import { FTC_CLASS, FTC_DISCLOSURE_VERSION, disclosuresFor, type ProviderOfferings } from '../domain/billing/ftcComplianceRegistry';
 import { renderStatementHtml } from '../domain/billing/renderStatementHtml';
 import { renderReceiptOfPaymentHtml } from '../domain/billing/renderReceiptOfPaymentHtml';
@@ -115,7 +115,9 @@ export async function generateStatement(
 
   const [lineItems, catalog, products, paidToDate, cashAdvances, supplemental] = await Promise.all([
     listLineItemsForOrder(org, order.id, dataAdapterMode),
-    getServiceCatalog(org, dataAdapterMode),
+    // Gus Phase 5C-3: inactive rows too — a line keeps its classification
+    // after its catalog item is deactivated.
+    getServiceCatalog(org, dataAdapterMode, { includeInactive: true }),
     listProductsForOrganization(org, dataAdapterMode, { includeInactive: true }),
     getPaidAmountForCase(org, params.caseId, dataAdapterMode),
     listCashAdvanceItems(org, params.caseId, dataAdapterMode),
@@ -130,8 +132,7 @@ export async function generateStatement(
     if (line.lineKind === 'merchandise') {
       ftcClass = FTC_CLASS.GOODS_AND_SERVICES;
     } else if (line.lineKind === 'service') {
-      const item = catalogByCode.get(line.serviceCode);
-      ftcClass = item ? classifyServiceItem(item) : FTC_CLASS.UNCLASSIFIED;
+      ftcClass = classifyServiceLine(line, catalogByCode);
     } else {
       ftcClass = FTC_CLASS.GOODS_AND_SERVICES; // reserved kinds route to goods (never cash advance / basic fee)
     }
@@ -213,7 +214,9 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
   const order = src.caseOrder;
   const [lineItems, catalog, products, paidToDate, cashAdvances, supplemental] = await Promise.all([
     listLineItemsForOrder(org, order.id, dataAdapterMode),
-    getServiceCatalog(org, dataAdapterMode),
+    // Gus Phase 5C-3: inactive rows too — a line keeps its classification
+    // after its catalog item is deactivated.
+    getServiceCatalog(org, dataAdapterMode, { includeInactive: true }),
     listProductsForOrganization(org, dataAdapterMode, { includeInactive: true }),
     getPaidAmountForCase(org, caseId, dataAdapterMode),
     listCashAdvanceItems(org, caseId, dataAdapterMode),
@@ -227,7 +230,7 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
       line.lineKind === 'merchandise'
         ? FTC_CLASS.GOODS_AND_SERVICES
         : line.lineKind === 'service'
-          ? (catalogByCode.get(line.serviceCode) ? classifyServiceItem(catalogByCode.get(line.serviceCode)!) : FTC_CLASS.UNCLASSIFIED)
+          ? classifyServiceLine(line, catalogByCode)
           : FTC_CLASS.GOODS_AND_SERVICES;
     return {
       ftcClass,
@@ -415,7 +418,7 @@ export async function generateGeneralPriceList(
   // 2026-10: a service whose price isn't set yet (`defaultPrice: null`) is
   // omitted from the General Price List entirely — a GPL line must state a
   // real price, never "$0.00" or a placeholder. Regenerate the GPL once
-  // the price is set in Settings › Services & Pricing.
+  // the price is set in Settings › Price Catalog.
   const serviceLines: GplServiceLine[] = activeServices.flatMap((s) => {
     if (s.defaultPrice === null) return [];
     const ftcClass = classifyServiceItem(s);

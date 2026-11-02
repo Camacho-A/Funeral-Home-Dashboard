@@ -1,3 +1,5 @@
+import type { CatalogItemSelection } from './serviceCatalog';
+
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). The
  * authoritative, itemized pricing record for one case — see
@@ -179,6 +181,11 @@ export type ServiceSelections = {
   keepsakeTransferQuantity: number;
   urnTransfer: boolean;
   shipping: boolean;
+  /** Gus Phase 5C-3. Administrator-added price catalog items on this order
+      (`category: 'catalog_item'` rows), each with a quantity. Absent = none
+      — the only state for an organization that has never added one
+      (Manor's Cremation's selections are unchanged by this field). */
+  catalogItems?: CatalogItemSelection[];
 };
 
 /**

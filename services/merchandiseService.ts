@@ -1,3 +1,4 @@
+import { recordCatalogPriceChange } from './catalogPriceHistoryService';
 import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
@@ -252,6 +253,15 @@ export async function updateProduct(
     if (patch[field] !== undefined && patch[field] !== (existing as Record<string, unknown>)[field]) {
       changedFields[field] = { previous: (existing as Record<string, unknown>)[field], next: patch[field] };
     }
+  }
+
+  // Price history (2026-11): a retail price change is recorded first.
+  if (changedFields.retailPrice) {
+    await recordCatalogPriceChange(
+      ctx,
+      { itemType: 'merchandise_product', itemId: existing.id, itemCode: existing.sku, itemName: patch.name ?? existing.name, previousPrice: existing.retailPrice, newPrice: patch.retailPrice ?? existing.retailPrice, now: nowIso },
+      dataAdapterMode,
+    );
   }
 
   const updated: MerchandiseProduct = {

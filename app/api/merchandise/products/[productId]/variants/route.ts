@@ -1,3 +1,4 @@
+import { standardPriceRefusal } from '@/lib/priceCatalogRoutes';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -44,6 +45,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
   const dataAdapterMode = getDataAdapterMode();
   if (!(await canManageMerchandise({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage merchandise.' }, { status: 403 });
+  }
+  if (body.retailPriceOverride !== undefined && body.retailPriceOverride !== null) {
+    const priceRefusal = await standardPriceRefusal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode);
+    if (priceRefusal) return priceRefusal;
   }
   const ctx = { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() };
   try {

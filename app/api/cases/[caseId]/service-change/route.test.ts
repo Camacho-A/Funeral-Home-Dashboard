@@ -159,7 +159,7 @@ describe('POST /api/cases/[caseId]/service-change — preview', () => {
     expect(response.status).toBe(422);
     const body = await response.json();
     expect(body).toMatchObject({ reason: 'unpriced', unpricedItems: [{ serviceCode: 'CREMATION_WITH_VIEWING' }] });
-    expect(body.error).toMatch(/Settings › Services & Pricing/);
+    expect(body.error).toMatch(/Settings › Price Catalog/);
     expect(snapshotWrites()).toEqual(before);
   });
 });

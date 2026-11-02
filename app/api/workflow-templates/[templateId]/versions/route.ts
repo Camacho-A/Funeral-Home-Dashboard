@@ -17,7 +17,7 @@ import { currentActorDisplayName } from '@/lib/auth/currentActorDisplayName';
 import { canPublishWorkflow } from '@/services/authorizationPolicyService';
 import { getServiceCatalog } from '@/services/pricingService';
 import { recordWorkflowTemplateVersionSaved } from '@/services/activityService';
-import { serviceTypeItems } from '@/domain/pricing/calculateOrder';
+import { SERVICE_TYPE_CATEGORY } from '@/domain/pricing/serviceCodes';
 import { isWorkflowApprovalRequired, isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
 import { parseCompletionPolicy } from '@/domain/workflow/completionPolicy';
 import type { WorkflowCompletionPolicy, WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflowTemplate';
@@ -134,7 +134,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
   let activeServiceTypeCodes: string[] | undefined;
   if (serviceTypeCodes) {
     try {
-      activeServiceTypeCodes = serviceTypeItems(await getServiceCatalog(organizationId, adapter)).map((item) => item.serviceCode);
+      // Gus Phase 5C-3 (finalization): a draft may keep a service type an
+      // administrator has since deactivated (inactive rows included here) —
+      // deactivating a service never makes its workflow unsavable. Approval
+      // still requires an active service type (the approve route).
+      activeServiceTypeCodes = (await getServiceCatalog(organizationId, adapter, { includeInactive: true }))
+        .filter((item) => item.category === SERVICE_TYPE_CATEGORY)
+        .map((item) => item.serviceCode);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
       return NextResponse.json({ error: message }, { status: 503 });

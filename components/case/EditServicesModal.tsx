@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { ServicesAndChargesSelector, type ServicesAndChargesSelectorHandle } from '@/components/case/ServicesAndChargesSelector';
-import { useServiceCatalog } from '@/hooks/useServiceCatalog';
+import { useCatalogCategories, useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useCreateCaseOrder, useEditCaseOrder } from '@/hooks/useCaseOrder';
+import { isOrderLinePriceLocked, pricingPermissionFor } from '@/domain/pricing/pricingPermissions';
 import { useOrganization } from '@/hooks/useOrganization';
-import { selectionsFromLineItems, customItemSelectionsFromLineItems, calculateOrderTotals } from '@/domain/pricing/calculateOrder';
+import { useMyPermissions } from '@/hooks/useRbac';
+import { selectionsFromLineItems, customItemSelectionsFromLineItems, calculateOrderTotals, catalogWithOrderSnapshots } from '@/domain/pricing/calculateOrder';
 import { additionalItemsLabel, usesAdditionalItemsTerminology, ADDITIONAL_ITEMS_SUPPORTING_TEXT } from '@/domain/organization/caseOrderTerminology';
 import type { CaseOrder, CaseOrderLineItem, ServiceSelections, CustomLineItemSelection } from '@/types/caseOrder';
 import { isCaseOrderChangedError } from '@/services/pricingClient';
@@ -60,7 +62,21 @@ export function EditServicesModal({
   onClose: () => void;
 }) {
   const { organizationId } = useOrganization();
-  const { data: catalog = [] } = useServiceCatalog();
+  // Gus Phase 5C-3 (finalization): custom (one-off, staff-priced) items are
+  // added, changed or removed only by an Administrator or Manager
+  // (serviceCatalog.edit); everyone else sees them read-only. The server
+  // enforces this on every order write.
+  const { data: myPermissions } = useMyPermissions(organizationId);
+  // Custom items: the organization's pricing permission model decides
+  // (caseOrder.customItems, or caseOrder.update on the legacy model).
+  const customItemsKey = pricingPermissionFor(organizationId, 'order.customItems');
+  const canEditCustomItems = customItemsKey !== null && (myPermissions?.permissions ?? []).includes(customItemsKey);
+  const { data: liveCatalog = [] } = useServiceCatalog();
+  const { data: categories } = useCatalogCategories();
+  // Gus Phase 5C-3: an existing order's lines keep the prices they were
+  // saved with — the preview prices against the same snapshot-aware
+  // catalog the server recalculates with.
+  const catalog = useMemo(() => (order && isOrderLinePriceLocked(organizationId) ? catalogWithOrderSnapshots(liveCatalog, lineItems) : liveCatalog), [order, organizationId, liveCatalog, lineItems]);
   const createOrder = useCreateCaseOrder(caseId);
   const editOrder = useEditCaseOrder(caseId);
 
@@ -230,9 +246,10 @@ export function EditServicesModal({
         <ServicesAndChargesSelector
           ref={selectorRef}
           catalog={catalog}
+          categories={categories}
           selections={selections}
           onChange={setSelections}
-          {...(order ? { customItems, onChangeCustomItems: setCustomItems } : {})}
+          {...(order ? { customItems, ...(canEditCustomItems ? { onChangeCustomItems: setCustomItems } : {}) } : {})}
         />
       )}
 

@@ -1,77 +1,76 @@
-import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import { getDataAdapterMode } from '@/lib/env';
-import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { requireSameOrigin } from '@/lib/auth/csrf';
-import { canEditServiceCatalog } from '@/services/authorizationPolicyService';
-import { isValidServiceCatalogPrice, updateServiceCatalogItemPrice } from '@/services/pricingService';
+import { CatalogPriceConflictError, isValidServiceCatalogPrice, updateServiceCatalogItemPrice } from '@/services/pricingService';
+import { isPriceOnlyChange, updateCatalogItem, PriceCatalogUnavailableError } from '@/services/priceCatalogService';
+import { authorizePriceCatalogWrite, priceCatalogErrorResponse } from '@/lib/priceCatalogRoutes';
 
 /**
- * 2026-10 (Gus Camacho Jr. service catalog). Settings › Services & Pricing
- * — sets one catalog row's price, or clears it back to "price not set".
+ * Settings › Price Catalog — edits one catalog item.
  *
- * Body: `{ organizationId, defaultPrice }` where `defaultPrice` is a
- * non-negative integer number of cents, or `null`. Nothing else about the
- * row (name, code, category, active flag) is editable here.
+ * Body: `{ organizationId, expectedRevision?, displayName?, description?,
+ * categoryId?, defaultPrice?, isActive?, ftcClass?, merchandiseProductId? }`
+ * — at least one field — plus `confirmPrimaryServiceDeactivation: true`,
+ * required to deactivate a primary service (409 `confirmation_required`
+ * otherwise). Prices are
+ * non-negative integer cents, or `null` for "price not set". An item's code
+ * and pricing type never change once it exists. `expectedRevision` (the item's `revision` when
+ * the editor opened) makes a concurrent edit a 409 instead of a silent
+ * overwrite; the Price Catalog screen always sends it.
  *
- * Gated by `serviceCatalog.edit` — the existing pricing-authority key that
- * already gates the FTC General Price List (app/api/settings/price-list),
- * held by Administrator and Manager only. Organization-scoped: the row must
- * belong to the caller's authorized organization, else 404 (never 403 — an
- * id from another tenant is indistinguishable from a missing one). Changing
- * a price never rewrites an existing case order.
+ * Price catalog (2026-11): editing takes the organization's catalog-edit
+ * permission; a price change and an active-flag change each take their own
+ * (services/pricingAuthorization.ts). Organization-scoped: an item id from another
+ * organization is 404, never 403. Every change is audited in the same
+ * request, and changing an item never rewrites an existing case order.
+ *
+ * On live (Wix) data only a price-only change is supported today.
  */
 export async function PATCH(request: Request, { params }: { params: Promise<{ itemId: string }> }) {
-  const csrfResponse = requireSameOrigin(request);
-  if (csrfResponse) return csrfResponse;
   const { itemId } = await params;
+  const authorized = await authorizePriceCatalogWrite(request);
+  if (!authorized.ok) return authorized.response;
+  const { organizationId, body, ctx, dataAdapterMode } = authorized.value;
 
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body.' }, { status: 400 });
+  // `reason` (optional) is a note for the price history, not an item field.
+  const { organizationId: _organizationId, expectedRevision, confirmPrimaryServiceDeactivation, reason, ...changes } = body;
+  void _organizationId;
+  if (Object.keys(changes).length === 0) {
+    return NextResponse.json(
+      { error: 'Nothing to change: send at least one of displayName, description, categoryId, defaultPrice, isActive, ftcClass or merchandiseProductId.' },
+      { status: 400 },
+    );
   }
-  if (typeof body !== 'object' || body === null) {
-    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
-  }
-  const b = body as { organizationId?: unknown; defaultPrice?: unknown };
-  if (typeof b.organizationId !== 'string') {
-    return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
-  }
-
-  const authResult = await requireAuthorizedOrganization(b.organizationId);
-  if (!authResult.authorized) return authResult.response;
-  const { organizationId, userId, role } = authResult.context;
-  // Only where the organization edits its prices in SOLIS (not Manors).
-  if (!getRegisteredOrganizationProfile(organizationId).features.serviceCatalogPriceEditing) {
-    return NextResponse.json({ error: 'Not found.' }, { status: 404 });
-  }
-
-  const dataAdapterMode = getDataAdapterMode();
-  if (!(await canEditServiceCatalog({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
-    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
-  }
-
-  if (!('defaultPrice' in b) || !isValidServiceCatalogPrice(b.defaultPrice)) {
+  if ('defaultPrice' in changes && !isValidServiceCatalogPrice(changes.defaultPrice)) {
     return NextResponse.json(
       { error: 'defaultPrice must be a non-negative whole number of cents (at most $1,000,000.00), or null to clear the price.' },
       { status: 400 },
     );
   }
 
-  const result = await updateServiceCatalogItemPrice(
-    {
-      organizationId,
-      itemId,
-      defaultPrice: b.defaultPrice,
-      ctx: { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },
-    },
-    dataAdapterMode,
-  );
-  if (!result) {
-    return NextResponse.json({ error: 'Service not found for this organization.' }, { status: 404 });
+  if (dataAdapterMode !== 'mock') {
+    if (!isPriceOnlyChange(changes)) return priceCatalogErrorResponse(new PriceCatalogUnavailableError());
+    let result: Awaited<ReturnType<typeof updateServiceCatalogItemPrice>>;
+    try {
+      result = await updateServiceCatalogItemPrice(
+        { organizationId, itemId, defaultPrice: changes.defaultPrice as number | null, ctx, reason: typeof reason === 'string' ? reason : null },
+        dataAdapterMode,
+      );
+    } catch (error) {
+      if (error instanceof CatalogPriceConflictError) return NextResponse.json({ error: error.message, reason: 'price_conflict' }, { status: 409 });
+      throw error;
+    }
+    if (!result) return NextResponse.json({ error: 'Service not found for this organization.' }, { status: 404 });
+    return NextResponse.json({ item: result.item });
   }
-  return NextResponse.json({ item: result.item });
+
+  try {
+    const { item } = await updateCatalogItem(
+      { organizationId, itemId, changes, expectedRevision, confirmPrimaryServiceDeactivation, ...(typeof reason === 'string' ? { reason } : {}) },
+      ctx,
+      dataAdapterMode,
+    );
+    return NextResponse.json({ item });
+  } catch (error) {
+    return priceCatalogErrorResponse(error);
+  }
 }
+

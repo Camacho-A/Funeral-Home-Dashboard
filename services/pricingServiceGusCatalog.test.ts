@@ -12,6 +12,7 @@ const wix = vi.hoisted(() => ({
   queryAllWixDataItems: vi.fn(),
   insertWixDataItem: vi.fn(),
   updateWixDataItem: vi.fn(),
+  conditionalPatchWixDataItemFields: vi.fn(),
 }));
 vi.mock('../lib/wixDataApi', () => wix);
 
@@ -84,7 +85,7 @@ describe('createCaseOrder — unpriced service type', () => {
     const error = await createGusOrder({ weightTier: 'under_200', serviceTypeCode: 'CREMATION_WITH_VIEWING' }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(UnpricedCatalogItemError);
     expect((error as Error).message).toBe(
-      'No price is set for "Cremation with Viewing". An administrator must set its price in Settings › Services & Pricing before it can be added to a case order.',
+      'No price is set for "Cremation with Viewing". An administrator must set its price in Settings › Price Catalog before it can be added to a case order.',
     );
     expect((error as InstanceType<typeof UnpricedCatalogItemError>).unpricedItems.map((i) => i.serviceCode)).toEqual(['CREMATION_WITH_VIEWING']);
     expect(caseOrderFixtures).toHaveLength(0);
@@ -154,13 +155,20 @@ describe('recalculateOrder — unpriced service type', () => {
     expect(result?.auditEntries[0].amountDeltaCents).toBe(-50_000);
   });
 
-  it('a merchandise-only edit carries the service type forward — and is refused if its price was cleared since', async () => {
+  // Gus Phase 5C-3: an order keeps the prices it was saved with. Before
+  // 5C-3 this edit was refused (the service type was re-priced from the
+  // live catalog, whose price had since been cleared).
+  it('a merchandise-only edit carries the service type forward at its saved price, even after the catalog price was cleared', async () => {
     await setGusPrice('DIRECT_CREMATION', 300_000);
     await createGusOrder({ weightTier: 'under_200', serviceTypeCode: 'DIRECT_CREMATION' });
     await setGusPrice('DIRECT_CREMATION', null);
-    await expect(
-      recalculateOrder({ organizationId: GUS_ORGANIZATION_ID, caseId: 'gus-case-1', selections: { customItems: [{ id: 'c1', description: 'Flowers', amountCents: 5_000 }] }, performedBy: 'u', idFactory, now: NOW }, 'mock'),
-    ).rejects.toBeInstanceOf(UnpricedCatalogItemError);
+    const result = await recalculateOrder(
+      { organizationId: GUS_ORGANIZATION_ID, caseId: 'gus-case-1', selections: { customItems: [{ id: 'c1', description: 'Flowers', amountCents: 5_000 }] }, performedBy: 'u', idFactory, now: NOW, canEditCustomItems: true },
+      'mock',
+    );
+    expect(result?.order.total).toBe(305_000);
+    expect(result?.lineItems.find((l) => l.serviceCode === 'DIRECT_CREMATION')).toMatchObject({ unitPrice: 300_000, description: 'Direct Cremation' });
+    expect(result?.auditEntries.map((e) => e.action)).toEqual(['custom_item_added']);
   });
 });
 
@@ -208,7 +216,7 @@ describe('updateServiceCatalogItemPrice — wix', () => {
 
   it('queries by organizationId + item id and writes only defaultPrice/updatedAt', async () => {
     wix.queryWixDataItems.mockResolvedValue({ dataItems: [{ id: 'wix-row-1', data: gusRow }] });
-    wix.updateWixDataItem.mockImplementation(async (_c: string, id: string, data: unknown) => ({ id, data }));
+    wix.conditionalPatchWixDataItemFields.mockImplementation(async (_c: string, id: string, fields: Record<string, unknown>) => ({ applied: true, dataItem: { id, data: { ...gusRow, ...fields } } }));
     wix.insertWixDataItem.mockResolvedValue({});
 
     const result = await updateServiceCatalogItemPrice({ organizationId: GUS_ORGANIZATION_ID, itemId: 'gus-svc-1', defaultPrice: 410_000, ctx: ctx(GUS_ORGANIZATION_ID), now: NOW }, 'wix');
@@ -217,7 +225,12 @@ describe('updateServiceCatalogItemPrice — wix', () => {
       filter: { organizationId: GUS_ORGANIZATION_ID, beaconServiceCatalogId: 'gus-svc-1' },
       paging: { limit: 1 },
     });
-    expect(wix.updateWixDataItem).toHaveBeenCalledWith('serviceCatalog', 'wix-row-1', { ...gusRow, defaultPrice: 410_000, updatedAt: NOW });
+    // Price catalog (2026-11): one field-scoped patch, only while the price
+    // is still the one read — never a full replace.
+    expect(wix.updateWixDataItem).not.toHaveBeenCalled();
+    expect(wix.conditionalPatchWixDataItemFields).toHaveBeenCalledWith('serviceCatalog', 'wix-row-1', { defaultPrice: 410_000, updatedAt: NOW }, {
+      filter: { organizationId: { $eq: GUS_ORGANIZATION_ID }, beaconServiceCatalogId: { $eq: 'gus-svc-1' }, defaultPrice: { $eq: null } },
+    });
     expect(result?.item.defaultPrice).toBe(410_000);
     expect(result?.previousPrice).toBeNull();
   });
@@ -227,6 +240,12 @@ describe('updateServiceCatalogItemPrice — wix', () => {
     const result = await updateServiceCatalogItemPrice({ organizationId: GUS_ORGANIZATION_ID, itemId: 'gus-svc-1', defaultPrice: 1, ctx: ctx(GUS_ORGANIZATION_ID) }, 'wix');
     expect(result).toBeNull();
     expect(wix.updateWixDataItem).not.toHaveBeenCalled();
+  });
+
+  it('a price someone else changed since it was read is refused (409), nothing written', async () => {
+    wix.queryWixDataItems.mockResolvedValue({ dataItems: [{ id: 'wix-row-1', data: gusRow }] });
+    wix.conditionalPatchWixDataItemFields.mockResolvedValue({ applied: false, status: 428 });
+    await expect(updateServiceCatalogItemPrice({ organizationId: GUS_ORGANIZATION_ID, itemId: 'gus-svc-1', defaultPrice: 1, ctx: ctx(GUS_ORGANIZATION_ID) }, 'wix')).rejects.toThrow(/changed by someone else/);
   });
 
   it('returns null for a missing row without writing', async () => {

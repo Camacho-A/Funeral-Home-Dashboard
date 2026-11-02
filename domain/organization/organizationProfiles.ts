@@ -269,10 +269,26 @@ export type OrganizationFeaturePreferences = {
       cremation foundation, by stage key (2026-11). Null = the platform's
       names. Names only; steps are never changed by this. */
   cremationStageLabels: Readonly<Record<string, string>> | null;
-  /** Settings › Services & Pricing (2026-10, from Gus SOLIS): an
-      administrator sets catalog prices in SOLIS. Platform default: on.
-      Manors: off — its prices are managed as they are today. */
-  serviceCatalogPriceEditing: boolean;
+  /** Price catalog (2026-11). Whether the organization manages its catalog
+      in SOLIS (Settings › Price Catalog: items, categories, prices,
+      deactivation). Platform default: on. Manors: off — its prices are
+      managed as they are today. */
+  priceCatalogManagement: boolean;
+  /** Which permissions govern pricing actions (2026-11):
+      'granular' — each action has its own permission (serviceCatalog.price,
+      serviceCatalog.deactivate, caseOrder.customItems, caseOrder.reprice);
+      'legacy' — the checks the organization already had (catalog changes
+      take serviceCatalog.edit, merchandise prices merchandise.manage,
+      custom order items caseOrder.update; no repricing action). Platform
+      default: 'granular'. Manors: 'legacy' — no permission it has today
+      changes. */
+  pricingPermissionModel: 'legacy' | 'granular';
+  /** Order integrity (2026-11). Lines already on a case order keep the price
+      they were agreed at when the order is edited; newer catalog prices
+      reach an existing order only through an explicit, authorized reprice.
+      Platform default: on. Manors: off until approved — its edits keep
+      re-pricing every line at the current price, as today. */
+  orderLinePriceLock: boolean;
   /** Whether `hiddenModules` is also enforced SERVER-SIDE (pages + APIs
       answer 404), not just removed from navigation
       (lib/auth/hiddenModuleGuard.ts). Platform default: false — the
@@ -376,7 +392,9 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   workflowByServiceType: false,
   certifierRequiredCaseFields: null,
   cremationStageLabels: null,
-  serviceCatalogPriceEditing: true,
+  priceCatalogManagement: true,
+  pricingPermissionModel: 'granular',
+  orderLinePriceLock: true,
   enforceHiddenModulesServerSide: false,
   workflowApprovalRequired: false,
 });
@@ -450,8 +468,11 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     sendToCrematory: { emailOrganizationName: 'Manors Cremation', authorizationWorkflowStage: 2 },
     // Its template v7 rule (name + fax); its live templates already carry it.
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
-    // Prices stay managed as they are today — no in-app price editing.
-    serviceCatalogPriceEditing: false,
+    // Pricing stays exactly as today: no in-app catalog management, the
+    // permissions it already has, and edits re-price as they always have.
+    priceCatalogManagement: false,
+    pricingPermissionModel: 'legacy',
+    orderLinePriceLock: false,
     manateeDeathCertificateApplication: true,
     caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the

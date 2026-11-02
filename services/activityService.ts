@@ -1116,6 +1116,39 @@ export function recordServiceCatalogPriceUpdated(
   );
 }
 
+/** Gus Phase 5C-3 (administrator-managed price catalog). One Settings ›
+    Price Catalog change — an item or category created, edited, deactivated
+    or reactivated. `previous`/`next` carry only the fields that changed
+    (null for a creation's `previous`). */
+export function recordServiceCatalogChange(
+  ctx: ActivityContext,
+  change: {
+    eventType: string;
+    resourceType: 'serviceCatalogItem' | 'serviceCatalogCategory';
+    resourceId: string;
+    previous: Record<string, unknown> | null;
+    next: Record<string, unknown>;
+    description: string;
+  },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType: change.eventType,
+      resourceType: change.resourceType,
+      resourceId: change.resourceId,
+      previousValue: change.previous === null ? null : JSON.stringify(change.previous),
+      newValue: JSON.stringify(change.next),
+      description: change.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 // --- Team-management helpers: built for forward-compatibility per ADR-028,
 // not called from any route this phase (roleService/invitationService keep
 // their own organizationRoleAuditEntries writer — see ADR-028). ---

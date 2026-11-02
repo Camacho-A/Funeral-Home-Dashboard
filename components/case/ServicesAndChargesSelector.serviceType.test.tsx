@@ -56,7 +56,7 @@ describe('ServicesAndChargesSelector — Gus service types', () => {
     expect(screen.getByText('Total (excludes items with no price set)')).toBeInTheDocument();
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('No price is set for Direct Entombment (Embalming Required)');
-    expect(alert).toHaveTextContent('Settings › Services & Pricing');
+    expect(alert).toHaveTextContent('Settings › Price Catalog');
     expect(alert).toHaveTextContent('Custom next step.');
   });
 

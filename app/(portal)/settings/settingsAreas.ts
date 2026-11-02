@@ -80,15 +80,17 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       visible: permissions.includes('caseNumber.manage') || permissions.includes('user.manageRoles'),
     },
     {
-      // 2026-10 (Gus Camacho Jr. service catalog): in-app catalog price
-      // editing. Same `serviceCatalog.edit` gate the route itself enforces
-      // (and the FTC General Price List already uses) — not identity-mode
-      // gated, matching Case Numbering's RBAC-only precedent.
-      key: 'services-pricing',
-      label: 'Services & Pricing',
-      description: 'Set the price of each service your organization offers.',
-      href: '/settings/services-pricing',
-      visible: getRegisteredOrganizationProfile(organizationId).features.serviceCatalogPriceEditing && permissions.includes('serviceCatalog.edit'),
+      // Gus Phase 5C-3: Settings › Price Catalog (was Services & Pricing).
+      // Visible read-only to anyone holding `serviceCatalog.read`; changing
+      // the catalog takes serviceCatalog.edit + organization.manage, which
+      // every write route enforces. Not identity-mode gated, matching Case
+      // Numbering's RBAC-only precedent.
+      key: 'price-catalog',
+      label: 'Price Catalog',
+      description: 'Services, merchandise and other charges, with their prices and categories.',
+      href: '/settings/price-catalog',
+      // Only where the organization manages its catalog in SOLIS (not Manors).
+      visible: getRegisteredOrganizationProfile(organizationId).features.priceCatalogManagement && permissions.includes('serviceCatalog.read'),
     },
     {
       key: 'workflow-templates',

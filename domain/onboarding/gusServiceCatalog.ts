@@ -43,3 +43,20 @@ export const GUS_SERVICE_CATALOG: readonly StarterServiceCatalogEntry[] = Object
   { serviceCode: GUS_SERVICE_CODES.VETERANS_GRAVESIDE_BURIAL_SERVICE_ONLY, displayName: 'U.S. Veterans, Graveside Burial Service Only (No Viewing)', category: SERVICE_TYPE_CATEGORY, pricingType: 'flat', defaultPrice: null, sortOrder: 5 },
   { serviceCode: GUS_SERVICE_CODES.DIRECT_ENTOMBMENT, displayName: 'Direct Entombment (Embalming Required)', category: SERVICE_TYPE_CATEGORY, pricingType: 'flat', defaultPrice: null, sortOrder: 6 },
 ].map((entry) => Object.freeze(entry)));
+
+/**
+ * Gus Phase 5C-3 (administrator-managed price catalog). The display
+ * categories Gus Camacho Jr.'s Settings › Price Catalog starts with — the
+ * names the funeral home suggested, in this order. A starting point only:
+ * an administrator renames, reorders, adds and deactivates categories in
+ * the app. No item is filed under one and no price comes with them.
+ */
+export const GUS_STARTER_CATALOG_CATEGORIES: readonly string[] = Object.freeze([
+  'Funeral Services',
+  'Cremation Services',
+  'Burial Services',
+  'Merchandise',
+  'Transportation',
+  'Documents and Permits',
+  'Additional Services',
+]);

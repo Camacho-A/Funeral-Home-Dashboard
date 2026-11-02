@@ -1,5 +1,8 @@
 import type { DataAdapterMode } from '../lib/env';
-import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, conditionalPatchWixDataItemFields } from '../lib/wixDataApi';
+import { isOrderLinePriceLocked } from '../domain/pricing/pricingPermissions';
+import { recordCatalogPriceChange } from './catalogPriceHistoryService';
+import { formatCentsAsCurrency } from '../utils/format';
+import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, conditionalPatchWixDataItemFields } from '../lib/wixDataApi';
 import {
   mapWixServiceCatalogItem,
   type WixServiceCatalogItem,
@@ -40,6 +43,9 @@ import {
   type CalculatedLineItem,
   type CalculatedOrderTotals,
   type UnpricedSelectedItem,
+  catalogItemSelectionsFromLineItems,
+  catalogWithOrderSnapshots,
+  catalogForCaseServiceType,
 } from '../domain/pricing/calculateOrder';
 import { getMerchandiseCategoryDefinition } from '../domain/merchandise/merchandiseCategoryRegistry';
 import { resolveVariantEconomics } from '../domain/merchandise/variantEconomics';
@@ -97,7 +103,7 @@ export class UnpricedCatalogItemError extends Error {
   constructor(unpricedItems: UnpricedSelectedItem[]) {
     const names = unpricedItems.map((item) => `"${item.displayName}"`).join(', ');
     super(
-      `No price is set for ${names}. An administrator must set ${unpricedItems.length === 1 ? 'its price' : 'their prices'} in Settings › Services & Pricing before ${unpricedItems.length === 1 ? 'it' : 'they'} can be added to a case order.`,
+      `No price is set for ${names}. An administrator must set ${unpricedItems.length === 1 ? 'its price' : 'their prices'} in Settings › Price Catalog before ${unpricedItems.length === 1 ? 'it' : 'they'} can be added to a case order.`,
     );
     this.name = 'UnpricedCatalogItemError';
     this.unpricedItems = unpricedItems;
@@ -862,13 +868,28 @@ function extractServiceSelections(
 ): ServiceSelections {
   const obj = (raw ?? {}) as Record<string, unknown>;
   if (obj.services && typeof obj.services === 'object') {
-    return withResolvedServiceType(normalizeSelections(obj.services as Record<string, unknown>), catalog);
+    const services = obj.services as Record<string, unknown>;
+    return withCarriedCatalogItems(withResolvedServiceType(normalizeSelections(services), catalog), services, currentLineItems);
   }
   const hasFlatServiceFields =
-    'weightTier' in obj || 'extraDeathCertificateQuantity' in obj || 'mailCremated' in obj || 'serviceTypeCode' in obj;
-  if (hasFlatServiceFields) return withResolvedServiceType(normalizeSelections(obj), catalog);
+    'weightTier' in obj || 'extraDeathCertificateQuantity' in obj || 'mailCremated' in obj || 'serviceTypeCode' in obj || 'catalogItems' in obj;
+  if (hasFlatServiceFields) return withCarriedCatalogItems(withResolvedServiceType(normalizeSelections(obj), catalog), obj, currentLineItems);
   if (currentLineItems) return selectionsFromLineItems(currentLineItems);
   return normalizeSelections({});
+}
+
+/** Gus Phase 5C-3. A caller that doesn't send `catalogItems` at all (every
+    pre-5C-3 caller) leaves the order's catalog items as they are — the same
+    carry-forward rule merchandise and custom items follow. An explicit
+    empty list removes them. */
+function withCarriedCatalogItems(
+  selections: ServiceSelections,
+  source: Record<string, unknown>,
+  currentLineItems: CaseOrderLineItem[] | null,
+): ServiceSelections {
+  if ('catalogItems' in source || !currentLineItems) return selections;
+  const carried = catalogItemSelectionsFromLineItems(currentLineItems);
+  return carried.length > 0 ? { ...selections, catalogItems: carried } : selections;
 }
 
 /** 2026-10. Server-side validation of a submitted serviceTypeCode against
@@ -912,7 +933,32 @@ type OrderChangeParams = {
   performedBy: string;
   idFactory: () => string;
   now?: string;
+  /** Gus Phase 5C-3 (finalization). The case's own primary service (from its
+      workflow snapshot), which stays choosable on THIS case's order even if
+      it has since been deactivated. Supplied by the order routes. */
+  caseServiceTypeCode?: string | null;
+  /** Gus Phase 5C-3 (finalization). Whether the caller may add, change or
+      remove custom (one-off, staff-priced) items — `serviceCatalog.edit`,
+      i.e. Administrator or Manager. Absent = not allowed: a change that
+      leaves the order's custom items exactly as they are is always fine. */
+  canEditCustomItems?: boolean;
 };
+
+/** Gus Phase 5C-3 (finalization). A caller without the custom-item
+    permission tried to add, change or remove a custom item. Nothing is
+    written. */
+export class CustomItemPermissionError extends Error {
+  constructor() {
+    super('You are not allowed to add, change or remove custom items on a case order.');
+    this.name = 'CustomItemPermissionError';
+  }
+}
+
+function sameCustomItems(a: CustomLineItemSelection[], b: CustomLineItemSelection[]): boolean {
+  const key = (items: CustomLineItemSelection[]) =>
+    JSON.stringify(items.map((item) => [item.description, item.amountCents]).sort((x, y) => (JSON.stringify(x) < JSON.stringify(y) ? -1 : 1)));
+  return key(a) === key(b);
+}
 
 /**
  * Consistent service changes (2026-10). Everything an order change decides
@@ -947,13 +993,19 @@ type PreparedOrderWrite = Extract<PreparedCaseOrderChange, { kind: 'change' }>;
 
 async function prepareCreation(params: OrderChangeParams, dataAdapterMode: DataAdapterMode): Promise<PreparedOrderWrite> {
   const nowIso = params.now ?? new Date().toISOString();
-  const catalog = await getServiceCatalog(params.organizationId, dataAdapterMode);
+  // A locked organization (2026-11) reads the full catalog so the case's own,
+  // since-deactivated primary service stays choosable; otherwise exactly as before.
+  const catalog = catalogForCaseServiceType(
+    await getServiceCatalog(params.organizationId, dataAdapterMode, isOrderLinePriceLocked(params.organizationId) ? { includeInactive: true } : {}),
+    params.caseServiceTypeCode,
+  );
   const products = await getMerchandiseCatalogForPricing(params.organizationId, dataAdapterMode);
   const orderSelections = {
     services: extractServiceSelections(params.selections, null, catalog),
     merchandise: extractMerchandiseSelections(params.selections, null),
     customItems: extractCustomItemSelections(params.selections, null),
   };
+  if (orderSelections.customItems.length > 0 && params.canEditCustomItems !== true) throw new CustomItemPermissionError();
   const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, orderSelections, dataAdapterMode);
   assertNoUnpricedItems(calculated);
 
@@ -1024,9 +1076,19 @@ async function prepareRecalculation(
   dataAdapterMode: DataAdapterMode,
 ): Promise<PreparedCaseOrderChange> {
   const nowIso = params.now ?? new Date().toISOString();
-  const catalog = await getServiceCatalog(params.organizationId, dataAdapterMode);
   const products = await getMerchandiseCatalogForPricing(params.organizationId, dataAdapterMode);
   const currentLineItems = await listLineItemsForOrder(params.organizationId, current.id, dataAdapterMode);
+  // Gus Phase 5C-3: lines already on the order keep the price and
+  // description they were saved with — see catalogWithOrderSnapshots. The
+  // full catalog (inactive rows too) tells it what role each line plays.
+  // Order integrity (2026-11): where the organization locks line prices
+  // (not Manors yet), lines already on the order keep their agreed price —
+  // a newer catalog price reaches them only through repriceCaseOrder.
+  // A locked organization also keeps a since-deactivated item on the order
+  // until staff remove it; otherwise the catalog is read exactly as before.
+  const locked = isOrderLinePriceLocked(params.organizationId);
+  const fullCatalog = catalogForCaseServiceType(await getServiceCatalog(params.organizationId, dataAdapterMode, locked ? { includeInactive: true } : {}), params.caseServiceTypeCode);
+  const catalog = locked ? catalogWithOrderSnapshots(fullCatalog, currentLineItems) : fullCatalog;
 
   // Reconstruct ALL THREE dimensions from the current order, then apply
   // only what the caller changed — a service-only edit carries merchandise
@@ -1037,6 +1099,7 @@ async function prepareRecalculation(
   const nextServices = extractServiceSelections(params.selections, currentLineItems, catalog);
   const nextMerchandise = extractMerchandiseSelections(params.selections, currentLineItems);
   const nextCustomItems = extractCustomItemSelections(params.selections, currentLineItems);
+  if (params.canEditCustomItems !== true && !sameCustomItems(previousCustomItems, nextCustomItems)) throw new CustomItemPermissionError();
 
   const serviceDiff = diffSelections(catalog, previousServices, nextServices);
   const merchandiseDiff = diffMerchandiseSelections(products, previousMerchandise, nextMerchandise);
@@ -1046,7 +1109,10 @@ async function prepareRecalculation(
     return { kind: 'unchanged', order: current, lineItems: currentLineItems };
   }
 
-  const calculated = await computeOrderWithVariants(params.organizationId, catalog, products, { services: nextServices, merchandise: nextMerchandise, customItems: nextCustomItems }, dataAdapterMode);
+  const computed = await computeOrderWithVariants(params.organizationId, catalog, products, { services: nextServices, merchandise: nextMerchandise, customItems: nextCustomItems }, dataAdapterMode);
+  // Order integrity (2026-11): merchandise already on the order keeps its
+  // agreed price too (services are kept by catalogWithOrderSnapshots above).
+  const calculated = locked ? withLockedMerchandisePrices(computed, currentLineItems) : computed;
   assertNoUnpricedItems(calculated);
   const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
 
@@ -1146,6 +1212,152 @@ export async function createCaseOrder(
   // reverted by appending, never by deleting.
   const committed = await commitPreparedCaseOrderChange(prepared, { idFactory: params.idFactory }, dataAdapterMode);
   return { order: committed.order, lineItems: committed.lineItems, auditEntry: committed.auditEntries[0] };
+}
+
+const merchandiseLineKey = (line: { metadata?: Record<string, string> | null }) => `${line.metadata?.productId ?? ''}|${line.metadata?.variantId ?? ''}`;
+
+/** Order integrity (2026-11). A merchandise line already on the order keeps
+    the unit price it was agreed at; a newly added one takes today's price. */
+function withLockedMerchandisePrices(calculated: CalculatedOrderTotals, currentLineItems: CaseOrderLineItem[]): CalculatedOrderTotals {
+  const agreed = new Map(
+    currentLineItems.filter((line) => line.lineKind === 'merchandise').map((line) => [merchandiseLineKey(line as { metadata?: Record<string, string> | null }), line.unitPrice]),
+  );
+  if (agreed.size === 0) return calculated;
+  const lineItems = calculated.lineItems.map((line) => {
+    if (line.lineKind !== 'merchandise') return line;
+    const unitPrice = agreed.get(merchandiseLineKey(line));
+    return unitPrice === undefined ? line : { ...line, unitPrice, lineTotal: unitPrice * line.quantity };
+  });
+  const subtotal = lineItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  return { ...calculated, lineItems, subtotal, total: subtotal - calculated.discountTotal + calculated.taxTotal };
+}
+
+/** Price catalog (2026-11). Repricing is not offered to this organization
+    (its edits already apply current prices — the legacy model), or the
+    caller lacks the permission. Routes answer 403. */
+export class RepriceNotAllowedError extends Error {
+  constructor() {
+    super('Repricing an existing order is not available for this organization.');
+    this.name = 'RepriceNotAllowedError';
+  }
+}
+
+export type RepriceLineChange = { description: string; quantity: number; previousUnitPrice: number; newUnitPrice: number; amountDeltaCents: number };
+
+/**
+ * Price catalog (2026-11). The one deliberate way a newer catalog price
+ * reaches an existing order: every line priced from the catalog (services,
+ * catalog items, merchandise) is priced again at today's price; custom
+ * items keep their own amounts; nothing is added or removed. A new order
+ * version is written through the same journaled, compare-and-swap path as
+ * any edit (the previous version and its audit entries are untouched),
+ * with one audit entry per line whose price moved. Pinned to the version
+ * staff were shown (`expectedOrderId`); `confirm: false` only previews.
+ * A line whose item now has no price set refuses the whole reprice.
+ */
+export async function repriceCaseOrder(
+  params: { organizationId: string; caseId: string; expectedOrderId: string; performedBy: string; idFactory: () => string; confirm: boolean; caseServiceTypeCode?: string | null; now?: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ applied: boolean; changes: RepriceLineChange[]; order: CaseOrder; lineItems: CaseOrderLineItem[] } | null> {
+  if (!isOrderLinePriceLocked(params.organizationId)) throw new RepriceNotAllowedError();
+  const state = await getCaseOrderState(params.organizationId, params.caseId, dataAdapterMode);
+  if (state.interruption) throw new CaseOrderInterruptedError(state.interruption);
+  const current = state.active;
+  if (!current) return null;
+  if (current.id !== params.expectedOrderId) throw new CaseOrderConflictError(current);
+
+  const nowIso = params.now ?? new Date().toISOString();
+  const currentLineItems = await listLineItemsForOrder(params.organizationId, current.id, dataAdapterMode);
+  // Today's catalog, inactive rows included (an item on the order keeps its
+  // role), but NO snapshots — that is the point of a reprice.
+  const catalog = catalogForCaseServiceType(await getServiceCatalog(params.organizationId, dataAdapterMode, { includeInactive: true }), params.caseServiceTypeCode);
+  const products = await getMerchandiseCatalogForPricing(params.organizationId, dataAdapterMode);
+  const calculated = await computeOrderWithVariants(
+    params.organizationId,
+    catalog,
+    products,
+    { services: selectionsFromLineItems(currentLineItems), merchandise: merchandiseSelectionsFromLineItems(currentLineItems), customItems: customItemSelectionsFromLineItems(currentLineItems) },
+    dataAdapterMode,
+  );
+  assertNoUnpricedItems(calculated);
+
+  const before = new Map(currentLineItems.map((line) => [`${line.lineKind}|${line.serviceCode}`, line]));
+  const changes: RepriceLineChange[] = [];
+  for (const line of calculated.lineItems) {
+    const previous = before.get(`${line.lineKind}|${line.serviceCode}`);
+    if (!previous || previous.unitPrice === line.unitPrice) continue;
+    changes.push({ description: line.description, quantity: line.quantity, previousUnitPrice: previous.unitPrice, newUnitPrice: line.unitPrice, amountDeltaCents: line.lineTotal - previous.lineTotal });
+  }
+  if (changes.length === 0 || !params.confirm) return { applied: false, changes, order: current, lineItems: currentLineItems };
+
+  const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
+  const newOrderId = params.idFactory();
+  const newOrder: CaseOrder = {
+    id: newOrderId,
+    organizationId: params.organizationId,
+    caseId: params.caseId,
+    status: 'active',
+    subtotal: calculated.subtotal,
+    discountTotal: calculated.discountTotal,
+    taxTotal: calculated.taxTotal,
+    total: calculated.total,
+    balanceDue: calculateBalance(calculated.total, paidAmount),
+    version: current.version + 1,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+  const diffEntries = changes.map((change) => ({
+    action: 'line_repriced',
+    previousValue: String(change.previousUnitPrice),
+    newValue: String(change.newUnitPrice),
+    description: `Repriced at the current catalog price: ${change.description}, ${formatCentsAsCurrency(change.previousUnitPrice, 'usd')} → ${formatCentsAsCurrency(change.newUnitPrice, 'usd')}${change.quantity > 1 ? ' each' : ''}`,
+    amountDeltaCents: change.amountDeltaCents,
+  }));
+  const newSplit = sumLineTotalsByKind(calculated.lineItems);
+  const oldSplit = sumLineTotalsByKind(currentLineItems);
+  const prepared: PreparedCaseOrderChange = {
+    kind: 'change',
+    organizationId: params.organizationId,
+    caseId: params.caseId,
+    performedBy: params.performedBy,
+    nowIso,
+    current,
+    currentLineItems,
+    newOrder,
+    newLineItems: buildLineItems(params.organizationId, newOrderId, calculated.lineItems, nowIso, params.idFactory),
+    auditEntries: diffEntries.map((entry) => ({
+      id: params.idFactory(),
+      organizationId: params.organizationId,
+      caseId: params.caseId,
+      caseOrderId: newOrderId,
+      ...entry,
+      performedBy: params.performedBy,
+      createdAt: nowIso,
+    })),
+    diffEntries,
+    serviceDelta: newSplit.service - oldSplit.service,
+    merchandiseDelta: newSplit.merchandise - oldSplit.merchandise,
+  };
+  try {
+    const committed = await commitPreparedCaseOrderChange(prepared, { idFactory: params.idFactory }, dataAdapterMode);
+    try {
+      await recordCaseOrderChanged(
+        { organizationId: params.organizationId, actorIdentityId: params.performedBy, actorMembershipId: null, actorRoleKey: null, correlationId: committed.order.id },
+        params.caseId,
+        committed.order.id,
+        diffEntries,
+        dataAdapterMode,
+      );
+    } catch (error) {
+      console.error('Failed to record case.order.changed for a reprice:', error instanceof Error ? error.message : error);
+    }
+    return { applied: true, changes, order: committed.order, lineItems: committed.lineItems };
+  } catch (error) {
+    if (error instanceof CaseOrderCommitError && error.conflict) {
+      throw new CaseOrderConflictError(await getActiveCaseOrder(params.organizationId, params.caseId, dataAdapterMode));
+    }
+    throw error;
+  }
 }
 
 /**
@@ -1894,7 +2106,7 @@ export async function refreshBalanceForCase(
 
 // ---------------------------------------------------------------------------
 // 2026-10 (Gus Camacho Jr. service catalog). In-app catalog price editing —
-// Settings › Services & Pricing (PATCH /api/service-catalog/[itemId]).
+// Settings › Price Catalog (PATCH /api/service-catalog/[itemId]).
 // ---------------------------------------------------------------------------
 
 /** Sanity ceiling on one catalog price ($1,000,000.00) — bounds a malformed
@@ -1919,8 +2131,17 @@ export function isValidServiceCatalogPrice(value: unknown): value is number | nu
  * calculation on. Records one activity event, best-effort (a failed audit
  * write never fails the edit itself, same as recalculateOrder's).
  */
+/** Price catalog (2026-11). Someone else changed this price after it was
+    read — nothing was written. Routes answer 409. */
+export class CatalogPriceConflictError extends Error {
+  constructor() {
+    super('This price was changed by someone else since you opened it. Nothing was saved — reload and try again.');
+    this.name = 'CatalogPriceConflictError';
+  }
+}
+
 export async function updateServiceCatalogItemPrice(
-  params: { organizationId: string; itemId: string; defaultPrice: number | null; ctx: ActivityContext; now?: string },
+  params: { organizationId: string; itemId: string; defaultPrice: number | null; ctx: ActivityContext; now?: string; reason?: string | null },
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ item: ServiceCatalogItem; previousPrice: number | null } | null> {
   if (!isValidServiceCatalogPrice(params.defaultPrice)) {
@@ -1933,8 +2154,15 @@ export async function updateServiceCatalogItemPrice(
   if (dataAdapterMode === 'mock') {
     const index = serviceCatalogFixtures.findIndex((item) => item.id === params.itemId && item.organizationId === params.organizationId);
     if (index === -1) return null;
-    previousPrice = serviceCatalogFixtures[index].defaultPrice;
-    updated = { ...serviceCatalogFixtures[index], defaultPrice: params.defaultPrice, updatedAt: nowIso };
+    const existing = serviceCatalogFixtures[index];
+    previousPrice = existing.defaultPrice;
+    // Price history first (2026-11): if it can't be written, nothing changes.
+    await recordCatalogPriceChange(
+      params.ctx,
+      { itemType: 'service', itemId: existing.id, itemCode: existing.serviceCode, itemName: existing.displayName, previousPrice, newPrice: params.defaultPrice, reason: params.reason, now: nowIso },
+      dataAdapterMode,
+    );
+    updated = { ...existing, defaultPrice: params.defaultPrice, updatedAt: nowIso };
     serviceCatalogFixtures[index] = updated;
   } else {
     const response = await queryWixDataItems<WixServiceCatalogItem>('serviceCatalog', {
@@ -1947,12 +2175,25 @@ export async function updateServiceCatalogItemPrice(
     // row's own organizationId is re-checked before any write.
     if (!existingItem || !existing || existing.organizationId !== params.organizationId || existing.id !== params.itemId) return null;
     previousPrice = existing.defaultPrice;
-    const written = await updateWixDataItem<WixServiceCatalogItem>('serviceCatalog', existingItem.id, {
-      ...existingItem.data,
-      defaultPrice: params.defaultPrice,
-      updatedAt: nowIso,
-    });
-    const mapped = mapWixServiceCatalogItem(written.data);
+    await recordCatalogPriceChange(
+      params.ctx,
+      { itemType: 'service', itemId: existing.id, itemCode: existing.serviceCode, itemName: existing.displayName, previousPrice, newPrice: params.defaultPrice, reason: params.reason, now: nowIso },
+      dataAdapterMode,
+    );
+    // Price catalog (2026-11): one field-scoped patch (price + updatedAt
+    // only, never a full replace), applied only while the price is still the
+    // one just read — two administrators can't silently overwrite each other.
+    const written = await conditionalPatchWixDataItemFields<WixServiceCatalogItem>(
+      'serviceCatalog',
+      existingItem.id,
+      { defaultPrice: params.defaultPrice, updatedAt: nowIso },
+      { filter: { organizationId: { $eq: params.organizationId }, beaconServiceCatalogId: { $eq: params.itemId }, defaultPrice: { $eq: previousPrice } } },
+    );
+    if (!written.applied) {
+      if (written.status === 428) throw new CatalogPriceConflictError();
+      throw new Error(`Failed to update service catalog item (HTTP ${written.status}).`);
+    }
+    const mapped = mapWixServiceCatalogItem({ ...existingItem.data, ...written.dataItem?.data, defaultPrice: params.defaultPrice, updatedAt: nowIso });
     if (!mapped) throw new Error('Failed to update service catalog item.');
     updated = mapped;
   }
@@ -1962,6 +2203,5 @@ export async function updateServiceCatalogItemPrice(
   } catch (error) {
     console.error('Failed to record serviceCatalog.price.updated activity event:', error instanceof Error ? error.message : error);
   }
-
   return { item: updated, previousPrice };
 }

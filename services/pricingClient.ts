@@ -1,5 +1,5 @@
 import type { OrganizationContext } from '../types/organization';
-import type { ServiceCatalogItem } from '../types/serviceCatalog';
+import type { ServiceCatalogCategory, ServiceCatalogItem } from '../types/serviceCatalog';
 import type { CaseOrder, CaseOrderLineItem, ServiceSelections, CustomLineItemSelection } from '../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../types/caseOrderAudit';
 
@@ -21,25 +21,118 @@ export async function getServiceCatalog(context: OrganizationContext): Promise<S
   return body.catalog.filter((item) => item.organizationId === context.organizationId);
 }
 
-/** 2026-10 (Gus Camacho Jr. service catalog). Settings › Services &
-    Pricing: sets one catalog row's price (integer cents), or clears it with
-    null. The route enforces `serviceCatalog.edit` and organization scope. */
-export async function updateServiceCatalogPrice(
+/** Gus Phase 5C-3. A refusal from a Settings › Price Catalog write — the
+    server's own message, plus its status (409 = changed by someone else or a
+    duplicate code/name) so the screen can say what happened. */
+export class PriceCatalogRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly reason: string | null) {
+    super(message);
+    this.name = 'PriceCatalogRequestError';
+  }
+}
+
+async function priceCatalogWrite<T>(url: string, method: 'POST' | 'PATCH', body: Record<string, unknown>, fallback: string): Promise<T> {
+  const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const payload = (await response.json().catch(() => null)) as (T & { error?: string; reason?: string }) | null;
+  if (!response.ok) throw new PriceCatalogRequestError(payload?.error ?? fallback, response.status, payload?.reason ?? null);
+  return payload as T;
+}
+
+/** Gus Phase 5C-3. Settings › Price Catalog: every item (inactive too) and
+    every display category. Takes `serviceCatalog.read`. */
+export async function getPriceCatalog(context: OrganizationContext): Promise<{ catalog: ServiceCatalogItem[]; categories: ServiceCatalogCategory[] }> {
+  const response = await fetch(`/api/service-catalog?organizationId=${encodeURIComponent(context.organizationId)}&includeInactive=1`);
+  if (!response.ok) throw new Error('Failed to load the price catalog.');
+  const body = (await response.json()) as { catalog: ServiceCatalogItem[]; categories?: ServiceCatalogCategory[] };
+  return {
+    catalog: body.catalog.filter((item) => item.organizationId === context.organizationId),
+    categories: (body.categories ?? []).filter((category) => category.organizationId === context.organizationId),
+  };
+}
+
+/** Gus Phase 5C-3. The active display categories, for grouping catalog items
+    on a case order. */
+export async function getCatalogCategories(context: OrganizationContext): Promise<ServiceCatalogCategory[]> {
+  const response = await fetch(`/api/service-catalog?organizationId=${encodeURIComponent(context.organizationId)}`);
+  if (!response.ok) throw new Error('Failed to load catalog categories.');
+  const body = (await response.json()) as { categories?: ServiceCatalogCategory[] };
+  return (body.categories ?? []).filter((category) => category.organizationId === context.organizationId);
+}
+
+export type NewCatalogItemInput = {
+  itemCode: string;
+  displayName: string;
+  description: string | null;
+  categoryId: string | null;
+  pricingType: 'flat' | 'per_unit';
+  defaultPrice: number | null;
+  ftcClass: string | null;
+};
+
+export async function createCatalogItem(context: OrganizationContext, input: NewCatalogItemInput): Promise<ServiceCatalogItem> {
+  const body = await priceCatalogWrite<{ item: ServiceCatalogItem }>(
+    '/api/service-catalog',
+    'POST',
+    { organizationId: context.organizationId, ...input },
+    'Failed to add the catalog item.',
+  );
+  return body.item;
+}
+
+export type CatalogItemChanges = Partial<{
+  displayName: string;
+  description: string | null;
+  categoryId: string | null;
+  defaultPrice: number | null;
+  isActive: boolean;
+  ftcClass: string | null;
+  merchandiseProductId: string | null;
+}>;
+
+export async function updateCatalogItem(
   context: OrganizationContext,
   itemId: string,
-  defaultPrice: number | null,
+  changes: CatalogItemChanges,
+  expectedRevision: number,
+  options: { confirmPrimaryServiceDeactivation?: boolean } = {},
 ): Promise<ServiceCatalogItem> {
-  const response = await fetch(`/api/service-catalog/${encodeURIComponent(itemId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId: context.organizationId, defaultPrice }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.error ?? 'Failed to update price.');
-  }
-  const body = (await response.json()) as { item: ServiceCatalogItem };
+  const body = await priceCatalogWrite<{ item: ServiceCatalogItem }>(
+    `/api/service-catalog/${encodeURIComponent(itemId)}`,
+    'PATCH',
+    {
+      organizationId: context.organizationId,
+      expectedRevision,
+      ...changes,
+      ...(options.confirmPrimaryServiceDeactivation ? { confirmPrimaryServiceDeactivation: true } : {}),
+    },
+    'Failed to save the catalog item.',
+  );
   return body.item;
+}
+
+export async function createCatalogCategory(context: OrganizationContext, name: string): Promise<ServiceCatalogCategory> {
+  const body = await priceCatalogWrite<{ category: ServiceCatalogCategory }>(
+    '/api/service-catalog/categories',
+    'POST',
+    { organizationId: context.organizationId, name },
+    'Failed to add the category.',
+  );
+  return body.category;
+}
+
+export async function updateCatalogCategory(
+  context: OrganizationContext,
+  categoryId: string,
+  changes: Partial<{ name: string; sortOrder: number; isActive: boolean }>,
+  expectedRevision: number,
+): Promise<ServiceCatalogCategory> {
+  const body = await priceCatalogWrite<{ category: ServiceCatalogCategory }>(
+    `/api/service-catalog/categories/${encodeURIComponent(categoryId)}`,
+    'PATCH',
+    { organizationId: context.organizationId, expectedRevision, ...changes },
+    'Failed to save the category.',
+  );
+  return body.category;
 }
 
 /** Phase 5A.2: `interruption` — an unfinished change holds the case's
@@ -128,4 +221,15 @@ export async function editCaseOrder(
   return response.json();
 }
 
-export const pricingClient = { getServiceCatalog, getCaseOrder, createCaseOrder, editCaseOrder, updateServiceCatalogPrice };
+export const pricingClient = {
+  getServiceCatalog,
+  getCaseOrder,
+  createCaseOrder,
+  editCaseOrder,
+  getPriceCatalog,
+  getCatalogCategories,
+  createCatalogItem,
+  updateCatalogItem,
+  createCatalogCategory,
+  updateCatalogCategory,
+};

@@ -11,7 +11,7 @@ import styles from './OnboardingStepForm.module.css';
     — never a reference to Manor's Cremation's (or any other
     organization's) rows. 2026-10: seeded prices start as "Price not set"
     (null) unless the organization supplied them — they're entered later
-    in Settings › Services & Pricing, never copied from another tenant. */
+    in Settings › Price Catalog, never copied from another tenant. */
 export function ServicesStep({
   onboardingSessionId,
   onSaved,
@@ -30,7 +30,7 @@ export function ServicesStep({
       <div className={styles.title}>Services &amp; Pricing</div>
       <div className={styles.description}>
         Seeds this organization&apos;s own starter service catalog — independent from every other organization&apos;s pricing.
-        Prices aren&apos;t copied from anywhere: set them afterwards in Settings › Services &amp; Pricing.
+        Prices aren&apos;t copied from anywhere: set them afterwards in Settings › Price Catalog.
       </div>
 
       {saveServices.data && (

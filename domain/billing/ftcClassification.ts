@@ -1,5 +1,7 @@
 import type { ServiceCatalogItem } from '../../types/serviceCatalog';
 import type { MerchandiseProduct } from '../../types/merchandiseProduct';
+import type { CaseOrderLineItem } from '../../types/caseOrder';
+import { FTC_CLASS_LINE_METADATA_KEY } from '../pricing/serviceCodes';
 import { FTC_CLASS, isFtcClass, type FtcClass } from './ftcComplianceRegistry';
 
 /**
@@ -35,6 +37,21 @@ export function serviceCategoryDefaultFtcClass(category: string): FtcClass {
 export function classifyServiceItem(item: Pick<ServiceCatalogItem, 'category' | 'ftcClass'>): FtcClass {
   if (isFtcClass(item.ftcClass)) return item.ftcClass;
   return serviceCategoryDefaultFtcClass(item.category);
+}
+
+/** Gus Phase 5C-3 (finalization). Classify a saved SERVICE order line: the
+    classification snapshotted on the line when it was saved wins (so a later
+    catalog review never restates it); a line saved while its item was
+    pending review falls back to the item's current classification; a line
+    whose item no longer exists is unclassified. */
+export function classifyServiceLine(
+  line: Pick<CaseOrderLineItem, 'serviceCode' | 'metadata'>,
+  catalogByCode: ReadonlyMap<string, Pick<ServiceCatalogItem, 'category' | 'ftcClass'>>,
+): FtcClass {
+  const saved = line.metadata?.[FTC_CLASS_LINE_METADATA_KEY];
+  if (isFtcClass(saved) && saved !== FTC_CLASS.UNCLASSIFIED) return saved;
+  const item = catalogByCode.get(line.serviceCode);
+  return item ? classifyServiceItem(item) : FTC_CLASS.UNCLASSIFIED;
 }
 
 /** All tangible merchandise (urns, caskets, containers, keepsakes, etc.) are

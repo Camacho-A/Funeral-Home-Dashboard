@@ -9,11 +9,13 @@ import {
   MAX_EXTRA_DEATH_CERTIFICATE_QUANTITY,
   MAX_KEEPSAKE_TRANSFER_QUANTITY,
   MAX_CUSTOM_ITEM_DESCRIPTION_LENGTH,
+  MAX_CATALOG_ITEM_QUANTITY,
+  catalogItemRows,
   serviceTypeItems,
 } from '@/domain/pricing/calculateOrder';
 import { SERVICE_CODES } from '@/domain/pricing/serviceCodes';
 import { formatCentsAsCurrency, formatCatalogPrice } from '@/utils/format';
-import type { ServiceCatalogItem } from '@/types/serviceCatalog';
+import type { ServiceCatalogCategory, ServiceCatalogItem } from '@/types/serviceCatalog';
 import type { ServiceSelections, WeightTier, CustomLineItemSelection } from '@/types/caseOrder';
 import styles from './ServicesAndChargesSelector.module.css';
 
@@ -104,6 +106,7 @@ export const ServicesAndChargesSelector = forwardRef<
     onChangeCustomItems?: (next: CustomLineItemSelection[]) => void;
     unpricedNotice?: ReactNode;
     hideServiceTypes?: boolean;
+    categories?: ServiceCatalogCategory[];
   }
 >(function ServicesAndChargesSelector({
   catalog,
@@ -113,6 +116,7 @@ export const ServicesAndChargesSelector = forwardRef<
   onChangeCustomItems,
   unpricedNotice,
   hideServiceTypes = false,
+  categories,
 }: {
   catalog: ServiceCatalogItem[];
   selections: ServiceSelections;
@@ -136,6 +140,9 @@ export const ServicesAndChargesSelector = forwardRef<
       Case's Service field, which also picks the workflow), so the Service
       group isn't asked twice; the chosen service still prices the order. */
   hideServiceTypes?: boolean;
+  /** Gus Phase 5C-3. The organization's display categories — catalog items
+      are grouped under them. Optional: without it they're one list. */
+  categories?: ServiceCatalogCategory[];
 }, ref) {
   const baseService = catalog.find((item) => item.category === 'base');
   const serviceTypes = serviceTypeItems(catalog);
@@ -229,6 +236,24 @@ export const ServicesAndChargesSelector = forwardRef<
   const hasAnyAddon = [...quantityAddons, ...flatAddons].some((addon) =>
     catalog.some((item) => item.serviceCode === addon.serviceCode),
   );
+
+  // Gus Phase 5C-3 — administrator-added price catalog items, grouped by
+  // display category (in category order; anything else under "Other").
+  const catalogItemList = catalogItemRows(catalog);
+  const catalogItemQuantity = (serviceCode: string) => selections.catalogItems?.find((item) => item.serviceCode === serviceCode)?.quantity ?? 0;
+  function setCatalogItemQuantity(serviceCode: string, quantity: number) {
+    const others = (selections.catalogItems ?? []).filter((item) => item.serviceCode !== serviceCode);
+    const next = quantity > 0 ? [...others, { serviceCode, quantity }] : others;
+    onChange({ ...selections, catalogItems: next });
+  }
+  const catalogItemGroups: Array<{ key: string; title: string | null; items: ServiceCatalogItem[] }> = [];
+  for (const category of categories ?? []) {
+    const items = catalogItemList.filter((item) => item.categoryId === category.id);
+    if (items.length > 0) catalogItemGroups.push({ key: category.id, title: category.name, items });
+  }
+  const groupedIds = new Set(catalogItemGroups.flatMap((group) => group.items.map((item) => item.id)));
+  const ungrouped = catalogItemList.filter((item) => !groupedIds.has(item.id));
+  if (ungrouped.length > 0) catalogItemGroups.push({ key: '__other__', title: catalogItemGroups.length > 0 ? 'Other' : null, items: ungrouped });
 
   return (
     <div className={styles.wrapper}>
@@ -352,6 +377,65 @@ export const ServicesAndChargesSelector = forwardRef<
         </fieldset>
       )}
 
+      {catalogItemList.length > 0 && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>Catalog Items</legend>
+          {catalogItemGroups.map((group) => (
+            <div key={group.key} role="group" aria-label={group.title ?? 'Catalog items'}>
+              {group.title && <div className={styles.customItemHint}>{group.title}</div>}
+              {group.items.map((item) => {
+                const quantity = catalogItemQuantity(item.serviceCode);
+                const priceText =
+                  item.defaultPrice === null
+                    ? formatCatalogPrice(null)
+                    : `${formatCatalogPrice(item.defaultPrice)}${item.pricingType === 'per_unit' ? ' each' : ''}`;
+                return (
+                  <div key={item.serviceCode} className={styles.stepperRow}>
+                    <span className={styles.stepperLabel}>
+                      {item.displayName}
+                      <span className={item.defaultPrice === null ? styles.priceNotSet : styles.priceHint}>{priceText}</span>
+                    </span>
+                    {item.pricingType === 'per_unit' ? (
+                      <div className={styles.stepperControl}>
+                        <button
+                          type="button"
+                          className={styles.stepperButton}
+                          onClick={() => setCatalogItemQuantity(item.serviceCode, clampQuantity(quantity - 1, MAX_CATALOG_ITEM_QUANTITY))}
+                          disabled={quantity <= 0}
+                          aria-label={`Decrease ${item.displayName} quantity`}
+                        >
+                          −
+                        </button>
+                        <span className={styles.stepperValue} aria-label={`${item.displayName} quantity`}>
+                          {quantity}
+                        </span>
+                        <button
+                          type="button"
+                          className={styles.stepperButton}
+                          onClick={() => setCatalogItemQuantity(item.serviceCode, clampQuantity(quantity + 1, MAX_CATALOG_ITEM_QUANTITY))}
+                          disabled={quantity >= MAX_CATALOG_ITEM_QUANTITY}
+                          aria-label={`Increase ${item.displayName} quantity`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    ) : quantity > 0 ? (
+                      <Button variant="secondary" onClick={() => setCatalogItemQuantity(item.serviceCode, 0)} aria-label={`Remove ${item.displayName}`}>
+                        Added ✕
+                      </Button>
+                    ) : (
+                      <Button variant="secondary" onClick={() => setCatalogItemQuantity(item.serviceCode, 1)} aria-label={`Add ${item.displayName}`}>
+                        Add
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </fieldset>
+      )}
+
       {onChangeCustomItems && (
         <fieldset className={styles.fieldset}>
           <legend className={styles.legend}>Custom Item</legend>
@@ -402,6 +486,19 @@ export const ServicesAndChargesSelector = forwardRef<
         </fieldset>
       )}
 
+      {!onChangeCustomItems && (customItems ?? []).length > 0 && (
+        <fieldset className={styles.fieldset}>
+          <legend className={styles.legend}>Custom Item</legend>
+          <p className={styles.customItemHint}>You are not allowed to add, change or remove custom items.</p>
+          {(customItems ?? []).map((item) => (
+            <div key={item.id} className={styles.customItemRow}>
+              <span>{item.description}</span>
+              <span className={styles.customItemAmount}>{formatCentsAsCurrency(item.amountCents, 'usd')}</span>
+            </div>
+          ))}
+        </fieldset>
+      )}
+
       <div className={styles.summary}>
         <div className={styles.summaryTitle}>Live Itemized Summary</div>
         {preview.lineItems.map((item) => (
@@ -438,7 +535,7 @@ export const ServicesAndChargesSelector = forwardRef<
         <div className={styles.unpricedWarning} role="alert">
           <div>
             No price is set for {preview.unpricedItems.map((item) => item.displayName).join(', ')}. An administrator
-            can set it in Settings › Services &amp; Pricing.
+            can set it in Settings › Price Catalog.
           </div>
           <div>{unpricedNotice ?? 'This order can’t be saved until the price is set.'}</div>
         </div>

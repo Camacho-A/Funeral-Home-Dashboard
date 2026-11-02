@@ -1,3 +1,4 @@
+import { standardPriceRefusal } from '@/lib/priceCatalogRoutes';
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
@@ -36,6 +37,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
   const patch: Record<string, unknown> = {};
   for (const f of ['name', 'optionValues', 'retailPriceOverride', 'costOverride', 'taxableOverride', 'supplierIdOverride'] as const) {
     if (body[f] !== undefined) patch[f] = body[f];
+  }
+  if ('retailPriceOverride' in patch) {
+    const priceRefusal = await standardPriceRefusal({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode);
+    if (priceRefusal) return priceRefusal;
   }
   try {
     const variant = await updateVariant(organizationId, variantId, patch, ctx, dataAdapterMode);

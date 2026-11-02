@@ -151,6 +151,29 @@ export function diffSelections(
     });
   }
 
+  // Gus Phase 5C-3 — administrator-added catalog items, one row per item
+  // whose quantity changed. Priced from `catalog`, which for an existing
+  // order carries each line's saved unit price (catalogWithOrderSnapshots),
+  // so the delta is exactly what the order total moves by.
+  const previousCatalogItems = new Map((previous.catalogItems ?? []).map((item) => [item.serviceCode, item.quantity]));
+  const nextCatalogItems = new Map((next.catalogItems ?? []).map((item) => [item.serviceCode, item.quantity]));
+  for (const serviceCode of new Set([...previousCatalogItems.keys(), ...nextCatalogItems.keys()])) {
+    const previousQuantity = previousCatalogItems.get(serviceCode) ?? 0;
+    const nextQuantity = nextCatalogItems.get(serviceCode) ?? 0;
+    if (previousQuantity === nextQuantity) continue;
+    const item = catalogByCode.get(serviceCode);
+    const name = item?.displayName ?? serviceCode;
+    const delta = (nextQuantity - previousQuantity) * catalogPrice(catalogByCode, serviceCode);
+    const verb = nextQuantity > previousQuantity ? 'Added' : 'Removed';
+    entries.push({
+      action: previousQuantity === 0 ? 'catalog_item_added' : nextQuantity === 0 ? 'catalog_item_removed' : 'catalog_item_quantity_changed',
+      previousValue: String(previousQuantity),
+      newValue: String(nextQuantity),
+      amountDeltaCents: delta,
+      description: `${verb}: ${Math.abs(nextQuantity - previousQuantity)} × ${name}, ${formatSignedDollarsAndCents(delta)}`,
+    });
+  }
+
   return entries;
 }
 

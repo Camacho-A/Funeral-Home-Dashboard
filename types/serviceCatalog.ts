@@ -40,7 +40,7 @@ export type ServiceCatalogItem = {
       2026-10: `null` means "price not set yet" — a catalog row whose
       price the funeral home hasn't supplied (Gus Camacho Jr.'s catalog is
       onboarded entirely unpriced; an administrator enters prices later in
-      Settings › Services & Pricing). Null is NEVER $0: the pricing engine
+      Settings › Price Catalog). Null is NEVER $0: the pricing engine
       reports it as unpriced (domain/pricing/calculateOrder.ts's
       `unpricedItems`), the server refuses to persist an order that
       selects it, and every display labels it "Price not set". */
@@ -54,9 +54,54 @@ export type ServiceCatalogItem = {
       pricing, the GL, or AR. */
   ftcClass?: string | null;
   isActive: boolean;
+  /** Gus Phase 5C-3. Optional longer, internal description shown in
+      Settings › Price Catalog — never on an order line (a line snapshots
+      `displayName`). Absent on rows written before 5C-3. */
+  description?: string | null;
+  /** Gus Phase 5C-3. The organization-configured display category this item
+      is filed under (ServiceCatalogCategory.id), or null/absent for none.
+      Purely organizational — it never changes how an item is priced
+      (`category` above does that). */
+  categoryId?: string | null;
+  /** Gus Phase 5C-3 (finalization). An administrator-added Merchandise item
+      can be linked to one existing inventory-tracked merchandise product
+      (MerchandiseProduct.id) — the inventory system stays the source of
+      truth for stock and for the item's price. Null/absent = not linked. */
+  merchandiseProductId?: string | null;
+  /** Gus Phase 5C-3. Optimistic-concurrency counter, bumped by every catalog
+      edit; absent on rows written before 5C-3, which counts as 0. */
+  revision?: number;
   /** Display/calculation ordering — matches the "Live Itemized Summary"
       example order (base, then weight surcharge, then add-ons). */
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+};
+
+/**
+ * Gus Phase 5C-3 (administrator-managed price catalog). One display category
+ * an organization files its catalog items under — "Funeral Services",
+ * "Merchandise", "Documents and Permits" … — created, renamed, reordered and
+ * deactivated by an administrator in Settings › Price Catalog. Never a
+ * pricing rule: categories only organize and filter the catalog.
+ */
+export type ServiceCatalogCategory = {
+  id: string;
+  organizationId: string;
+  name: string;
+  sortOrder: number;
+  /** A deactivated category keeps its items (and every order line already
+      priced from them); it is only no longer offered for new items. */
+  isActive: boolean;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Gus Phase 5C-3. One catalog item staff add to a case order — the item's
+    code and how many. A calculation input only: the server prices it from
+    its own catalog, never from anything the browser sends. */
+export type CatalogItemSelection = {
+  serviceCode: string;
+  quantity: number;
 };

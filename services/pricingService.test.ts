@@ -824,6 +824,9 @@ describe('Manors launch-prep — additional case charges: quantity edits, remova
 });
 
 describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custom item', () => {
+  // Gus Phase 5C-3 (finalization): these exercise the custom-item mechanics as
+  // an authorized caller (Administrator/Manager — canEditCustomItems); the
+  // refusal for everyone else is covered in services/customItemPermission.test.ts.
   const BASE_SELECTIONS = { weightTier: 'under_200' as const, extraDeathCertificateQuantity: 0, mailCremated: false, keepsakeTransferQuantity: 0, urnTransfer: false, shipping: false };
 
   it('2/3/9/10: a custom item is persisted to this case\'s CaseOrder as a normal line item', async () => {
@@ -835,6 +838,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake requested by family', amountCents: 7500 }] },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
@@ -857,6 +861,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Special memorial item', amountCents: 12500 }] },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
@@ -873,12 +878,13 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Special memorial item', amountCents: 12500 }] },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
     );
     const { lineItems: otherCaseLines } = await createCaseOrder(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-3b', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-3b', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, canEditCustomItems: true, now: NOW },
       'mock',
     );
     expect(otherCaseLines.some((li) => li.description.includes('SPECIAL MEMORIAL ITEM'))).toBe(false);
@@ -901,6 +907,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
@@ -912,7 +919,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
   it('11/12: recalculateOrder correctly increases the authoritative total and reopens the balance', async () => {
     const { createCaseOrder, recalculateOrder } = await import('./pricingService');
     await createCaseOrder(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-5', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-5', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, canEditCustomItems: true, now: NOW },
       'mock',
     );
     const result = await recalculateOrder(
@@ -922,6 +929,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
         performedBy: 'Sam Rivera',
         idFactory,
+        canEditCustomItems: true,
         now: '2026-07-21T00:00:00.000Z',
       },
       'mock',
@@ -940,6 +948,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
@@ -947,7 +956,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
     // Submitting without the item (omitted from the array) removes it —
     // exactly like merchandise's removal-by-omission.
     const result = await recalculateOrder(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-6', selections: { ...BASE_SELECTIONS, customItems: [] }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-6', selections: { ...BASE_SELECTIONS, customItems: [] }, performedBy: 'Sam Rivera', idFactory, canEditCustomItems: true, now: '2026-07-21T00:00:00.000Z' },
       'mock',
     );
     expect(result?.order.total).toBe(89_000);
@@ -964,12 +973,13 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
     );
     const result = await recalculateOrder(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-7', selections: { ...BASE_SELECTIONS, extraDeathCertificateQuantity: 1 }, performedBy: 'Sam Rivera', idFactory, now: '2026-07-21T00:00:00.000Z' },
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-7', selections: { ...BASE_SELECTIONS, extraDeathCertificateQuantity: 1 }, performedBy: 'Sam Rivera', idFactory, canEditCustomItems: true, now: '2026-07-21T00:00:00.000Z' },
       'mock',
     );
     expect(result?.order.total).toBe(89_000 + 2_500 + 7_500);
@@ -979,7 +989,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
   it('13/14: a fully-paid order receiving a later custom charge preserves the original payment and correctly reopens the balance', async () => {
     const { createCaseOrder, recalculateOrder, refreshBalanceForCase } = await import('./pricingService');
     const { order: v1 } = await createCaseOrder(
-      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-8', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, now: NOW },
+      { organizationId: DEFAULT_ORGANIZATION_ID, caseId: 'case-custom-8', selections: BASE_SELECTIONS, performedBy: 'Jordan Ellis', idFactory, canEditCustomItems: true, now: NOW },
       'mock',
     );
     expect(v1.total).toBe(89_000);
@@ -1019,6 +1029,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Special item', amountCents: 7500 }] },
         performedBy: 'Sam Rivera',
         idFactory,
+        canEditCustomItems: true,
         now: '2026-07-22T00:00:00.000Z',
       },
       'mock',
@@ -1043,6 +1054,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: 'c1', description: 'Additional keepsake', amountCents: 7500 }] },
         performedBy: 'Jordan Ellis',
         idFactory,
+        canEditCustomItems: true,
         now: NOW,
       },
       'mock',
@@ -1059,6 +1071,7 @@ describe('SOLIS cleanup item #11 (2026-09) — Additional Items & Services custo
         selections: { ...BASE_SELECTIONS, customItems: [{ id: persistedCustomLine.id, description: 'ADDITIONAL KEEPSAKE', amountCents: 7500 }] },
         performedBy: 'Sam Rivera',
         idFactory,
+        canEditCustomItems: true,
       },
       'mock',
     );

@@ -1,16 +1,7 @@
-import { ServicesPricingPanel } from '@/components/settings/ServicesPricingPanel';
+import { redirect } from 'next/navigation';
 
-/**
- * 2026-10 (Gus Camacho Jr. service catalog). "Settings → Services &
- * Pricing" — the organization's service catalog with editable prices.
- * Self-scoped like every other settings page; the underlying route
- * (PATCH /api/service-catalog/[itemId]) enforces `serviceCatalog.edit`.
- */
+/** Gus Phase 5C-3: Settings › Services & Pricing became Settings › Price
+    Catalog; this keeps old links and bookmarks working. */
 export default function ServicesPricingSettingsPage() {
-  return (
-    <div>
-      <h1>Services &amp; Pricing</h1>
-      <ServicesPricingPanel />
-    </div>
-  );
+  redirect('/settings/price-catalog');
 }

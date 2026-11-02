@@ -51,3 +51,28 @@ export const SERVICE_TYPE_CATEGORY = 'service_type';
     repriced or deactivated. Every other service line keeps `metadata: null`. */
 export const SERVICE_TYPE_LINE_METADATA_KEY = 'serviceRole';
 export const SERVICE_TYPE_LINE_METADATA_VALUE = 'service_type';
+
+/**
+ * Gus Phase 5C-3 (administrator-managed price catalog). The
+ * `ServiceCatalogItem.category` value for an item an administrator adds in
+ * Settings › Price Catalog — a service, merchandise item, permit or other
+ * charge staff can add to a case order with a quantity
+ * (ServiceSelections.catalogItems). Distinct from the display category an
+ * item is filed under (`ServiceCatalogItem.categoryId`, configurable per
+ * organization): this value only says how the pricing engine charges it.
+ */
+export const CATALOG_ITEM_CATEGORY = 'catalog_item';
+
+/** Line-item metadata marking a persisted service line as a catalog item, so
+    selectionsFromLineItems can reconstruct `catalogItems` from history alone,
+    exactly like SERVICE_TYPE_LINE_METADATA_KEY does for the service type. */
+export const CATALOG_ITEM_LINE_METADATA_KEY = 'serviceRole';
+export const CATALOG_ITEM_LINE_METADATA_VALUE = 'catalog_item';
+
+/** Gus Phase 5C-3 (finalization). Line-item metadata snapshotting the FTC
+    classification a catalog item had, explicitly, when the line was saved —
+    so reviewing or changing an item's classification later never restates
+    an existing order line. Absent when the item was pending review (then the
+    statement shows the item's current classification, still "pending" until
+    an administrator reviews it). */
+export const FTC_CLASS_LINE_METADATA_KEY = 'ftcClass';

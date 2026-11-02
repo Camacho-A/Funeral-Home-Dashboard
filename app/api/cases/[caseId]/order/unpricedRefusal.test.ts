@@ -64,13 +64,13 @@ afterEach(() => {
 });
 
 describe('case order routes — unpriced catalog items', () => {
-  it('POST answers 422 with a Settings › Services & Pricing message and creates no order', async () => {
+  it('POST answers 422 with a Settings › Price Catalog message and creates no order', async () => {
     setManorsPrice('DIRECT_CREMATION', null);
     const response = await send('POST', KNOWN_CASE().id, BASE_SELECTIONS);
     expect(response.status).toBe(422);
     const body = (await response.json()) as { error: string; unpricedItems: Array<{ serviceCode: string }> };
     expect(body.error).toContain('No price is set for "Direct Cremation"');
-    expect(body.error).toContain('Settings › Services & Pricing');
+    expect(body.error).toContain('Settings › Price Catalog');
     expect(body.unpricedItems.map((i) => i.serviceCode)).toEqual(['DIRECT_CREMATION']);
     expect(caseOrderFixtures).toHaveLength(0);
     expect(caseOrderLineItemFixtures).toHaveLength(0);

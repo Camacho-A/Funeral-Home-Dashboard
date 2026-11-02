@@ -386,6 +386,20 @@ export const ACTIVITY_EVENT_TYPES = {
       order calculated. */
   SERVICE_CATALOG_PRICE_UPDATED: 'serviceCatalog.price.updated',
 
+  /** Gus Phase 5C-3 (administrator-managed price catalog). Settings › Price
+      Catalog changes, all `'administration'` category, each emitted only by
+      services/priceCatalogService.ts — and always in the same request as
+      the change itself (a change whose audit record can't be written is
+      not made). A price change on an existing item still emits
+      SERVICE_CATALOG_PRICE_UPDATED above. None of them ever rewrites an
+      existing CaseOrder. */
+  SERVICE_CATALOG_ITEM_CREATED: 'serviceCatalog.item.created',
+  SERVICE_CATALOG_ITEM_UPDATED: 'serviceCatalog.item.updated',
+  SERVICE_CATALOG_ITEM_DEACTIVATED: 'serviceCatalog.item.deactivated',
+  SERVICE_CATALOG_ITEM_REACTIVATED: 'serviceCatalog.item.reactivated',
+  SERVICE_CATALOG_CATEGORY_CREATED: 'serviceCatalog.category.created',
+  SERVICE_CATALOG_CATEGORY_UPDATED: 'serviceCatalog.category.updated',
+
   /** Reserved — no reminder/automation engine exists in Solis at all yet. */
   SYSTEM_REMINDER_TRIGGERED: 'system.reminder.triggered',
   SYSTEM_WORKFLOW_AUTOMATION_EXECUTED: 'system.workflow_automation.executed',

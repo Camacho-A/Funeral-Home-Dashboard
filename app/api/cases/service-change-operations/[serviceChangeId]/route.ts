@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
-import { canEditCase, canEditCaseOrder, isAdminTier } from '@/services/authorizationPolicyService';
+import { canEditCase, canEditCaseOrder, isAdminTier, canEditCustomOrderItems } from '@/services/authorizationPolicyService';
 import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
 import { changeCaseService } from '@/services/caseServiceChangeService';
 import {
@@ -130,6 +130,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ ser
         // to the fresh read changeCaseService makes (its case write is
         // conditional on that revision), never an unconditional overwrite.
         expectedRevision: 'repair',
+        canEditCustomItems: 'customItems' in selections ? await canEditCustomOrderItems(caller, adapter) : false,
       },
       adapter,
     );

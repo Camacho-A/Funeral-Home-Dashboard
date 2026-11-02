@@ -1,8 +1,13 @@
-import type { ServiceCatalogItem } from '../../types/serviceCatalog';
+import type { CatalogItemSelection, ServiceCatalogItem } from '../../types/serviceCatalog';
 import type { ServiceSelections, WeightTier, MerchandiseSelection, CaseOrderLineKind, CustomLineItemSelection, CaseOrderLineItem } from '../../types/caseOrder';
 import type { MerchandiseProduct } from '../../types/merchandiseProduct';
 import { getMerchandiseCategoryDefinition } from '../merchandise/merchandiseCategoryRegistry';
+import { FTC_CLASS, isFtcClass } from '../billing/ftcComplianceRegistry';
 import {
+  CATALOG_ITEM_CATEGORY,
+  CATALOG_ITEM_LINE_METADATA_KEY,
+  CATALOG_ITEM_LINE_METADATA_VALUE,
+  FTC_CLASS_LINE_METADATA_KEY,
   SERVICE_CODES,
   SERVICE_TYPE_CATEGORY,
   SERVICE_TYPE_LINE_METADATA_KEY,
@@ -114,6 +119,7 @@ export function normalizeSelections(raw: {
   keepsakeTransferQuantity?: unknown;
   urnTransfer?: unknown;
   shipping?: unknown;
+  catalogItems?: unknown;
 }): ServiceSelections {
   const weightTier = isValidWeightTier(raw.weightTier) ? raw.weightTier : 'under_200';
   const rawQty = typeof raw.extraDeathCertificateQuantity === 'number' ? raw.extraDeathCertificateQuantity : 0;
@@ -134,7 +140,127 @@ export function normalizeSelections(raw: {
   if (rawServiceTypeCode.length > 0 && rawServiceTypeCode.length <= MAX_SERVICE_TYPE_CODE_LENGTH) {
     normalized.serviceTypeCode = rawServiceTypeCode;
   }
+  const catalogItems = normalizeCatalogItemSelections(raw.catalogItems);
+  if (catalogItems.length > 0) normalized.catalogItems = catalogItems;
   return normalized;
+}
+
+/** Gus Phase 5C-3 (finalization). A line's metadata, plus the FTC
+    classification its catalog item has EXPLICITLY at save time — never one
+    derived from a name or category, and never "unclassified" (pending
+    review is the absence of a snapshot). Unchanged (often null) for an item
+    with no explicit classification, so existing lines are byte-identical. */
+function withFtcClassSnapshot(metadata: Record<string, string> | null, item: ServiceCatalogItem): Record<string, string> | null {
+  if (!isFtcClass(item.ftcClass) || item.ftcClass === FTC_CLASS.UNCLASSIFIED) return metadata;
+  return { ...(metadata ?? {}), [FTC_CLASS_LINE_METADATA_KEY]: item.ftcClass };
+}
+
+/** Gus Phase 5C-3 (finalization). The catalog an EXISTING case's order is
+    priced against: the case's own primary service stays choosable even if
+    an administrator has since deactivated it (deactivation only removes it
+    from new cases). Every other inactive row stays inactive. */
+export function catalogForCaseServiceType(catalog: ServiceCatalogItem[], caseServiceTypeCode: string | null | undefined): ServiceCatalogItem[] {
+  if (!caseServiceTypeCode) return catalog;
+  return catalog.map((item) =>
+    !item.isActive && item.category === SERVICE_TYPE_CATEGORY && item.serviceCode === caseServiceTypeCode ? { ...item, isActive: true } : item,
+  );
+}
+
+/** Gus Phase 5C-3. Sanity ceilings on submitted catalog items — bounds a
+    tampered/malformed selection, not a business rule. */
+export const MAX_CATALOG_ITEM_QUANTITY = 99;
+export const MAX_CATALOG_ITEMS_PER_ORDER = 100;
+
+/**
+ * Gus Phase 5C-3. Clamps raw (possibly attacker-controlled) catalog-item
+ * input: drops a row with no code or a non-positive quantity, truncates a
+ * fractional quantity, caps it at MAX_CATALOG_ITEM_QUANTITY, and merges
+ * repeated codes into one row — so one catalog item is always exactly one
+ * line. Whether a code names a real, active catalog item is a catalog
+ * question, answered when the order is priced (calculateOrderTotals).
+ */
+export function normalizeCatalogItemSelections(raw: unknown): CatalogItemSelection[] {
+  if (!Array.isArray(raw)) return [];
+  const quantities = new Map<string, number>();
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const row = entry as Record<string, unknown>;
+    const serviceCode = typeof row.serviceCode === 'string' ? row.serviceCode.trim() : '';
+    if (serviceCode.length === 0 || serviceCode.length > MAX_SERVICE_TYPE_CODE_LENGTH) continue;
+    const quantity = typeof row.quantity === 'number' && Number.isFinite(row.quantity) ? Math.trunc(row.quantity) : 0;
+    if (quantity <= 0) continue;
+    if (!quantities.has(serviceCode) && quantities.size >= MAX_CATALOG_ITEMS_PER_ORDER) continue;
+    quantities.set(serviceCode, Math.min((quantities.get(serviceCode) ?? 0) + quantity, MAX_CATALOG_ITEM_QUANTITY));
+  }
+  return [...quantities].map(([serviceCode, quantity]) => ({ serviceCode, quantity }));
+}
+
+/** Gus Phase 5C-3. The active administrator-added catalog items, in display
+    order — what staff can add to a case order. */
+export function catalogItemRows(catalog: ServiceCatalogItem[]): ServiceCatalogItem[] {
+  return catalog
+    .filter((item) => item.isActive && item.category === CATALOG_ITEM_CATEGORY && !item.merchandiseProductId)
+    .sort((a, b) => a.sortOrder - b.sortOrder || (a.displayName < b.displayName ? -1 : a.displayName > b.displayName ? 1 : 0));
+}
+
+/**
+ * Gus Phase 5C-3 — an order keeps the prices it was saved with. The catalog
+ * an EXISTING order is recalculated against: every service line already on
+ * the order stands in for its own catalog row at the unit price and
+ * description it was saved with, active even if the item has since been
+ * deactivated or its price cleared. So editing one part of an order (adding
+ * an item, changing a quantity) never silently re-prices the rest of it at
+ * today's catalog prices, and a deactivated item stays on the order until
+ * staff remove it. An item newly added to the order is priced from the live
+ * catalog. Used identically by the server (services/pricingService.ts) and
+ * the browser preview (components/case/EditServicesModal.tsx).
+ *
+ * A line whose catalog row is missing (the browser only receives active
+ * rows) is still honored when its own metadata says what role it plays.
+ */
+export function catalogWithOrderSnapshots(
+  catalog: ServiceCatalogItem[],
+  lineItems: Array<Pick<CalculatedLineItem, 'lineKind' | 'serviceCode' | 'description' | 'quantity' | 'unitPrice' | 'metadata'>>,
+): ServiceCatalogItem[] {
+  const serviceLines = lineItems.filter((line) => line.lineKind === 'service');
+  if (serviceLines.length === 0) return catalog;
+  const rowsByCode = new Map(catalog.map((item) => [item.serviceCode, item]));
+  const snapshots = new Map<string, ServiceCatalogItem>();
+  for (const line of serviceLines) {
+    const row = rowsByCode.get(line.serviceCode);
+    const role = line.metadata?.[SERVICE_TYPE_LINE_METADATA_KEY];
+    const category =
+      row?.category ??
+      (role === SERVICE_TYPE_LINE_METADATA_VALUE ? SERVICE_TYPE_CATEGORY : role === CATALOG_ITEM_LINE_METADATA_VALUE ? CATALOG_ITEM_CATEGORY : null);
+    if (!category) continue;
+    const base: ServiceCatalogItem = row ?? {
+      id: `order-line:${line.serviceCode}`,
+      organizationId: '',
+      serviceCode: line.serviceCode,
+      displayName: line.description,
+      category,
+      pricingType: line.quantity > 1 ? 'per_unit' : 'flat',
+      defaultPrice: line.unitPrice,
+      isActive: true,
+      sortOrder: 0,
+      createdAt: '',
+      updatedAt: '',
+    };
+    // The line keeps its own saved classification (if it had one), and a
+    // line already on the order stays a plain service line even if the
+    // item has since been linked to inventory.
+    const savedFtcClass = line.metadata?.[FTC_CLASS_LINE_METADATA_KEY];
+    snapshots.set(line.serviceCode, {
+      ...base,
+      category,
+      displayName: line.description,
+      defaultPrice: line.unitPrice,
+      isActive: true,
+      merchandiseProductId: null,
+      ftcClass: isFtcClass(savedFtcClass) ? savedFtcClass : (base.ftcClass ?? null),
+    });
+  }
+  return [...catalog.filter((item) => !snapshots.has(item.serviceCode)), ...snapshots.values()];
 }
 
 export type CalculatedLineItem = {
@@ -216,7 +342,7 @@ export function calculateOrderTotals(
       unitPrice: item.defaultPrice,
       lineTotal: item.defaultPrice * quantity,
       sortOrder: item.sortOrder,
-      metadata,
+      metadata: withFtcClassSnapshot(metadata, item),
     });
   }
 
@@ -256,6 +382,19 @@ export function calculateOrderTotals(
   }
   if (selections.shipping) {
     addFlatLine(SERVICE_CODES.SHIPPING, 1);
+  }
+
+  // Gus Phase 5C-3 — administrator-added catalog items. Only an active
+  // catalog_item row is ever charged this way (never a service type, a
+  // Manors add-on or another organization's code), and a flat-priced item
+  // always counts once whatever quantity was submitted. An item linked to
+  // an inventory-tracked merchandise product is never charged as a service
+  // line: that would sell stock without the inventory system's reservation.
+  for (const selection of selections.catalogItems ?? []) {
+    const item = catalogByCode.get(selection.serviceCode);
+    if (!item || item.category !== CATALOG_ITEM_CATEGORY || item.merchandiseProductId) continue;
+    const quantity = item.pricingType === 'per_unit' ? Math.min(Math.max(Math.trunc(selection.quantity), 1), MAX_CATALOG_ITEM_QUANTITY) : 1;
+    addFlatLine(item.serviceCode, quantity, { [CATALOG_ITEM_LINE_METADATA_KEY]: CATALOG_ITEM_LINE_METADATA_VALUE });
   }
 
   lineItems.sort((a, b) => a.sortOrder - b.sortOrder);
@@ -341,7 +480,17 @@ export function selectionsFromLineItems(lineItems: CalculatedLineItem[]): Servic
   // the order has one, mirroring normalizeSelections.
   const serviceTypeLine = serviceLines.find((item) => item.metadata?.[SERVICE_TYPE_LINE_METADATA_KEY] === SERVICE_TYPE_LINE_METADATA_VALUE);
   if (serviceTypeLine) selections.serviceTypeCode = serviceTypeLine.serviceCode;
+  const catalogItems = catalogItemSelectionsFromLineItems(lineItems);
+  if (catalogItems.length > 0) selections.catalogItems = catalogItems;
   return selections;
+}
+
+/** Gus Phase 5C-3. The catalog-item half of `selectionsFromLineItems` —
+    every service line marked as a catalog item, with its quantity. */
+export function catalogItemSelectionsFromLineItems(lineItems: CalculatedLineItem[]): CatalogItemSelection[] {
+  return lineItems
+    .filter((item) => item.lineKind === 'service' && item.metadata?.[CATALOG_ITEM_LINE_METADATA_KEY] === CATALOG_ITEM_LINE_METADATA_VALUE)
+    .map((item) => ({ serviceCode: item.serviceCode, quantity: item.quantity }));
 }
 
 // ---------------------------------------------------------------------------

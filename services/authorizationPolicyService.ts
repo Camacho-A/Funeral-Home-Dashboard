@@ -1,3 +1,4 @@
+import { canPerformPricingAction } from './pricingAuthorization';
 import type { DataAdapterMode } from '../lib/env';
 import { hasPermission, hasAnyPermission, type ResolvePermissionsParams } from './permissionService';
 
@@ -89,6 +90,32 @@ export function canRefundPayment(params: ResolvePermissionsParams, dataAdapterMo
 
 export function canEditServiceCatalog(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'serviceCatalog.edit');
+}
+
+/** Gus Phase 5C-3 (administrator-managed price catalog). Changing the price
+    catalog — adding or editing items, prices, categories, active flags —
+    takes BOTH the catalog-editing key and the organization-management key
+    (Administrator only by default), so the catalog stays an administrator's
+    configuration. Viewing it is `serviceCatalog.read`. */
+export function canConfigureServiceCatalog(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  // Price catalog (2026-11): creating and editing items; prices and
+  // deactivation are checked separately (services/pricingAuthorization.ts).
+  return canPerformPricingAction(params, dataAdapterMode, 'catalog.edit');
+}
+
+/** Gus Phase 5C-3 (finalization). Adding, changing or removing a CUSTOM
+    (one-off, staff-priced) item on a case order — Administrator and Manager
+    only. Reuses the existing pricing-authority key `serviceCatalog.edit`,
+    which exactly those two default roles hold; ordinary order editing
+    (`caseOrder.update`) of catalog-priced items is unchanged. */
+export function canEditCustomOrderItems(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  // Price catalog (2026-11): caseOrder.customItems on the granular model;
+  // the organization's existing rule (caseOrder.update) on the legacy one.
+  return canPerformPricingAction(params, dataAdapterMode, 'order.customItems');
+}
+
+export function canReadServiceCatalog(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'serviceCatalog.read');
 }
 
 /** Phase 22 declared `document.generate`; Phase 25 (Document Generation &

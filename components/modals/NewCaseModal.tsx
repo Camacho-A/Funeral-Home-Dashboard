@@ -12,7 +12,7 @@ import { useSession } from '@/hooks/useSession';
 import { useCreateCase } from '@/hooks/useCreateCase';
 import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
 import { useOrganization } from '@/hooks/useOrganization';
-import { useServiceCatalog } from '@/hooks/useServiceCatalog';
+import { useCatalogCategories, useServiceCatalog } from '@/hooks/useServiceCatalog';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useStaff } from '@/hooks/useStaff';
 import { useMutation } from '@tanstack/react-query';
@@ -190,6 +190,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // meaningful from the moment the modal opens, before staff touches
   // anything.
   const { data: serviceCatalog = [], isSuccess: catalogLoaded } = useServiceCatalog();
+  const { data: catalogCategories } = useCatalogCategories();
   const [servicesSelections, setServicesSelections] = useState<ServiceSelections>({
     weightTier: 'under_200',
     extraDeathCertificateQuantity: 0,
@@ -1001,6 +1002,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className="sx-span-all">
                     <ServicesAndChargesSelector
                       catalog={serviceCatalog}
+                      categories={catalogCategories}
                       selections={servicesSelections}
                       onChange={setServicesSelections}
                       unpricedNotice="The case will still be created, without services — add them from the case page once the price is set."

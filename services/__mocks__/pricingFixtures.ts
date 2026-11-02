@@ -1,9 +1,10 @@
-import type { ServiceCatalogItem } from '../../types/serviceCatalog';
+import type { CatalogPriceChange } from '../../types/catalogPriceChange';
+import type { ServiceCatalogCategory, ServiceCatalogItem } from '../../types/serviceCatalog';
 import type { CaseOrder, CaseOrderLineItem } from '../../types/caseOrder';
 import type { CaseOrderAuditEntry } from '../../types/caseOrderAudit';
 import { DEFAULT_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
 import { SERVICE_CODES } from '../../domain/pricing/serviceCodes';
-import { GUS_SERVICE_CATALOG } from '../../domain/onboarding/gusServiceCatalog';
+import { GUS_SERVICE_CATALOG, GUS_STARTER_CATALOG_CATEGORIES } from '../../domain/onboarding/gusServiceCatalog';
 import { mockCollection } from './mockStore';
 import { sandboxCaseOrderLineItems, sandboxCaseOrders } from './sandboxFixtures';
 
@@ -159,3 +160,28 @@ export const serviceCatalogFixtures: ServiceCatalogItem[] = mockCollection('serv
 export const caseOrderFixtures: CaseOrder[] = mockCollection('caseOrderFixtures', (): CaseOrder[] => sandboxCaseOrders());
 export const caseOrderLineItemFixtures: CaseOrderLineItem[] = mockCollection('caseOrderLineItemFixtures', (): CaseOrderLineItem[] => sandboxCaseOrderLineItems());
 export const caseOrderAuditFixtures: CaseOrderAuditEntry[] = mockCollection('caseOrderAuditFixtures', (): CaseOrderAuditEntry[] => []);
+
+/** Gus Phase 5C-3 (administrator-managed price catalog). Gus's starting
+    Settings › Price Catalog categories (GUS_STARTER_CATALOG_CATEGORIES) —
+    names only; no item is filed under one. Manors has none. */
+export function gusCatalogCategoryId(name: string): string {
+  return `${GUS_ORGANIZATION_ID}-cat-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+}
+
+export const serviceCatalogCategoryFixtures: ServiceCatalogCategory[] = mockCollection('serviceCatalogCategoryFixtures', (): ServiceCatalogCategory[] =>
+  GUS_STARTER_CATALOG_CATEGORIES.map((name, index) => ({
+    id: gusCatalogCategoryId(name),
+    organizationId: GUS_ORGANIZATION_ID,
+    name,
+    sortOrder: (index + 1) * 10,
+    isActive: true,
+    revision: 0,
+    createdAt: NOW,
+    updatedAt: NOW,
+  })),
+);
+
+/** Price catalog (2026-11). The append-only price history (mock storage of
+    the proposed `catalogPriceChanges` collection). Starts empty: no price
+    was ever invented, so there is no history to show. */
+export const catalogPriceChangeFixtures: CatalogPriceChange[] = mockCollection('catalogPriceChangeFixtures', (): CatalogPriceChange[] => []);

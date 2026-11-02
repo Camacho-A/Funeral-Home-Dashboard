@@ -15,6 +15,7 @@ import {
   CaseOrderInterruptedError,
   CaseOrderJournalUnavailableError,
   UnpricedCatalogItemError,
+  CustomItemPermissionError,
   type CommittedCaseOrderChange,
   type PreparedCaseOrderChange,
 } from './pricingService';
@@ -149,6 +150,9 @@ export type ServiceChangeRequest = {
    * still conditional on the revision it read, never an overwrite.
    */
   expectedRevision?: number | 'repair';
+  /** Gus Phase 5C-3 (finalization). Whether the caller may add, change or
+      remove custom items (`canEditCustomOrderItems`). Absent = not allowed. */
+  canEditCustomItems?: boolean;
 };
 
 export type ServiceChangeOutcome = { status: number; body: Record<string, unknown> };
@@ -325,11 +329,19 @@ export async function changeCaseService(request: ServiceChangeRequest, dataAdapt
 
   let prepared: PreparedCaseOrderChange;
   try {
+    // Gus Phase 5C-3 (finalization): merchandise only ever changes through
+    // the inventory-reserving merchandise route — a `merchandise` list here is
+    // ignored and the order's merchandise carried forward.
+    const { merchandise: _ignoredMerchandise, ...orderSelections } = request.selections;
+    void _ignoredMerchandise;
     prepared = await prepareCaseOrderChange(
-      { organizationId, caseId, selections: request.selections, performedBy: userId, idFactory },
+      { organizationId, caseId, selections: orderSelections, performedBy: userId, idFactory, canEditCustomItems: request.canEditCustomItems === true },
       dataAdapterMode,
     );
   } catch (error) {
+    if (error instanceof CustomItemPermissionError) {
+      return { status: 403, body: { error: error.message, reason: 'custom_item_not_permitted' } };
+    }
     if (error instanceof UnpricedCatalogItemError) {
       return {
         status: 422,

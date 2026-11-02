@@ -1,3 +1,4 @@
+import { recordCatalogPriceChange } from './catalogPriceHistoryService';
 import type { DataAdapterMode } from '../lib/env';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import {
@@ -219,6 +220,15 @@ export async function updateVariant(organizationId: string, variantId: string, p
     supplierIdOverride: patch.supplierIdOverride !== undefined ? patch.supplierIdOverride : existing.supplierIdOverride,
     updatedAt: nowIso,
   };
+  // Price history (2026-11): a price override change is recorded first
+  // (null = the variant inherits its product's price).
+  if (changedFields.retailPriceOverride) {
+    await recordCatalogPriceChange(
+      ctx,
+      { itemType: 'merchandise_variant', itemId: existing.id, itemCode: existing.sku, itemName: nextName, previousPrice: existing.retailPriceOverride, newPrice: updated.retailPriceOverride, now: nowIso },
+      dataAdapterMode,
+    );
+  }
   const persisted = await persistVariantUpdate(organizationId, variantId, updated, {
     name: nextName, optionValues: nextOptionValues,
     retailPriceOverride: updated.retailPriceOverride, costOverride: updated.costOverride,

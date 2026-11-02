@@ -26,6 +26,8 @@ export const PERMISSION_KEYS = [
 
   'caseOrder.read',
   'caseOrder.update',
+  'caseOrder.customItems',
+  'caseOrder.reprice',
 
   'workflow.read',
   'workflow.edit',
@@ -37,6 +39,10 @@ export const PERMISSION_KEYS = [
 
   'serviceCatalog.read',
   'serviceCatalog.edit',
+  // Price catalog (2026-11): consulted only for organizations on the
+  // 'granular' pricing permission model (organizationProfiles).
+  'serviceCatalog.price',
+  'serviceCatalog.deactivate',
 
   /** `document.generate`/`document.view` were added in Phase 22, ahead of
       any real feature to gate — Phase 25 (Document Generation & Template
@@ -303,6 +309,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
 
   'caseOrder.read': "View a case's order (services and merchandise selections)",
   'caseOrder.update': "Edit a case's order",
+  'caseOrder.customItems': 'Add, change or remove custom (staff-priced) items on a case order',
+  'caseOrder.reprice': "Reprice an existing case order at the current catalog prices",
 
   'workflow.read': 'View workflow templates',
   'workflow.edit': 'Edit workflow templates',
@@ -314,6 +322,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
 
   'serviceCatalog.read': 'View the service/merchandise catalog',
   'serviceCatalog.edit': 'Edit the service/merchandise catalog',
+  'serviceCatalog.price': 'Change catalog and merchandise prices',
+  'serviceCatalog.deactivate': 'Deactivate or reactivate catalog items',
 
   'document.generate': 'Generate (or regenerate) a document from a template',
   'document.view': "View and download a case's documents",

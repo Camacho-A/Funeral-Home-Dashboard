@@ -7,7 +7,7 @@ import { queryWixDataItems } from '@/lib/wixDataApi';
 import { mapWixCaseItem, type WixCaseItem } from '@/lib/wixCaseMapper';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
-import { canReadCaseOrder, canEditCaseOrder } from '@/services/authorizationPolicyService';
+import { canReadCaseOrder, canEditCaseOrder, canEditCustomOrderItems } from '@/services/authorizationPolicyService';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import { caseOrderOperationErrorResponse } from '@/lib/caseOrderOperationResponses';
 import {
@@ -20,6 +20,7 @@ import {
   CaseOrderConflictError,
   CaseOrderCommitError,
   CaseOrderInterruptedError,
+  CustomItemPermissionError,
 } from '@/services/pricingService';
 
 /**
@@ -43,7 +44,7 @@ import {
  *
  * 2026-10: POST/PATCH answer 422 — persisting nothing — when the selected
  * items include one whose catalog price isn't set (UnpricedCatalogItemError);
- * the message tells staff to set the price in Settings › Services & Pricing.
+ * the message tells staff to set the price in Settings › Price Catalog.
  *
  * Non-destructive order versioning (2026-10, docs/ORDER_VERSIONING.md).
  * PATCH requires `expectedOrderId` — the id of the order version staff were
@@ -79,15 +80,24 @@ function unpricedResponse(error: UnpricedCatalogItemError): NextResponse {
   );
 }
 
-async function caseExistsForOrganization(caseId: string, organizationId: string): Promise<boolean> {
+/** The case (this organization's, not archived), or null. Gus Phase 5C-3
+    (finalization): its own primary service is what the order may keep even
+    after that service is deactivated. */
+async function loadCaseForOrganization(caseId: string, organizationId: string): Promise<{ serviceTypeCode: string | null } | null> {
   if (getDataAdapterMode() === 'mock') {
-    return caseFixtures.some((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted);
+    const found = caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted);
+    return found ? { serviceTypeCode: found.workflowSnapshot?.serviceTypeCode ?? null } : null;
   }
   const response = await queryWixDataItems<WixCaseItem>('cases', {
     filter: { beaconCaseId: caseId, organizationId, isArchived: false },
     paging: { limit: 1 },
   });
-  return mapWixCaseItem(response.dataItems[0]?.data) !== null;
+  const found = mapWixCaseItem(response.dataItems[0]?.data);
+  return found ? { serviceTypeCode: found.workflowSnapshot?.serviceTypeCode ?? null } : null;
+}
+
+function customItemRefusal(): NextResponse {
+  return NextResponse.json({ error: new CustomItemPermissionError().message, reason: 'custom_item_not_permitted' }, { status: 403 });
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -97,7 +107,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 async function parseAuthorizedBody(
   request: Request,
 ): Promise<
-  | { ok: true; organizationId: string; selections: unknown; performedBy: string; expectedOrderId: unknown }
+  | { ok: true; organizationId: string; selections: unknown; performedBy: string; expectedOrderId: unknown; canEditCustomItems: boolean }
   | { ok: false; response: NextResponse }
 > {
   // Manors go-live fix (2026-09): `performedBy` used to be trusted directly
@@ -144,12 +154,30 @@ async function parseAuthorizedBody(
     return { ok: false, response: NextResponse.json({ error: 'selections is required.' }, { status: 400 }) };
   }
 
+  // Gus Phase 5C-3 (finalization). Merchandise is set only through
+  // POST /api/cases/[caseId]/merchandise, which reserves and releases stock;
+  // a `merchandise` list sent here is ignored (the order's merchandise is
+  // carried forward), so stock can never be sold or dropped around the
+  // inventory lifecycle.
+  const { merchandise: _ignoredMerchandise, ...selections } = body.selections;
+  void _ignoredMerchandise;
+
+  // Only resolved when the request names custom items at all (otherwise
+  // they're carried forward unchanged and the permission is moot).
+  const canEditCustomItems =
+    'customItems' in selections &&
+    (await canEditCustomOrderItems(
+      { identityId: authResult.context.userId, organizationId: authResult.context.organizationId, roleKey: authResult.context.role },
+      dataAdapterMode,
+    ));
+
   return {
     ok: true,
     organizationId: authResult.context.organizationId,
-    selections: body.selections,
+    selections,
     performedBy: authResult.context.userId,
     expectedOrderId: body.expectedOrderId,
+    canEditCustomItems,
   };
 }
 
@@ -189,9 +217,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const { caseId } = await params;
   const parsed = await parseAuthorizedBody(request);
   if (!parsed.ok) return parsed.response;
-  const { organizationId, selections, performedBy } = parsed;
+  const { organizationId, selections, performedBy, canEditCustomItems } = parsed;
 
-  if (!(await caseExistsForOrganization(caseId, organizationId))) {
+  const case_ = await loadCaseForOrganization(caseId, organizationId);
+  if (!case_) {
     return NextResponse.json({ error: 'Case not found for this organization.' }, { status: 404 });
   }
 
@@ -212,11 +241,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   let created: Awaited<ReturnType<typeof createCaseOrder>>;
   try {
     created = await createCaseOrder(
-      { organizationId, caseId, selections, performedBy, idFactory: () => crypto.randomUUID() },
+      { organizationId, caseId, selections, performedBy, idFactory: () => crypto.randomUUID(), caseServiceTypeCode: case_.serviceTypeCode, canEditCustomItems },
       dataAdapterMode,
     );
   } catch (error) {
     if (error instanceof UnpricedCatalogItemError) return unpricedResponse(error);
+    if (error instanceof CustomItemPermissionError) return customItemRefusal();
     if (error instanceof CaseOrderCommitError) return commitErrorResponse(error);
     const operationResponse = caseOrderOperationErrorResponse(error);
     if (operationResponse) return operationResponse;
@@ -231,7 +261,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   const { caseId } = await params;
   const parsed = await parseAuthorizedBody(request);
   if (!parsed.ok) return parsed.response;
-  const { organizationId, selections, performedBy, expectedOrderId } = parsed;
+  const { organizationId, selections, performedBy, expectedOrderId, canEditCustomItems } = parsed;
 
   if (expectedOrderId === undefined || expectedOrderId === null) {
     return NextResponse.json(
@@ -243,7 +273,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
     return NextResponse.json({ error: 'expectedOrderId must be a case order id.' }, { status: 400 });
   }
 
-  if (!(await caseExistsForOrganization(caseId, organizationId))) {
+  const case_ = await loadCaseForOrganization(caseId, organizationId);
+  if (!case_) {
     return NextResponse.json({ error: 'Case not found for this organization.' }, { status: 404 });
   }
 
@@ -251,11 +282,21 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   let result: Awaited<ReturnType<typeof recalculateOrder>>;
   try {
     result = await recalculateOrder(
-      { organizationId, caseId, selections, performedBy, idFactory: () => crypto.randomUUID(), expectedOrderId },
+      {
+        organizationId,
+        caseId,
+        selections,
+        performedBy,
+        idFactory: () => crypto.randomUUID(),
+        expectedOrderId,
+        caseServiceTypeCode: case_.serviceTypeCode,
+        canEditCustomItems,
+      },
       dataAdapterMode,
     );
   } catch (error) {
     if (error instanceof UnpricedCatalogItemError) return unpricedResponse(error);
+    if (error instanceof CustomItemPermissionError) return customItemRefusal();
     if (error instanceof CaseOrderConflictError) return orderConflictResponse(error, organizationId);
     if (error instanceof CaseOrderCommitError) return commitErrorResponse(error);
     const operationResponse = caseOrderOperationErrorResponse(error);

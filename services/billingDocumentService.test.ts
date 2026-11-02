@@ -133,6 +133,7 @@ describe('billingDocumentService.generateStatement', () => {
         },
         performedBy: 'staff-1',
         idFactory,
+        canEditCustomItems: true, // an Administrator/Manager (Gus Phase 5C-3)
       },
       'mock',
     );
