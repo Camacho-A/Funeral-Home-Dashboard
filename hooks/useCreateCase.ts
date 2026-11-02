@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { isWorkflowByServiceType, selectWorkflowTemplate, TEMPLATE_SELECTION_MESSAGES } from '@/domain/workflow/serviceWorkflows';
 import type { NewCaseInput } from '@/types/case';
 import { casesService } from '@/services/casesService';
 import { useOrganization } from './useOrganization';
 import { useSession } from './useSession';
 import { useWorkflowTemplates } from './useWorkflowTemplates';
+import { isWorkflowByServiceType, selectWorkflowTemplate, WorkflowSelectionError } from '@/domain/workflow/selectWorkflowTemplate';
 
 /**
  * `session` (the trusted current staff member) is read here, from
@@ -32,21 +32,21 @@ export function useCreateCase() {
 
   return useMutation({
     mutationFn: (input: NewCaseInput) => {
-      // Service-based workflows (2026-11): an organization that chooses
-      // workflows by service gets the named service's template; every
-      // other organization keeps "first enabled template" exactly.
-      const selection = selectWorkflowTemplate(templates ?? [], {
-        workflowByServiceType: isWorkflowByServiceType(organization.organizationId),
-        serviceTypeCode: input.serviceTypeCode,
-      });
-      if (!selection.ok) throw new Error(TEMPLATE_SELECTION_MESSAGES[selection.reason]);
-      return casesService.create(
-        organization,
-        { ...input, serviceTypeCode: selection.serviceTypeCode },
-        session,
-        selection.template,
-        organization.dataAdapterMode,
-      );
+      // Service-specific workflows (2026-10): the shared selection rule —
+      // first enabled template for most organizations (unchanged), the
+      // selected service's APPROVED template for an organization with
+      // `workflowByServiceType`. The server (or mock create) re-runs the
+      // same rule; this only fails fast with the same staff message.
+      if (!isWorkflowByServiceType(organization.organizationId)) {
+        const template = templates?.find((t) => t.isEnabled);
+        if (!template) {
+          throw new Error(`No enabled workflow template found for organization ${organization.organizationId}`);
+        }
+        return casesService.create(organization, input, session, template, organization.dataAdapterMode);
+      }
+      const selection = selectWorkflowTemplate(templates ?? [], organization.organizationId, input.serviceTypeCode);
+      if (!selection.ok) throw new WorkflowSelectionError(selection.reason, selection.message);
+      return casesService.create(organization, input, session, selection.template, organization.dataAdapterMode);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });

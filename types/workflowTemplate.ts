@@ -254,14 +254,123 @@ export type WorkflowTemplateVersion = {
   stages: StageTemplate[];
   intake: IntakeTemplate;
   createdAt: string;
+  /**
+   * Service-specific workflows (2026-10). Whether this version may be used
+   * for live cases. ABSENT MEANS APPROVED — every version that predates
+   * this field (every Manors/evergreen row, mock or Wix) keeps behaving
+   * exactly as before. Only an organization whose profile sets
+   * `features.workflowApprovalRequired` ever creates 'draft' versions, and
+   * case creation for an organization with `workflowByServiceType` only
+   * ever snapshots an approved one (domain/workflow/selectWorkflowTemplate.ts).
+   * See docs/GUS_WORKFLOWS.md.
+   */
+  status?: WorkflowTemplateVersionStatus;
+  /** Who approved this version (identity id) — set only by the approve
+      route, never by a version save. */
+  approvedBy?: string | null;
+  approvedAt?: string | null;
+  /**
+   * Workflow template editor (2026-10) — all optional, absent on every
+   * version saved before them. Who saved this version (identity id) and
+   * the display names of the saver/approver as they were at that moment
+   * (shown in Settings' version history; the activity log keeps the
+   * authoritative record).
+   */
+  createdBy?: string | null;
+  createdByName?: string | null;
+  approvedByName?: string | null;
   /** Service-based workflows (2026-11): the service type codes this version
-      serves (e.g. ['CREMATION_WITH_VIEWING']). Absent for an organization
-      that runs one workflow for every case (Manors). */
+      serves (e.g. ['CREMATION_WITH_VIEWING']) — the assignment it proposes;
+      applied to the template (WorkflowTemplate.serviceTypeCodes) only once
+      the version is approved, so a draft never re-routes case creation.
+      Absent for an organization that runs one workflow for every case
+      (Manors). */
   serviceTypeCodes?: string[];
+  /**
+   * Service-specific completion (2026-10). What "this case is finished"
+   * means for cases created from this version — see
+   * WorkflowCompletionPolicy and domain/workflow/completionPolicy.ts.
+   * ABSENT MEANS TODAY'S RULE (the return of cremated remains, nothing
+   * else), so every version that predates the field — every Manors and
+   * evergreen row, and any already-approved Gus row — behaves exactly as
+   * before. Copied onto the case's frozen snapshot at creation.
+   */
+  completionPolicy?: WorkflowCompletionPolicy;
+  /**
+   * Unfinished-workflow protection (2026-10). Set on a version whose
+   * content started life as a copy of another template (Gus' five draft
+   * services were copied from Direct Cremation). Carried forward by every
+   * later save, never accepted from a client. Approval refuses a version
+   * whose stages and completion requirements are still identical to any
+   * version of that source — see
+   * domain/workflow/completionPolicy.ts#isUnmodifiedCopy. Absent = not a
+   * copy (no check).
+   */
+  derivedFrom?: WorkflowVersionSource | null;
   /** Shared workflow foundation (2026-11): which shared base workflow and
       which service extensions this version was composed from — recorded so
       a case can always say what its process was built on. */
   composition?: WorkflowComposition;
+};
+
+/** Which template version another version was copied from. */
+export type WorkflowVersionSource = {
+  templateId: string;
+  version: number;
+};
+
+/**
+ * A checklist item the completion policy requires, addressed the same way
+ * stored completion is ("{displayStage}:{index}") plus the item's label at
+ * the time it was chosen — so a later edit that moves or renames the item
+ * is detected (domain/workflow/completionPolicy.ts) instead of silently
+ * pointing the requirement at a different item.
+ */
+export type CompletionItemRef = {
+  displayStage: number;
+  index: number;
+  label: string;
+};
+
+/**
+ * - 'remains_return' — finished once the return of cremated remains to
+ *   the family is recorded (pickup released / shipment delivered), plus
+ *   any required final items. Today's cremation rule.
+ * - 'final_items' — finished once every required final item is done; no
+ *   remains are returned (burial, entombment).
+ */
+export type WorkflowCompletionKind = 'remains_return' | 'final_items';
+
+/** Existing permissions that may gate a staff "Mark completed" action —
+    never a new permission (domain/rbac/permissionCatalog.ts). */
+export type ManualCompletionPermission = 'case.update' | 'case.delete';
+
+/**
+ * Service-specific completion (2026-10). Configured per workflow template
+ * VERSION in Settings › Workflow Templates and frozen onto each case's
+ * snapshot, so the completion rule a case is judged by never changes
+ * under it. Evaluated by domain/cases/completionEligibility.ts.
+ */
+export type WorkflowCompletionPolicy = {
+  kind: WorkflowCompletionKind;
+  /** Must agree with `kind` ('remains_return' ⇔ true) — kept explicit so
+      a reader of the stored JSON never has to know the mapping. */
+  requiresRemainsReturn: boolean;
+  /** Items in the final stage or the stage before it that must be done.
+      Empty for a 'final_items' policy means "not defined yet": such a
+      case can never complete and the version cannot be approved. */
+  requiredFinalItems: CompletionItemRef[];
+  /** A permission-gated, audited staff action that completes a case on
+      its final stage when the required final items cannot all be
+      recorded. Never stands in for the return of cremated remains. */
+  manualCompletion: { allowed: boolean; permission?: ManualCompletionPermission };
+  /** 'on_completion' (today's behaviour): the case archives itself the
+      moment it completes. 'manual': a completed case stays in the working
+      lists until staff archive it. */
+  archiveEligibility: 'on_completion' | 'manual';
+  /** Administrator-facing note (e.g. "service-specific completion
+      requirements to be defined"). Never read by case logic. */
+  note?: string | null;
 };
 
 /** The shared base (e.g. the cremation foundation) plus the service
@@ -269,6 +378,17 @@ export type WorkflowTemplateVersion = {
 export type WorkflowComposition = {
   base: { key: string; version: number };
   extensions: Array<{ key: string; version: number }>;
+};
+
+export type WorkflowTemplateVersionStatus = 'draft' | 'approved';
+
+/** Unfinished-workflow protection (2026-10). What an approver affirms they
+    reviewed before approving a version — each must be exactly `true`
+    (app/api/workflow-templates/[templateId]/versions/[version]/approve). */
+export type WorkflowApprovalAttestation = {
+  stagesReviewed: boolean;
+  checklistReviewed: boolean;
+  completionReviewed: boolean;
 };
 
 export type WorkflowTemplate = {
@@ -285,6 +405,17 @@ export type WorkflowTemplate = {
   caseTypes: string[];
   /** Append-only; the latest version is versions[versions.length - 1]. */
   versions: WorkflowTemplateVersion[];
+  /**
+   * Service-specific workflows (2026-10). The `service_type` catalog codes
+   * (ServiceSelections.serviceTypeCode) this template is THE workflow for.
+   * Only read for an organization whose profile sets
+   * `features.workflowByServiceType`; absent/empty everywhere else, where
+   * "first enabled template" stays the rule.
+   */
+  serviceTypeCodes?: string[];
+  /** Free-text administrator note shown in Settings › Workflow Templates
+      (e.g. why a template is still a draft). Never read by case logic. */
+  description?: string | null;
 };
 
 /**
@@ -302,9 +433,16 @@ export type CaseWorkflowSnapshot = {
   workflowTemplateVersion: number;
   stages: StageTemplate[];
   intake: IntakeTemplate;
-  /** The service the case was opened for (2026-11), when its organization
-      chooses workflows by service. Absent on every case created before. */
-  serviceTypeCode?: string;
+  /** Service-specific workflows (2026-10). The service type this case's
+      workflow was selected for. Absent on every snapshot taken before
+      this field existed and for organizations without
+      `workflowByServiceType` — never inferred. */
+  serviceTypeCode?: string | null;
   /** Copied from the template version (2026-11); absent before. */
   composition?: WorkflowComposition;
+  /** Service-specific completion (2026-10). The version's completion
+      policy, copied only when the version has one — absent on every
+      older snapshot, which keeps today's rule (see
+      WorkflowTemplateVersion.completionPolicy). */
+  completionPolicy?: WorkflowCompletionPolicy;
 };

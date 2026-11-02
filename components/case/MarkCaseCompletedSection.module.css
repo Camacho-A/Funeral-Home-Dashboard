@@ -1,0 +1,150 @@
+/* Service-specific completion (2026-10). Quiet like ArchiveCaseSection:
+   finishing a case by hand is routine, audited administration — the panel
+   carries the explanation. */
+
+.row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.markButton {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  cursor: pointer;
+}
+
+.markButton:hover {
+  background: var(--sx-subtle, oklch(0.97 0.003 255));
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.panel {
+  margin-top: 12px;
+  padding: var(--space-9) var(--space-10);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.panelTitle {
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-bold);
+  margin-bottom: var(--space-6);
+}
+
+.sectionLabel {
+  margin: 12px 0 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.policyList,
+.requirementList,
+.reasonList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+}
+
+.requirementList {
+  padding-left: 0;
+  list-style: none;
+}
+
+.requirementDone {
+  color: var(--color-text-muted);
+}
+
+.requirementUnmet {
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.note {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.blocked {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border: 1px solid oklch(0.88 0.06 75);
+  border-radius: 7px;
+  background: var(--sx-amber-bg, oklch(0.97 0.03 85));
+  color: var(--sx-amber-text, oklch(0.42 0.09 65));
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.reasonLabel {
+  display: block;
+  margin: 14px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.fieldError {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--solis-danger, var(--color-danger-text));
+}
+
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.cancelButton,
+.confirmButton {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 7px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.cancelButton {
+  border: 1px solid var(--color-border);
+  background: #fff;
+  color: var(--color-text-primary);
+}
+
+.confirmButton {
+  border: 1px solid var(--color-brand, oklch(0.36 0.07 255));
+  background: var(--color-brand, oklch(0.36 0.07 255));
+  color: #fff;
+  font-weight: 600;
+}
+
+.cancelButton:disabled,
+.confirmButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}

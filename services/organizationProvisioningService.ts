@@ -49,6 +49,7 @@ import {
   buildWorkflowTemplate,
   buildWixWorkflowTemplateData,
   buildWixWorkflowTemplateVersionData,
+  fetchWixWorkflowTemplates,
   type WixWorkflowTemplateItem,
   type WixWorkflowTemplateVersionItem,
 } from '../lib/wixWorkflowTemplateMapper';
@@ -75,10 +76,12 @@ import {
   type LaunchChecklistItem,
 } from '../domain/onboarding/launchReadiness';
 import { STARTER_WORKFLOW, MINIMAL_WORKFLOW, type StarterWorkflowContent } from '../domain/onboarding/starterWorkflow';
+import { buildServiceWorkflowTemplateDefinitions } from '../domain/workflow/serviceWorkflows';
+import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
 import { resolveStarterServiceCatalog, type StarterServiceCatalogEntry } from '../domain/onboarding/starterServiceCatalog';
 import { mockOrganizationFixtures, mockMembershipFixtures } from './__mocks__/authFixtures';
 import { membershipFixtures } from './__mocks__/identityFixtures';
-import { workflowTemplateFixtures } from './__mocks__/workflowTemplates';
+import { standardCremationIntakeV5, workflowTemplateFixtures } from './__mocks__/workflowTemplates';
 import { serviceCatalogFixtures } from './__mocks__/pricingFixtures';
 import {
   organizationLocationFixtures,
@@ -968,7 +971,7 @@ async function fetchSourceTemplateContent(
   return structuredClone({ caseTypes: latest.caseTypes, stages: latest.stages, intake: latest.intake });
 }
 
-export type ProvisionWorkflowMode = 'starter' | 'clone_existing' | 'minimal';
+export type ProvisionWorkflowMode = 'starter' | 'clone_existing' | 'minimal' | 'service_workflows';
 
 /**
  * Materializes a brand-new, organization-owned `WorkflowTemplate` +
@@ -988,7 +991,11 @@ export async function provisionWorkflow(
   params: { mode: ProvisionWorkflowMode; sourceTemplateId?: string; name?: string },
   idFactory: () => string,
   dataAdapterMode: DataAdapterMode,
-): Promise<{ template: WorkflowTemplate; isNew: boolean }> {
+): Promise<{ template: WorkflowTemplate; isNew: boolean; templates?: WorkflowTemplate[] }> {
+  if (params.mode === 'service_workflows') {
+    return provisionServiceWorkflows(organizationId, idFactory, dataAdapterMode);
+  }
+
   const existing = await getOrganizationWorkflow(organizationId, dataAdapterMode);
   if (existing) return { template: existing, isNew: false };
 
@@ -1039,6 +1046,104 @@ export async function provisionWorkflow(
   );
 
   return { template, isNew: true };
+}
+
+/**
+ * Service-based workflows (2026-11). Provisions an organization's
+ * cremation service templates — one per service (Direct Cremation,
+ * Cremation with Viewing, Cremation with Final Goodbye), each composed from
+ * the shared cremation foundation (domain/workflow/serviceWorkflows.ts).
+ * Explicit, not a variation of 'starter'.
+ *
+ * - Only for an organization that chooses workflows by service; any other
+ *   organization is refused.
+ * - Idempotent per service: a service type that already has a template
+ *   (any template whose serviceTypeCodes includes it) is left exactly as it
+ *   is — a retry, or a run after an administrator edited/approved one,
+ *   never overwrites, duplicates or deletes anything. Templates with no
+ *   service type (e.g. an earlier 'starter' run) are left untouched too.
+ * - Every row is a fresh, organization-owned copy (new ids from
+ *   idFactory), never shared with another organization.
+ */
+async function provisionServiceWorkflows(
+  organizationId: string,
+  idFactory: () => string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ template: WorkflowTemplate; isNew: boolean; templates: WorkflowTemplate[] }> {
+  if (!isWorkflowByServiceType(organizationId)) {
+    throw new Error('The service_workflows mode is only for an organization that chooses workflows by service (features.workflowByServiceType).');
+  }
+
+  const existing =
+    dataAdapterMode === 'mock'
+      ? workflowTemplateFixtures.filter((t) => t.organizationId === organizationId)
+      : await fetchWixWorkflowTemplates(organizationId);
+
+  const now = nowIso();
+  const result: WorkflowTemplate[] = [];
+  let created = 0;
+
+  // The organization's own arrangement form is bound later (no integration
+  // yet): staff confirm it by hand until then.
+  const definitions = buildServiceWorkflowTemplateDefinitions({ organizationId, arrangementFormIntegrationId: null, intake: standardCremationIntakeV5, createdAt: now });
+  for (const definition of definitions) {
+    // Idempotent: a service that already has a template is left alone.
+    const already = existing.find((t) => (t.serviceTypeCodes ?? []).includes(definition.serviceTypeCode));
+    if (already) {
+      result.push(already);
+      continue;
+    }
+
+    const templateId = idFactory();
+    const template: WorkflowTemplate = {
+      id: templateId,
+      organizationId,
+      name: definition.name,
+      description: definition.description,
+      isEnabled: true,
+      caseTypes: definition.caseTypes,
+      serviceTypeCodes: [definition.serviceTypeCode],
+      versions: [definition.version],
+    };
+
+    if (dataAdapterMode === 'mock') {
+      workflowTemplateFixtures.push(template);
+    } else {
+      await insertWixDataItem<WixWorkflowTemplateItem>(
+        'workflowTemplates',
+        buildWixWorkflowTemplateData({
+          id: templateId,
+          organizationId,
+          name: template.name,
+          isEnabled: true,
+          caseTypes: template.caseTypes,
+          serviceTypeCodes: template.serviceTypeCodes,
+          description: template.description,
+        }),
+        templateId,
+      );
+      await insertWixDataItem<WixWorkflowTemplateVersionItem>(
+        'workflowTemplateVersions',
+        buildWixWorkflowTemplateVersionData({
+          beaconTemplateId: templateId,
+          version: definition.version.version,
+          caseTypes: definition.version.caseTypes,
+          stages: definition.version.stages,
+          intake: definition.version.intake,
+          createdAt: now,
+          status: definition.version.status,
+          serviceTypeCodes: definition.version.serviceTypeCodes,
+          composition: definition.version.composition,
+          ...(definition.version.completionPolicy ? { completionPolicy: definition.version.completionPolicy } : {}),
+        }),
+        `${templateId}-v${definition.version.version}`,
+      );
+    }
+    created += 1;
+    result.push(template);
+  }
+
+  return { template: result[0], isNew: created > 0, templates: result };
 }
 
 const RETIRED_INTAKE_FIELD_TYPES = new Set(['creditCard', 'expiration', 'cvv']);

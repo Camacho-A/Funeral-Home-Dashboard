@@ -49,6 +49,10 @@ function buildStructuredIntakeFieldPatch<K extends keyof CaseUpdate & string>(
   return patch;
 }
 
+/** A save refused because the case changed first (409): the edit that
+    was refused and the case as it is now. */
+export type CaseEditConflict = { patch: CaseUpdate; current: Case | null; message?: string };
+
 /** A save of checklist ticks and nothing else. */
 function isChecklistOnlyPatch(patch: CaseUpdate): patch is CaseUpdate & { checklistState: Record<string, boolean> } {
   const keys = Object.keys(patch);
@@ -106,7 +110,7 @@ export function useCaseMutations(caseId: string) {
    */
   const queryKey = ['case', organization.organizationId, caseId] as const;
   const knownRevision = useRef(0);
-  const [conflict, setConflict] = useState<{ patch: CaseUpdate; current: Case | null } | null>(null);
+  const [conflict, setConflict] = useState<CaseEditConflict | null>(null);
 
   type CaseEdit = { patch: CaseUpdate; baseValues?: CaseMapBaseValues };
 

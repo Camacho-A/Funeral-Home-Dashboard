@@ -101,3 +101,15 @@
   border-radius: var(--radius-sm);
   padding: var(--space-5) var(--space-6);
 }
+
+/* Service-specific workflows (2026-10): the selected service's stage list. */
+.workflowPreview {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.workflowPreviewCount {
+  color: var(--sx-muted);
+}

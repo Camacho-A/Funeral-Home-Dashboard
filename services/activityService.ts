@@ -15,6 +15,7 @@ import { activityEventFixtures } from './__mocks__/activityEventFixtures';
 import { buildCsv, EXPORT_ROW_CAP } from '../domain/reporting/csvExport';
 import { getIdentityById } from './identityService';
 import { formatCentsAsCurrency } from '../utils/format';
+import type { WorkflowApprovalAttestation } from '../types/workflowTemplate';
 
 /**
  * Phase 24 (Case Activity Timeline & Audit Center). The single service
@@ -489,6 +490,101 @@ export function recordCaseOrderOperationJournalEntry(
       description: entry.description,
       metadata: JSON.stringify({ ...entry.details, operationId: entry.operationId, caseId: entry.caseId, status: entry.status }),
       severity: entry.status === 'failed' ? 'critical' : entry.status === 'compensated' || entry.status === 'abandoned' ? 'warning' : 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Consistent service changes (2026-10). What a failed coordinated
+    service change did and undid — shared by the two builders below. */
+export type ServiceChangeFailureDetails = {
+  serviceChangeId: string;
+  /** The step that failed: 'order' (writing the new case order) or
+      'case' (writing the case's workflow after the order was written). */
+  failedStep: 'order' | 'case';
+  reason: string;
+  fromServiceTypeCode: string | null;
+  toServiceTypeCode: string;
+  /** The order version the change wrote (null when it never got that far). */
+  committedOrderId: string | null;
+  /** The appended version that restored the previous services, if any. */
+  restoredOrderId: string | null;
+  compensationError?: string | null;
+};
+
+function serviceChangeFailureMetadata(details: ServiceChangeFailureDetails, needsRepair: boolean): string {
+  return JSON.stringify({ ...details, compensationError: details.compensationError ?? null, needsRepair });
+}
+
+/** A coordinated service change was undone cleanly after a failure — the
+    case is consistent (its previous workflow and services stand). */
+export function recordServiceChangeCompensated(
+  ctx: ActivityContext,
+  caseId: string,
+  details: ServiceChangeFailureDetails,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SERVICE_CHANGE_COMPENSATED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ serviceTypeCode: details.fromServiceTypeCode }),
+      newValue: JSON.stringify({ serviceTypeCode: details.fromServiceTypeCode }),
+      description: `Service change to ${details.toServiceTypeCode} was not applied (${details.reason}); the case order change was undone and the previous services and workflow stand`,
+      metadata: serviceChangeFailureMetadata(details, false),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** A coordinated service change failed and could not be undone — the
+    explicit needs-repair marker. */
+export function recordServiceChangeFailed(
+  ctx: ActivityContext,
+  caseId: string,
+  details: ServiceChangeFailureDetails,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SERVICE_CHANGE_FAILED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ serviceTypeCode: details.fromServiceTypeCode }),
+      newValue: JSON.stringify({ serviceTypeCode: details.toServiceTypeCode, committedOrderId: details.committedOrderId }),
+      description: `NEEDS REPAIR: service change to ${details.toServiceTypeCode} failed (${details.reason}) and could not be undone — the case order and workflow may disagree`,
+      metadata: serviceChangeFailureMetadata(details, true),
+      severity: 'critical',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Case concurrency (2026-10). One step of a coordinated service change's
+    operation journal — see services/serviceChangeJournal.ts. */
+export function recordServiceChangeJournalEntry(
+  ctx: ActivityContext,
+  entry: { serviceChangeId: string; caseId: string; status: string; description: string; details: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'system',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_SERVICE_CHANGE_JOURNAL,
+      resourceType: 'case_service_change',
+      resourceId: entry.serviceChangeId,
+      previousValue: null,
+      newValue: JSON.stringify({ status: entry.status }),
+      description: entry.description,
+      metadata: JSON.stringify({ ...entry.details, serviceChangeId: entry.serviceChangeId, caseId: entry.caseId, status: entry.status }),
+      severity: entry.status === 'failed' ? 'critical' : entry.status === 'compensated' ? 'warning' : 'info',
     }),
     dataAdapterMode,
   );
@@ -1457,6 +1553,117 @@ export function recordDocumentTemplateRestored(ctx: ActivityContext, templateId:
       description: `Document template "${templateName}" restored`,
       metadata: null,
       severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Workflow template editor (2026-10). Organization-level (caseId null)
+// audit of workflow template versions — who saved or approved which
+// version of which template, for which service. The actor and timestamp
+// come from the envelope like every other event.
+// ---------------------------------------------------------------------------
+
+export type WorkflowTemplateVersionActivity = {
+  templateId: string;
+  templateName: string;
+  version: number;
+  /** 'draft' when the organization requires approval; null when versions
+      go live as saved (no approval step). */
+  status: 'draft' | 'approved' | null;
+  /** The service(s) the version is for, when the organization selects
+      workflows by service type. */
+  serviceTypeCodes: string[] | null;
+  /** Unfinished-workflow protection (2026-10). The approver's review
+      attestation and the completion policy that went live — approval
+      events only; absent elsewhere. */
+  attestation?: WorkflowApprovalAttestation;
+  completionPolicy?: unknown;
+};
+
+export type { WorkflowApprovalAttestation };
+
+function workflowServiceSuffix(serviceTypeCodes: string[] | null): string {
+  return serviceTypeCodes && serviceTypeCodes.length > 0 ? ` (service: ${serviceTypeCodes.join(', ')})` : '';
+}
+
+export function recordWorkflowTemplateVersionSaved(
+  ctx: ActivityContext,
+  activity: WorkflowTemplateVersionActivity,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'workflow',
+      eventType: ACTIVITY_EVENT_TYPES.WORKFLOW_TEMPLATE_UPDATED,
+      resourceType: 'workflowTemplate',
+      resourceId: activity.templateId,
+      previousValue: null,
+      newValue: JSON.stringify({ version: activity.version, status: activity.status, serviceTypeCodes: activity.serviceTypeCodes }),
+      description: `Workflow "${activity.templateName}" version ${activity.version} saved${activity.status === 'draft' ? ' as a draft' : ''}${workflowServiceSuffix(activity.serviceTypeCodes)}`,
+      metadata: JSON.stringify({ templateName: activity.templateName }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+export function recordWorkflowTemplateVersionApproved(
+  ctx: ActivityContext,
+  activity: WorkflowTemplateVersionActivity,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'workflow',
+      eventType: ACTIVITY_EVENT_TYPES.WORKFLOW_TEMPLATE_PUBLISHED,
+      resourceType: 'workflowTemplate',
+      resourceId: activity.templateId,
+      previousValue: JSON.stringify({ version: activity.version, status: 'draft' }),
+      newValue: JSON.stringify({ version: activity.version, status: 'approved', serviceTypeCodes: activity.serviceTypeCodes }),
+      description: `Workflow "${activity.templateName}" version ${activity.version} approved — new cases now use it${workflowServiceSuffix(activity.serviceTypeCodes)}`,
+      metadata: JSON.stringify({
+        templateName: activity.templateName,
+        ...(activity.attestation ? { attestation: activity.attestation } : {}),
+        ...(activity.completionPolicy !== undefined ? { completionPolicy: activity.completionPolicy } : {}),
+      }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Unfinished-workflow protection (2026-10). A refused approval attempt —
+    recorded so the audit log shows every decision, not only successes. */
+export function recordWorkflowTemplateApprovalRefused(
+  ctx: ActivityContext,
+  activity: Pick<WorkflowTemplateVersionActivity, 'templateId' | 'templateName' | 'version' | 'serviceTypeCodes' | 'attestation'> & {
+    reasons: string[];
+    /** Stable problem codes (e.g. 'attestation_missing', 'unmodified_copy'). */
+    codes: string[];
+  },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'workflow',
+      eventType: ACTIVITY_EVENT_TYPES.WORKFLOW_TEMPLATE_APPROVAL_REFUSED,
+      resourceType: 'workflowTemplate',
+      resourceId: activity.templateId,
+      previousValue: JSON.stringify({ version: activity.version, status: 'draft' }),
+      newValue: JSON.stringify({ version: activity.version, status: 'draft' }),
+      description: `Approval of workflow "${activity.templateName}" version ${activity.version} refused${workflowServiceSuffix(activity.serviceTypeCodes)}: ${activity.reasons[0] ?? 'it is not ready'}${activity.reasons.length > 1 ? ` (+${activity.reasons.length - 1} more)` : ''}`,
+      metadata: JSON.stringify({
+        templateName: activity.templateName,
+        reasons: activity.reasons,
+        codes: activity.codes,
+        ...(activity.attestation ? { attestation: activity.attestation } : {}),
+      }),
+      severity: 'warning',
     }),
     dataAdapterMode,
   );
@@ -3123,6 +3330,91 @@ export function recordCaseSequenceInitialized(
           : `Case number sequence for ${year} moved from ${previousNextSequence} to ${newNextSequence} — next case number will be ${newNextSequence}`,
       metadata: JSON.stringify({ year }),
       severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Service-specific workflows (2026-10). The service type — and with it
+    the workflow — of a case changed, after staff confirmed the preview.
+    previousValue/newValue carry the workflows; metadata the counts shown
+    in the confirmation (the full prior state is in Case.workflowHistory). */
+export function recordWorkflowChanged(
+  ctx: ActivityContext,
+  caseId: string,
+  change: {
+    from: { workflowTemplateId: string; workflowName: string | null; serviceTypeCode: string | null; stage: string | null };
+    to: { workflowTemplateId: string; workflowName: string; serviceTypeCode: string | null; stage: string | null };
+    keptCount: number;
+    notCarriedCount: number;
+    newRequirementCount: number;
+  },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  const fromName = change.from.workflowName ?? change.from.workflowTemplateId;
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_WORKFLOW_CHANGED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify(change.from),
+      newValue: JSON.stringify(change.to),
+      description: `Workflow changed from "${fromName}" to "${change.to.workflowName}" (${change.keptCount} completed step(s) kept, ${change.notCarriedCount} not carried over, ${change.newRequirementCount} new requirement(s))`,
+      metadata: JSON.stringify({
+        keptCount: change.keptCount,
+        notCarriedCount: change.notCarriedCount,
+        newRequirementCount: change.newRequirementCount,
+      }),
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/**
+ * Service-specific completion (2026-10). A case became Completed under its
+ * frozen completion policy. Self-describing metadata: the policy's kind
+ * and required items as they were frozen on the case, automatic vs manual,
+ * the manual reason, and whether completion archives it. Automatic
+ * completion is attributed to SOLIS (system-generated), exactly like the
+ * automatic archive; a manual one to the staff member who did it.
+ */
+export type CaseCompletedActivity = {
+  mode: 'automatic' | 'manual';
+  policyKind: 'remains_return' | 'final_items';
+  requiresRemainsReturn: boolean;
+  requiredFinalItems: { displayStage: number; index: number; label: string }[];
+  /** True when the case's snapshot has no policy (today's rule applied). */
+  legacyPolicy: boolean;
+  archivesOnCompletion: boolean;
+  reason?: string | null;
+  workflowTemplateId?: string | null;
+  workflowTemplateVersion?: number | null;
+  serviceTypeCode?: string | null;
+};
+
+export function recordCaseCompleted(
+  ctx: ActivityContext,
+  caseId: string,
+  activity: CaseCompletedActivity,
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  const how = activity.mode === 'manual' ? 'by staff (manual completion)' : 'automatically — every completion requirement is met';
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_COMPLETED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: JSON.stringify({ completed: false }),
+      newValue: JSON.stringify({ completed: true, mode: activity.mode }),
+      description: `Case completed ${how}${activity.mode === 'manual' && activity.reason ? `: ${activity.reason}` : ''}`,
+      metadata: JSON.stringify(activity),
+      severity: 'info',
+      ...(activity.mode === 'automatic' ? { isSystemGenerated: true } : {}),
     }),
     dataAdapterMode,
   );

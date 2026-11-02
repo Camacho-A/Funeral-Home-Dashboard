@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { getDataAdapterMode } from '@/lib/env';
 import { insertWixDataItem, WixDataApiError } from '@/lib/wixDataApi';
 import {
@@ -7,12 +8,19 @@ import {
   validateWorkflowStagesPayload,
   validateIntakeTemplatePayload,
 } from '@/lib/wixWorkflowTemplateMapper';
-import { validateStageSequencing, validateIntakeFields } from '@/domain/workflow/editing';
+import { validateIntakeFields } from '@/domain/workflow/editing';
+import { problemMessages, validateWorkflowStages } from '@/domain/workflow/templateValidation';
 import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
+import { currentActorDisplayName } from '@/lib/auth/currentActorDisplayName';
 import { canPublishWorkflow } from '@/services/authorizationPolicyService';
-import type { WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflowTemplate';
+import { getServiceCatalog } from '@/services/pricingService';
+import { recordWorkflowTemplateVersionSaved } from '@/services/activityService';
+import { serviceTypeItems } from '@/domain/pricing/calculateOrder';
+import { isWorkflowApprovalRequired, isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { parseCompletionPolicy } from '@/domain/workflow/completionPolicy';
+import type { WorkflowCompletionPolicy, WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflowTemplate';
 
 /**
  * Phase 18 (Workflow Management) / Phase 19 (Configurable Intake Form
@@ -31,6 +39,17 @@ import type { WorkflowTemplate, WorkflowTemplateVersion } from '@/types/workflow
  * each; whichever the admin didn't touch this save is simply the same
  * value the form loaded. `caseTypes` still always carries over unchanged
  * from the latest version — neither phase's edit scope touches it.
+ *
+ * Service-specific completion (2026-10), only for an organization whose
+ * versions require approval:
+ * - an optional `completionPolicy` (Settings › Workflow Templates'
+ *   Completion section) is shape-checked (400) and validated at the
+ *   'draft' level with the stages it refers to; omitted, the latest
+ *   version's policy carries over unchanged. Any other organization
+ *   sending one is refused (400), so their rows keep exactly their shape.
+ * - `derivedFrom` (the template a draft was copied from) is NEVER taken
+ *   from the request: it carries over from the latest version, so saving
+ *   an untouched copy cannot launder it into an "original".
  */
 export async function POST(request: Request, { params }: { params: Promise<{ templateId: string }> }) {
   const csrfResponse = requireSameOrigin(request);
@@ -79,14 +98,94 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
     return NextResponse.json({ error: 'Invalid intake payload.', details: intakeShapeErrors }, { status: 400 });
   }
 
-  const sequencingErrors = validateStageSequencing(stages);
-  if (sequencingErrors.length > 0) {
-    return NextResponse.json({ error: 'Invalid workflow structure.', details: sequencingErrors }, { status: 400 });
+  // Workflow template editor (2026-10): an optional proposed service
+  // assignment, only for an organization that selects workflows by
+  // service type. It is stored ON the version and applied to the template
+  // when that version is approved (see the approve route), so a draft can
+  // never re-route live case creation.
+  const rawServiceTypeCodes = (body as Record<string, unknown>).serviceTypeCodes;
+  let serviceTypeCodes: string[] | undefined;
+  if (rawServiceTypeCodes !== undefined) {
+    if (!isWorkflowByServiceType(organizationId)) {
+      return NextResponse.json({ error: 'This organization does not assign workflows to service types.' }, { status: 400 });
+    }
+    if (!Array.isArray(rawServiceTypeCodes) || !rawServiceTypeCodes.every((code) => typeof code === 'string' && code.trim() !== '')) {
+      return NextResponse.json({ error: 'serviceTypeCodes must be an array of service type codes.' }, { status: 400 });
+    }
+    serviceTypeCodes = rawServiceTypeCodes.map((code: string) => code.trim());
+  }
+
+  const rawCompletionPolicy = (body as Record<string, unknown>).completionPolicy;
+  let completionPolicy: WorkflowCompletionPolicy | undefined;
+  if (rawCompletionPolicy !== undefined) {
+    if (!isWorkflowApprovalRequired(organizationId)) {
+      return NextResponse.json({ error: 'This organization does not configure completion policies.' }, { status: 400 });
+    }
+    const parsed = parseCompletionPolicy(rawCompletionPolicy);
+    if (!parsed.policy) {
+      return NextResponse.json({ error: 'Invalid completionPolicy payload.', details: parsed.errors }, { status: 400 });
+    }
+    completionPolicy = parsed.policy;
+  }
+
+  // Server-side authoritative, 'draft' (structural) level — see
+  // domain/workflow/templateValidation.ts. Completeness is checked at
+  // approval, so a work-in-progress draft can still be saved.
+  let activeServiceTypeCodes: string[] | undefined;
+  if (serviceTypeCodes) {
+    try {
+      activeServiceTypeCodes = serviceTypeItems(await getServiceCatalog(organizationId, adapter)).map((item) => item.serviceCode);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error connecting to Wix.';
+      return NextResponse.json({ error: message }, { status: 503 });
+    }
+  }
+  const problems = validateWorkflowStages(stages, 'draft', { serviceTypeCodes, activeServiceTypeCodes, completionPolicy });
+  if (problems.length > 0) {
+    return NextResponse.json({ error: 'Invalid workflow structure.', details: problemMessages(problems), problems }, { status: 400 });
   }
 
   const intakeErrors = validateIntakeFields(intake);
   if (intakeErrors.length > 0) {
     return NextResponse.json({ error: 'Invalid intake structure.', details: intakeErrors }, { status: 400 });
+  }
+
+  const createdByName = await currentActorDisplayName(userId);
+  const authorship = { createdBy: userId, ...(createdByName ? { createdByName } : {}) };
+  const recordSaved = async (template: WorkflowTemplate, version: number) => {
+    // Best-effort, like every other activity event — never fails a version
+    // that has already been written.
+    try {
+      await recordWorkflowTemplateVersionSaved(
+        { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId: crypto.randomUUID() },
+        {
+          templateId: template.id,
+          templateName: template.name,
+          version,
+          status: status ?? null,
+          serviceTypeCodes: serviceTypeCodes ?? template.serviceTypeCodes ?? null,
+        },
+        adapter,
+      );
+    } catch (error) {
+      console.error('Failed to record workflow.template.updated activity event:', error instanceof Error ? error.message : error);
+    }
+  };
+
+  // Service-specific workflows (2026-10): for an organization whose
+  // versions require approval, a saved edit is a DRAFT — live cases keep
+  // using the latest approved version until an administrator approves
+  // this one (POST .../versions/[version]/approve). Everyone else's
+  // version rows are written exactly as before (no status at all).
+  const status = isWorkflowApprovalRequired(organizationId) ? ('draft' as const) : undefined;
+
+  /** The completion policy (this request's, else the latest version's)
+      and the copy source (always the latest version's) — see the header.
+      Empty for every version that has neither, so other rows keep their
+      exact shape. */
+  function carriedCompletionFields(latest: WorkflowTemplateVersion): Pick<WorkflowTemplateVersion, 'completionPolicy' | 'derivedFrom'> {
+    const policy = completionPolicy ?? latest.completionPolicy;
+    return { ...(policy ? { completionPolicy: policy } : {}), ...(latest.derivedFrom ? { derivedFrom: latest.derivedFrom } : {}) };
   }
 
   if (adapter === 'mock') {
@@ -108,8 +207,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       intake,
       createdAt: new Date().toISOString(),
       ...carriedServiceFields(latest),
+      ...(status ? { status } : {}),
+      ...authorship,
+      ...(serviceTypeCodes ? { serviceTypeCodes } : {}),
+      ...carriedCompletionFields(latest),
     };
     template.versions.push(newVersion);
+    await recordSaved(template, newVersion.version);
     return NextResponse.json({ workflowTemplate: template });
   }
 
@@ -126,6 +230,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
     const nextVersionNumber = latest.version + 1;
     const createdAt = new Date().toISOString();
 
+    const carried = carriedCompletionFields(latest);
     const versionData = buildWixWorkflowTemplateVersionData({
       beaconTemplateId: templateId,
       version: nextVersionNumber,
@@ -134,6 +239,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       intake,
       createdAt,
       ...carriedServiceFields(latest),
+      status,
+      ...authorship,
+      serviceTypeCodes,
+      ...carried,
     });
 
     // Setting the Wix item's own _id to `${templateId}-v${version}` (the
@@ -157,11 +266,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ tem
       intake,
       createdAt,
       ...carriedServiceFields(latest),
+      ...(status ? { status } : {}),
+      ...authorship,
+      ...(serviceTypeCodes ? { serviceTypeCodes } : {}),
+      ...carried,
     };
     const workflowTemplate: WorkflowTemplate = {
       ...existing,
       versions: [...existing.versions, newVersion],
     };
+    await recordSaved(workflowTemplate, nextVersionNumber);
     return NextResponse.json({ workflowTemplate });
   } catch (error) {
     if (error instanceof WixDataApiError && error.status === 409) {

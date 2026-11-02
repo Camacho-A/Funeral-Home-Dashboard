@@ -15,10 +15,10 @@ import { CASE_REVISION_CONFLICT_MESSAGE } from '@/domain/cases/caseRevisionConfl
  *
  * Same wording and controls as Gus SOLIS's banner.
  */
-export function CaseEditConflictBanner({ onRefresh, onRetry }: { onRefresh: () => void; onRetry: () => void }) {
+export function CaseEditConflictBanner({ onRefresh, onRetry, message }: { onRefresh: () => void; onRetry: () => void; message?: string }) {
   return (
     <div className="sx-form-banner sx-form-banner-error" role="alert" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
-      <span style={{ flex: '1 1 240px' }}>{CASE_REVISION_CONFLICT_MESSAGE} Your last change was not saved.</span>
+      <span style={{ flex: '1 1 240px' }}>{message ?? CASE_REVISION_CONFLICT_MESSAGE} Your last change was not saved.</span>
       <span style={{ display: 'flex', gap: 8 }}>
         <Button variant="secondary" onClick={onRefresh}>
           Refresh

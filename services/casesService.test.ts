@@ -541,7 +541,8 @@ describe('casesService.create — mock-mode Case Number generation (Phase 16B)',
     const highest = Math.max(0, ...existingGus.map((c) => Number(c.caseNumber.split('-')[1])));
     const newCase = await casesService.create(
       gusContext,
-      { decedentName: 'Gus Prefix Test', nextOfKinName: '', nextOfKinPhone: '' },
+      // Service-specific workflows (2026-10): a Gus case names its service type.
+      { decedentName: 'Gus Prefix Test', nextOfKinName: '', nextOfKinPhone: '', serviceTypeCode: 'DIRECT_CREMATION' },
       sessionFor(staffFixtures[0].id),
       template,
     );

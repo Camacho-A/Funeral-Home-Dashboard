@@ -6,6 +6,7 @@ import { adminOnlyChecklistChanges, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE } fr
 import { caseRevision } from '../lib/wixCaseMapper';
 import {
   CASE_REVISION_CONFLICT_REASON,
+  CASE_REVISION_REQUIRED_MESSAGE,
   CASE_REVISION_REQUIRED_REASON,
   CaseRevisionConflictError,
   CaseRevisionRequiredError,
@@ -29,10 +30,34 @@ import { deriveCaseFieldSyncFromFieldValues } from '../domain/workflow/resolveIn
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError } from '../utils/inputMask';
 import { reconcileCaseWorkflow } from './workflowReconciliationService';
 import { touchesWorkflowCompletion } from '../domain/cases/workflowCompletion';
+import { completionTransition } from '../domain/cases/completionEligibility';
+import { writeMockCase } from './caseWriteService';
 import { archivedCaseWriteRefusal } from '../domain/cases/archivedCaseWrites';
 import { findInvalidChecklistStatePatchEntries } from '../domain/workflow/checklistItemKey';
 import { STAGES, rawStagesForDisplayStage } from '../domain/cases/stages';
 import { canonicalDisplayStagesForPresentedLabel } from '../domain/organization/workflowStagePresentation';
+import {
+  isWorkflowByServiceType,
+  selectWorkflowTemplate,
+  WorkflowSelectionError,
+} from '../domain/workflow/selectWorkflowTemplate';
+import {
+  caseIsInOrganizationStage,
+  findOrganizationStage,
+  resolveOrganizationStages,
+} from '../domain/workflow/organizationStages';
+import { calculateOrderTotals, normalizeSelections, serviceTypeItems } from '../domain/pricing/calculateOrder';
+import {
+  applyWorkflowChangeToCase,
+  planCaseWorkflowChange,
+  type WorkflowChangePreview,
+} from '../domain/workflow/planCaseWorkflowChange';
+import { workflowTemplateFixtures } from './__mocks__/workflowTemplates';
+import { serviceCatalogFixtures } from './__mocks__/pricingFixtures';
+import { pricingClient, buildSelectionsBody } from './pricingClient';
+import type { ServiceCatalogItem } from '../types/serviceCatalog';
+import type { CaseOrder, CaseOrderLineItem, CustomLineItemSelection, ServiceSelections } from '../types/caseOrder';
+import type { ServiceChangeOrderPreview } from './caseServiceChangeService';
 import {
   clampCaseListPageSize,
   compareCasesForListSort,
@@ -92,6 +117,12 @@ function listPageMock(context: OrganizationContext, filters: CaseListPageFilters
   const searchQuery = filters.searchQuery ?? '';
   const scope = filters.scope ?? 'active';
   const stage = filters.stage ?? null;
+  // Service-specific workflows (2026-10): an organization whose cases run
+  // on several workflow templates filters by (template, raw stage) pairs
+  // — mirrors app/api/cases/route.ts's identical branch.
+  if (isWorkflowByServiceType(context.organizationId)) {
+    return listPageMockByTemplate(context, filters);
+  }
   // Manors intake-stage combination (2026-10): resolved against the
   // organization, so a user-facing label covering more than one canonical
   // display stage ("Intake & JotForm" = canonical 0 and 1) expands to
@@ -138,6 +169,57 @@ function listPageMock(context: OrganizationContext, filters: CaseListPageFilters
   return { cases: page, hasMore, nextCursor };
 }
 
+function listPageMockByTemplate(context: OrganizationContext, filters: CaseListPageFilters): CaseListPage {
+  const searchQuery = filters.searchQuery ?? '';
+  const scope = filters.scope ?? 'active';
+  const stage = filters.stage ?? null;
+  const model = resolveOrganizationStages(
+    context.organizationId,
+    workflowTemplateFixtures.filter((t) => t.organizationId === context.organizationId),
+  );
+  const stageEntry = stage ? findOrganizationStage(model, stage) : null;
+  if (stage && !stageEntry) return { cases: [], hasMore: false, nextCursor: null };
+
+  const eligible = caseFixtures.filter(
+    (c) =>
+      c.organizationId === context.organizationId &&
+      (scope === 'all' || c.isDeleted === (scope === 'archived')) &&
+      (stageEntry === null || caseIsInOrganizationStage(stageEntry, c)),
+  );
+  const sorted = eligible.filter((c) => matchesCaseSearch(c, searchQuery)).sort(compareCasesForListSort);
+
+  let offset = 0;
+  if (filters.cursor) {
+    const validation = validateCaseCursor(filters.cursor, { organizationId: context.organizationId, searchQuery, stage, scope, kind: 'mock' });
+    if (!validation.ok || validation.payload.kind !== 'mock') return { cases: [], hasMore: false, nextCursor: null };
+    offset = validation.payload.offset;
+  }
+  const pageSize = clampCaseListPageSize(filters.limit ?? null);
+  const page = sorted.slice(offset, offset + pageSize);
+  const hasMore = offset + page.length < sorted.length;
+  const nextCursor = hasMore
+    ? encodeCaseCursor({ v: 1, kind: 'mock', organizationId: context.organizationId, searchQuery, stage, scope, offset: offset + page.length })
+    : null;
+  return { cases: page, hasMore, nextCursor };
+}
+
+/** Service-specific workflows (2026-10). Per-stage counts for an
+    organization whose cases run on several templates, keyed by the
+    organization's stage labels (domain/workflow/organizationStages.ts).
+    Shared by the local mock path below and app/api/cases/counts's mock
+    branch, so the two can't disagree. */
+export function countCasesByOrganizationStage(organizationId: string, eligible: Case[]): Record<string, number> {
+  const model = resolveOrganizationStages(
+    organizationId,
+    workflowTemplateFixtures.filter((t) => t.organizationId === organizationId),
+  );
+  const byStage: Record<string, number> = {};
+  for (const stage of model.stages) {
+    byStage[stage.label] = eligible.filter((c) => caseIsInOrganizationStage(stage, c)).length;
+  }
+  return byStage;
+}
+
 export async function listPage(
   context: OrganizationContext,
   filters: CaseListPageFilters = {},
@@ -179,6 +261,9 @@ export async function counts(
     const eligible = caseFixtures.filter(
       (c) => c.organizationId === context.organizationId && !c.isDeleted && matchesCaseSearch(c, searchQuery),
     );
+    if (isWorkflowByServiceType(context.organizationId)) {
+      return { total: eligible.length, byStage: countCasesByOrganizationStage(context.organizationId, eligible) };
+    }
     const byStage: Record<string, number> = {};
     STAGES.forEach((label, displayStage) => {
       const rawStages = rawStagesForDisplayStage(displayStage);
@@ -400,6 +485,10 @@ export async function create(
         createdBy: session.staffId,
         intakeOwnerId: session.staffId,
         returnMethod: input.returnMethod,
+        // Service-specific workflows (2026-10): only ever sent for an
+        // organization that selects workflows by service type, so every
+        // other organization's request body is exactly what it was.
+        ...(isWorkflowByServiceType(context.organizationId) ? { serviceTypeCode: input.serviceTypeCode ?? null } : {}),
       }),
     });
     if (!response.ok) {
@@ -443,9 +532,34 @@ export async function create(
     await assertStaffProfileIsActiveAndInOrganization(context.organizationId, input.assignedStaffId, 'mock');
   }
 
-  const version = latestTemplateVersion(template);
+  let selectedTemplate = template;
+  let version = latestTemplateVersion(template);
+  let serviceTypeCode: string | undefined;
+  // Service-specific workflows (2026-10): mirrors POST /api/cases — the
+  // selection is re-run here against the organization's own templates and
+  // active service types. The caller's `template` (fetched from
+  // /api/workflow-templates, so it reflects approvals made there) replaces
+  // the local fixture copy of the same id; it can only ever be one of this
+  // organization's templates.
+  if (isWorkflowByServiceType(context.organizationId)) {
+    const serviceTypes = serviceTypeItems(serviceCatalogFixtures.filter((item) => item.organizationId === context.organizationId));
+    const localTemplates = workflowTemplateFixtures.filter((t) => t.organizationId === context.organizationId && t.id !== template.id);
+    const selection = selectWorkflowTemplate(
+      template.organizationId === context.organizationId ? [template, ...localTemplates] : localTemplates,
+      context.organizationId,
+      input.serviceTypeCode,
+      {
+        activeServiceTypeCodes: serviceTypes.map((item) => item.serviceCode),
+        serviceDisplayName: (code) => serviceTypes.find((item) => item.serviceCode === code)?.displayName,
+      },
+    );
+    if (!selection.ok) throw new WorkflowSelectionError(selection.reason, selection.message);
+    selectedTemplate = selection.template;
+    version = selection.version;
+    serviceTypeCode = selection.serviceTypeCode ?? undefined;
+  }
   const creationYear = new Date().getFullYear();
-  const workflowSnapshot = buildCaseWorkflowSnapshot(template, version, input.serviceTypeCode);
+  const workflowSnapshot = buildCaseWorkflowSnapshot(selectedTemplate, version, serviceTypeCode);
   // SOLIS-wide ALL-CAPS data standard (2026-09): mirrors
   // lib/wixCaseMapper.ts#buildWixCaseData's normalization exactly, so
   // dev/test behavior (DATA_ADAPTER=mock) never diverges from production.
@@ -509,7 +623,7 @@ export async function create(
       ? { slaEvents: { case_received: { at: createdAt, recordedAt: createdAt, recordedBy: null, source: 'automatic' as const } } }
       : {}),
     isDeleted: false,
-    workflowTemplateId: template.id,
+    workflowTemplateId: selectedTemplate.id,
     workflowTemplateVersion: version.version,
     caseType: version.caseTypes[0],
     workflowSnapshot,
@@ -536,6 +650,224 @@ export type CaseUpdateOptions = {
       data the server decides (app/api/cases/[caseId]/route.ts). */
   isAdministrator?: boolean;
 };
+
+/**
+ * Service-specific workflows (2026-10). Previews (confirm: false) or
+ * applies (confirm: true) a service-type change's workflow change — see
+ * app/api/cases/[caseId]/workflow/route.ts, which wix mode calls. Mock
+ * mode runs the identical pure planner (domain/workflow/planCaseWorkflowChange.ts)
+ * against the local fixtures, mirroring how update() works locally.
+ */
+/** `expectedRevision` (Phase 5A.1) — required with confirm: the
+    `caseRevision` the preview returned (hooks/useCaseWorkflowChange.ts
+    fills it in). */
+export type CaseWorkflowChangeInput = { serviceTypeCode: string; expectedWorkflowTemplateId: string; confirm: boolean; expectedRevision?: number };
+/** Mock mode only: the organization's templates as served by
+    /api/workflow-templates (so approvals made there are honored). */
+export type CaseWorkflowChangeOptions = { templates?: WorkflowTemplate[] };
+export type CaseWorkflowChangeResult = { applied: boolean; preview: WorkflowChangePreview; case?: Case | null; caseRevision?: number };
+
+export async function changeWorkflow(
+  context: OrganizationContext,
+  caseId: string,
+  input: CaseWorkflowChangeInput,
+  session: Session,
+  dataAdapterMode: DataAdapterMode = 'mock',
+  options: CaseWorkflowChangeOptions = {},
+): Promise<CaseWorkflowChangeResult> {
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/workflow`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organizationId: context.organizationId, ...input }),
+    });
+    const body = (await response.json().catch(() => null)) as (CaseWorkflowChangeResult & { error?: string; reason?: string; case?: Case | null }) | null;
+    if (response.status === 409 && body?.reason === CASE_REVISION_CONFLICT_REASON) {
+      throw new CaseRevisionConflictError(body.case ?? null, body.error);
+    }
+    if (response.status === 428 && body?.reason === CASE_REVISION_REQUIRED_REASON) throw new CaseRevisionRequiredError(body.error);
+    if (!response.ok || !body) throw new Error(body?.error ?? 'Failed to change the case workflow.');
+    return body;
+  }
+
+  if (!isWorkflowByServiceType(context.organizationId)) {
+    throw new Error('This organization does not select workflows by service type.');
+  }
+  const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === context.organizationId);
+  if (index === -1) throw new Error(`Case ${caseId} not found for this organization`);
+  const existing = caseFixtures[index];
+  if (existing.isDeleted) throw new Error('Archived cases are read-only. Restore the case before changing its service.');
+
+  const serviceTypes = serviceTypeItems(serviceCatalogFixtures.filter((item) => item.organizationId === context.organizationId));
+  const plan = planCaseWorkflowChange(
+    existing,
+    (options.templates ?? workflowTemplateFixtures).filter((t) => t.organizationId === context.organizationId),
+    { serviceTypeCode: input.serviceTypeCode, expectedWorkflowTemplateId: input.expectedWorkflowTemplateId },
+    {
+      activeServiceTypeCodes: serviceTypes.map((item) => item.serviceCode),
+      serviceDisplayName: (code) => serviceTypes.find((item) => item.serviceCode === code)?.displayName,
+    },
+  );
+  if (!plan.ok) throw new Error(plan.message);
+  if (!input.confirm || plan.write === null) return { applied: false, preview: plan.preview, caseRevision: caseRevision(existing) };
+  // Phase 5A.1: mirrors the route — a confirm is pinned to its preview's revision.
+  if (input.expectedRevision === undefined) throw new CaseRevisionRequiredError();
+  if (caseRevision(existing) !== input.expectedRevision) throw new CaseRevisionConflictError(existing);
+
+  const updated: Case = {
+    ...applyWorkflowChangeToCase(existing, plan.write, {
+      changedAt: new Date().toISOString(),
+      changedByUserId: session.staffId ?? session.displayName,
+    }),
+    revision: caseRevision(existing) + 1,
+  };
+  caseFixtures[index] = updated;
+  return { applied: true, preview: plan.preview, case: updated };
+}
+
+/**
+ * Consistent service changes (2026-10). Previews (confirm: false) or
+ * applies (confirm: true) a service-type change as ONE coordinated
+ * operation — the case's workflow and its case order together — see
+ * app/api/cases/[caseId]/service-change/route.ts and
+ * services/caseServiceChangeService.ts, which wix mode calls.
+ *
+ * Mock mode mirrors changeWorkflow(): the workflow is planned against the
+ * local fixtures, an unpriced selection is refused before anything is
+ * written, and on confirm the order is written FIRST (through the order
+ * route, which owns mock orders) and only then the workflow — the same
+ * order-then-case sequence as the server, without its compensation
+ * (mock data is development-only).
+ */
+export type CaseServiceChangeInput = {
+  serviceTypeCode: string;
+  expectedWorkflowTemplateId: string;
+  /** The active order the modal was opened with (null = none yet). */
+  expectedOrderId: string | null;
+  selections: ServiceSelections;
+  customItems?: CustomLineItemSelection[];
+  confirm: boolean;
+  /** Required with confirm; reuse the same key when retrying. */
+  idempotencyKey?: string;
+  /** Phase 5A.1 — required with confirm: the `caseRevision` the preview
+      returned (hooks/useCaseServiceChange.ts fills it in). */
+  expectedRevision?: number;
+};
+export type CaseServiceChangeOptions = { templates?: WorkflowTemplate[]; catalog?: ServiceCatalogItem[] };
+export type CaseServiceChangeResult = {
+  applied: boolean;
+  replayed?: boolean;
+  preview?: WorkflowChangePreview;
+  /** Preview: what the order becomes. Applied: the active order. */
+  order?: ServiceChangeOrderPreview | CaseOrder | null;
+  lineItems?: CaseOrderLineItem[];
+  case?: Case | null;
+  /** Preview: the case revision it was computed against — send it back as
+      `expectedRevision` to confirm. */
+  caseRevision?: number;
+};
+
+/** A refused or failed service change. `needsRepair`: the server could
+    not undo a partial change and recorded it in Activity. */
+export class ServiceChangeError extends Error {
+  readonly status: number;
+  readonly needsRepair: boolean;
+  constructor(message: string, status: number, needsRepair: boolean) {
+    super(message);
+    this.name = 'ServiceChangeError';
+    this.status = status;
+    this.needsRepair = needsRepair;
+  }
+}
+
+export async function changeService(
+  context: OrganizationContext,
+  caseId: string,
+  input: CaseServiceChangeInput,
+  session: Session,
+  dataAdapterMode: DataAdapterMode = 'mock',
+  options: CaseServiceChangeOptions = {},
+): Promise<CaseServiceChangeResult> {
+  const selections = buildSelectionsBody({ selections: input.selections, customItems: input.customItems });
+  if (dataAdapterMode === 'wix') {
+    const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/service-change`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        organizationId: context.organizationId,
+        serviceTypeCode: input.serviceTypeCode,
+        expectedWorkflowTemplateId: input.expectedWorkflowTemplateId,
+        expectedOrderId: input.expectedOrderId,
+        selections,
+        confirm: input.confirm,
+        ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
+        ...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as (CaseServiceChangeResult & { error?: string; needsRepair?: boolean }) | null;
+    if (!response.ok || !body) {
+      throw new ServiceChangeError(body?.error ?? 'Failed to change the service.', response.status, body?.needsRepair === true);
+    }
+    return body;
+  }
+
+  // Mock: plan + validate everything before any write.
+  if (!isWorkflowByServiceType(context.organizationId)) {
+    throw new ServiceChangeError('This organization does not select workflows by service type.', 403, false);
+  }
+  const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === context.organizationId);
+  if (index === -1) throw new ServiceChangeError(`Case ${caseId} not found for this organization`, 404, false);
+  const existing = caseFixtures[index];
+  if (existing.isDeleted) throw new ServiceChangeError('Archived cases are read-only. Restore the case before changing its service.', 409, false);
+
+  const catalog = (options.catalog ?? serviceCatalogFixtures).filter((item) => item.organizationId === context.organizationId);
+  const serviceTypes = serviceTypeItems(catalog);
+  const plan = planCaseWorkflowChange(
+    existing,
+    (options.templates ?? workflowTemplateFixtures).filter((t) => t.organizationId === context.organizationId),
+    { serviceTypeCode: input.serviceTypeCode, expectedWorkflowTemplateId: input.expectedWorkflowTemplateId },
+    {
+      activeServiceTypeCodes: serviceTypes.map((item) => item.serviceCode),
+      serviceDisplayName: (code) => serviceTypes.find((item) => item.serviceCode === code)?.displayName,
+    },
+  );
+  if (!plan.ok) throw new ServiceChangeError(plan.message, plan.status, false);
+  const unpriced = calculateOrderTotals(catalog, normalizeSelections(input.selections as unknown as Record<string, unknown>)).unpricedItems;
+  if (unpriced.length > 0) {
+    const names = unpriced.map((item) => `"${item.displayName}"`).join(', ');
+    throw new ServiceChangeError(`No price is set for ${names}. An administrator must set it in Settings › Price Catalog first.`, 422, false);
+  }
+  if (!input.confirm) return { applied: false, preview: plan.preview, caseRevision: caseRevision(existing) };
+  // Phase 5A.1: mirrors the route — a confirm is pinned to its preview's revision.
+  if (input.expectedRevision === undefined) throw new ServiceChangeError(CASE_REVISION_REQUIRED_MESSAGE, 428, false);
+  if (caseRevision(existing) !== input.expectedRevision) {
+    throw new ServiceChangeError('This case was changed by someone else since the preview was shown. Nothing was changed — reload the case and try again.', 409, false);
+  }
+
+  const orderInput = { selections: input.selections, customItems: input.customItems };
+  const orderResult = input.expectedOrderId
+    ? await pricingClient.editCaseOrder(context, caseId, { ...orderInput, expectedOrderId: input.expectedOrderId })
+    : await pricingClient.createCaseOrder(context, caseId, orderInput);
+  if (plan.write === null) return { applied: true, preview: plan.preview, order: orderResult.order, case: existing };
+
+  const history = existing.workflowHistory ?? [];
+  const applied = applyWorkflowChangeToCase(existing, plan.write, {
+    changedAt: new Date().toISOString(),
+    changedByUserId: session.staffId ?? session.displayName,
+  });
+  const updated: Case = {
+    ...applied,
+    revision: caseRevision(existing) + 1,
+    ...(input.idempotencyKey
+      ? {
+          lastServiceChangeId: input.idempotencyKey,
+          workflowHistory: [...history, { ...applied.workflowHistory![history.length], serviceChangeId: input.idempotencyKey }],
+        }
+      : {}),
+  };
+  caseFixtures[index] = updated;
+  return { applied: true, preview: plan.preview, order: orderResult.order, lineItems: orderResult.lineItems, case: updated };
+}
 
 export async function update(
   context: OrganizationContext,
@@ -712,7 +1044,17 @@ export async function update(
       console.error('Failed to reconcile workflow after checklist update:', error instanceof Error ? error.message : error);
     }
   }
+
+  // Service-specific completion (2026-10): mirrors the Wix PATCH route —
+  // the completion transition is judged AFTER reconciliation against the
+  // case's own frozen policy, and archives only when that policy archives
+  // on completion. (Mock mode records no activity events for case edits,
+  // here or elsewhere in this client-side path; the Wix route records
+  // case.completed / case.archived.)
+  if (!existingCase.isDeleted && completionTransition(existingCase, result).archive) {
+    result = writeMockCase(context.organizationId, caseId, (latest) => ({ ...latest, isDeleted: true, archivedAt: new Date().toISOString() })) ?? result;
+  }
   return result;
 }
 
-export const casesService = { list, get, create, update, listPage, counts };
+export const casesService = { list, get, create, update, listPage, counts, changeWorkflow, changeService };

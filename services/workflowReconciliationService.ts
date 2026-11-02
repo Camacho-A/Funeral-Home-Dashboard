@@ -144,6 +144,12 @@ export class ReconcileConflictError extends Error {
   }
 }
 
+/** Case concurrency (2026-10): reconcileCaseWorkflow's result plus the
+    case's revision after this call's write (only when it wrote), for a
+    caller that returns the case to a client — app/api/cases/[caseId]'s
+    PATCH — so the client's next guarded edit carries the right revision. */
+export type DetailedReconcileResult = ReconcileResult & { revision?: number };
+
 /** The one entry point every call site above uses. Loads the case fresh
     (never trusts a caller-supplied copy, since the whole point is to
     react to state that may have just changed), computes the correct

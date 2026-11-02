@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildApprovedWixWorkflowTemplateVersionData,
   buildWorkflowTemplate,
   buildWixWorkflowTemplateVersionData,
   mapWixWorkflowTemplateItem,
@@ -437,5 +438,74 @@ describe('validateChecklistItemPayload — v7 round-trip', () => {
   it('drops an unknown valueKind rather than passing it through', () => {
     const result = validateWorkflowStagesPayload({ stages: [stageWithItems([{ ...timeItem, index: 0, valueKind: 'colour' }])] });
     expect(result.stages?.[0].checklist.items[0]).not.toHaveProperty('valueKind');
+  });
+});
+
+describe('service-specific workflow fields (2026-10) — optional, read leniently', () => {
+  it('absent fields map to absent (every existing row keeps its exact shape)', () => {
+    const summary = mapWixWorkflowTemplateItem(validTemplateItem)!;
+    expect('serviceTypeCodes' in summary).toBe(false);
+    expect('description' in summary).toBe(false);
+    const version = mapWixWorkflowTemplateVersionItem(validVersionItem)!;
+    expect('status' in version).toBe(false);
+    const template = buildWorkflowTemplate(summary, [version])!;
+    expect('serviceTypeCodes' in template).toBe(false);
+  });
+
+  it('maps serviceTypeCodes/description and version status/approval when present', () => {
+    const summary = mapWixWorkflowTemplateItem({ ...validTemplateItem, serviceTypeCodes: ['DIRECT_CREMATION'], description: 'Note' })!;
+    expect(summary).toMatchObject({ serviceTypeCodes: ['DIRECT_CREMATION'], description: 'Note' });
+    const version = mapWixWorkflowTemplateVersionItem({ ...validVersionItem, status: 'draft' })!;
+    expect(version.status).toBe('draft');
+    const approved = mapWixWorkflowTemplateVersionItem({ ...validVersionItem, status: 'approved', approvedBy: 'identity-1', approvedAt: '2026-10-15T00:00:00.000Z' })!;
+    expect(approved).toMatchObject({ status: 'approved', approvedBy: 'identity-1', approvedAt: '2026-10-15T00:00:00.000Z' });
+    expect(buildWorkflowTemplate(summary, [version])).toMatchObject({ serviceTypeCodes: ['DIRECT_CREMATION'], description: 'Note' });
+  });
+
+  it('malformed values never drop the row and never read as a draft', () => {
+    const summary = mapWixWorkflowTemplateItem({ ...validTemplateItem, serviceTypeCodes: 'DIRECT_CREMATION' });
+    expect(summary).not.toBeNull();
+    expect(summary && 'serviceTypeCodes' in summary).toBe(false);
+    const version = mapWixWorkflowTemplateVersionItem({ ...validVersionItem, status: 'pending' });
+    expect(version).not.toBeNull();
+    expect(version && 'status' in version).toBe(false);
+  });
+
+  it('a version row is written with a status only when one is given', () => {
+    const base = { beaconTemplateId: 't', version: 2, caseTypes: ['cremation'], stages: [], intake: { sections: [] }, createdAt: 'now' };
+    expect('status' in buildWixWorkflowTemplateVersionData(base)).toBe(false);
+    expect(buildWixWorkflowTemplateVersionData({ ...base, status: 'draft' }).status).toBe('draft');
+  });
+
+  it('approval changes only status/approvedBy/approvedAt — content is carried over untouched', () => {
+    const approved = buildApprovedWixWorkflowTemplateVersionData({ ...validVersionItem, status: 'draft' }, { approvedBy: 'identity-1', approvedAt: '2026-10-15T00:00:00.000Z' });
+    expect(approved).toEqual({ ...validVersionItem, status: 'approved', approvedBy: 'identity-1', approvedAt: '2026-10-15T00:00:00.000Z' });
+  });
+});
+
+describe('service-specific completion fields (2026-10) — optional, read leniently', () => {
+  const policy = {
+    kind: 'final_items',
+    requiresRemainsReturn: false,
+    requiredFinalItems: [{ displayStage: 4, index: 0, label: 'Fictional final step' }],
+    manualCompletion: { allowed: false },
+    archiveEligibility: 'on_completion',
+  } as const;
+
+  it('round-trips a completion policy and copy source; absent stays absent', () => {
+    const base = { beaconTemplateId: 't', version: 2, caseTypes: ['burial'], stages: [], intake: { sections: [] }, createdAt: 'now' };
+    const plain = buildWixWorkflowTemplateVersionData(base);
+    expect('completionPolicy' in plain || 'derivedFrom' in plain).toBe(false);
+    const row = buildWixWorkflowTemplateVersionData({ ...base, completionPolicy: structuredClone(policy) as never, derivedFrom: { templateId: 'source', version: 1 } });
+    const version = mapWixWorkflowTemplateVersionItem(row)!;
+    expect(version).toMatchObject({ completionPolicy: policy, derivedFrom: { templateId: 'source', version: 1 } });
+    const legacy = mapWixWorkflowTemplateVersionItem(validVersionItem)!;
+    expect('completionPolicy' in legacy || 'derivedFrom' in legacy).toBe(false);
+  });
+
+  it('a malformed policy or source reads as absent (today’s rule) and never drops the row', () => {
+    const version = mapWixWorkflowTemplateVersionItem({ ...validVersionItem, completionPolicy: { kind: 'sometimes' }, derivedFrom: 'x' })!;
+    expect(version).not.toBeNull();
+    expect('completionPolicy' in version || 'derivedFrom' in version).toBe(false);
   });
 });

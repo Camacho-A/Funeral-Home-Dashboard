@@ -26,7 +26,18 @@ import {
 } from '@/domain/organization/workflowStagePresentation';
 import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
 import { buildCaseWorkflowSnapshot } from '@/domain/workflow/snapshot';
-import { isWorkflowByServiceType, selectWorkflowTemplate, TEMPLATE_SELECTION_MESSAGES } from '@/domain/workflow/serviceWorkflows';
+import { isWorkflowByServiceType, selectWorkflowTemplate, type WorkflowSelectionOptions } from '@/domain/workflow/selectWorkflowTemplate';
+import { getServiceCatalog } from '@/services/pricingService';
+import {
+  caseIsInOrganizationStage,
+  findOrganizationStage,
+  organizationStageLabels,
+  resolveOrganizationStages,
+  wixFilterForOrganizationStage,
+  type OrganizationStage,
+} from '@/domain/workflow/organizationStages';
+import { workflowTemplateFixtures } from '@/services/__mocks__/workflowTemplates';
+import { serviceTypeItems } from '@/domain/pricing/calculateOrder';
 import { reserveNextCaseNumber, advanceCaseSequencePast } from '@/lib/wixCaseNumberSequence';
 import { orgLocalYear, parseCaseNumber, resolveCaseNumberPrefix, caseNumberMatchesPrefix } from '@/domain/cases/caseNumber';
 import { verifyHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
@@ -160,7 +171,11 @@ export async function GET(request: Request) {
   // gets 401/403 rather than input validation, which is the stricter
   // order. See domain/organization/workflowStagePresentation.ts.
   let rawStages: number[] | null = null;
-  if (stageParam !== null) {
+  // Service-specific workflows (2026-10): an organization whose cases run
+  // on several templates resolves its stage label inside the handler
+  // below, once its templates are loaded (see organizationStage).
+  const stagesByTemplate = isWorkflowByServiceType(organizationId);
+  if (stageParam !== null && !stagesByTemplate) {
     const canonicalDisplayStages = canonicalDisplayStagesForPresentedLabel(organizationId, stageParam, STAGES);
     if (canonicalDisplayStages === null) {
       const valid = presentedStageLabels(organizationId, STAGES).join(', ');
@@ -189,6 +204,27 @@ export async function GET(request: Request) {
       return NextResponse.json({ cases: [], hasMore: false, nextCursor: null, error: 'Not authorized to view cases for this organization.' }, { status: 403 });
     }
 
+    // Service-specific workflows (2026-10): the stage label names a
+    // (template, raw stages) set, never a bare raw stage — raw stage 3 can
+    // mean different things on different templates. Same 400 for an
+    // unrecognized label as the STAGES path above.
+    let organizationStage: OrganizationStage | null = null;
+    if (stageParam !== null && stagesByTemplate) {
+      const templates =
+        adapter === 'mock'
+          ? workflowTemplateFixtures.filter((t) => t.organizationId === organizationId)
+          : await fetchWixWorkflowTemplates(organizationId);
+      const model = resolveOrganizationStages(organizationId, templates);
+      organizationStage = findOrganizationStage(model, stageParam);
+      if (!organizationStage) {
+        return NextResponse.json(
+          { cases: [], hasMore: false, nextCursor: null, error: `Invalid stage. Must be one of: ${organizationStageLabels(model).join(', ')}.` },
+          { status: 400 },
+        );
+      }
+    }
+    const stageFilter = organizationStage ? wixFilterForOrganizationStage(organizationStage) : null;
+
     // Cursor validated once, centrally, before either adapter branch —
     // rejected outright (400) rather than silently falling back to page 1
     // or leaking a mismatched page. The cursor's own embedded
@@ -212,7 +248,10 @@ export async function GET(request: Request) {
 
     if (adapter === 'mock') {
       const eligible = caseFixtures.filter(
-        (c) => c.organizationId === organizationId && (scope === 'all' || c.isDeleted === (scope === 'archived')) && (rawStages === null || rawStages.includes(c.rawStage)),
+        (c) =>
+          c.organizationId === organizationId &&
+          (scope === 'all' || c.isDeleted === (scope === 'archived')) &&
+          (organizationStage ? caseIsInOrganizationStage(organizationStage, c) : rawStages === null || rawStages.includes(c.rawStage)),
       );
 
       if (!paginationRequested) {
@@ -251,7 +290,7 @@ export async function GET(request: Request) {
       // being skipped or duplicated across pages. Stage filtering (new,
       // opt-in) is pushed into the same Wix filter; search stays
       // `matchesSearch` (`.includes()`), unchanged.
-      const items = await queryAllWixDataItems<WixCaseItem>('cases', buildCaseListWixFilter({ organizationId, rawStages, scope }));
+      const items = await queryAllWixDataItems<WixCaseItem>('cases', buildCaseListWixFilter({ organizationId, rawStages, scope, stageFilter }));
       const cases = items
         .map((item) => mapWixCaseItem(item.data))
         .filter((c): c is Case => c !== null)
@@ -263,7 +302,7 @@ export async function GET(request: Request) {
     const pageSize = clampCaseListPageSize(requestedLimit);
     const searchFilter = buildCaseSearchWixFilter(searchQuery);
     const pageResponse = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter, scope }),
+      filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter, scope, stageFilter }),
       sort: CASE_LIST_SORT,
       // Wix's cursor-paging contract: the first page is requested via
       // `limit` alone, every subsequent page via `cursor` alone — never
@@ -632,21 +671,37 @@ export async function POST(request: Request) {
 
   try {
     const templates = await fetchWixWorkflowTemplates(organizationId);
-    // Service-based workflows (2026-11): decided here, on the server, from
-    // the organization's own profile — never from what the browser says
-    // about how the organization works. Manors: first enabled template, as before.
-    const selection = selectWorkflowTemplate(templates, {
-      workflowByServiceType: isWorkflowByServiceType(organizationId),
-      serviceTypeCode: typeof b.serviceTypeCode === 'string' ? b.serviceTypeCode : null,
-    });
+    // Service-specific workflows (2026-10): server-authoritative — the
+    // body only NAMES a service type; which template/version that means is
+    // decided here, against this organization's own templates and its own
+    // active service-type catalog. An organization without
+    // `workflowByServiceType` (Manors) gets the first enabled template and
+    // never reads `serviceTypeCode` or the catalog at all.
+    const byServiceType = isWorkflowByServiceType(organizationId);
+    let selectionOptions: WorkflowSelectionOptions = {};
+    if (byServiceType) {
+      const serviceTypes = serviceTypeItems(await getServiceCatalog(organizationId, 'wix'));
+      selectionOptions = {
+        activeServiceTypeCodes: serviceTypes.map((item) => item.serviceCode),
+        serviceDisplayName: (code) => serviceTypes.find((item) => item.serviceCode === code)?.displayName,
+      };
+    }
+    const selection = selectWorkflowTemplate(
+      templates,
+      organizationId,
+      byServiceType && typeof b.serviceTypeCode === 'string' ? b.serviceTypeCode : null,
+      selectionOptions,
+    );
     if (!selection.ok) {
-      return NextResponse.json({ case: null, error: TEMPLATE_SELECTION_MESSAGES[selection.reason] }, { status: 422 });
+      return NextResponse.json(
+        { case: null, error: selection.message, ...(byServiceType ? { workflowSelectionRefused: selection.reason } : {}) },
+        { status: 422 },
+      );
     }
-    const { template } = selection;
-    if (!selection.version) {
-      return NextResponse.json({ case: null, error: TEMPLATE_SELECTION_MESSAGES.no_template }, { status: 422 });
+    const { template, version } = selection;
+    if (!version) {
+      return NextResponse.json({ case: null, error: 'No enabled workflow template found for this organization.' }, { status: 422 });
     }
-    const version = selection.version;
 
     const beaconCaseId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
@@ -744,7 +799,7 @@ export async function POST(request: Request) {
       caseType: version.caseTypes[0],
       workflowTemplateId: template.id,
       workflowTemplateVersion: version.version,
-      workflowSnapshot: buildCaseWorkflowSnapshot(template, version, selection.serviceTypeCode),
+      workflowSnapshot: buildCaseWorkflowSnapshot(template, version, byServiceType ? selection.serviceTypeCode : undefined),
       intakeOwnerId,
       createdBy,
       assignedStaffId,

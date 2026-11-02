@@ -5,7 +5,9 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { provisionWorkflow, markStepCompleted, type ProvisionWorkflowMode } from '@/services/organizationProvisioningService';
 
-const VALID_MODES: ProvisionWorkflowMode[] = ['starter', 'clone_existing', 'minimal'];
+// 'service_workflows' (2026-11): the cremation service templates of an
+// organization that chooses workflows by service — see provisionWorkflow.
+const VALID_MODES: ProvisionWorkflowMode[] = ['starter', 'clone_existing', 'minimal', 'service_workflows'];
 
 /**
  * Phase 20 (Organization Onboarding & Tenant Provisioning). Step 4 —
@@ -35,8 +37,9 @@ export async function PATCH(request: Request) {
 
   const dataAdapterMode = getDataAdapterMode();
   let template;
+  let templates;
   try {
-    ({ template } = await provisionWorkflow(
+    ({ template, templates } = await provisionWorkflow(
       onboardingSession.organizationId,
       {
         mode: b.mode as ProvisionWorkflowMode,
@@ -52,5 +55,9 @@ export async function PATCH(request: Request) {
   }
 
   const updatedSession = await markStepCompleted(onboardingSession, 'workflow_setup', dataAdapterMode);
-  return NextResponse.json({ workflowTemplate: template, onboardingSession: updatedSession });
+  return NextResponse.json({
+    workflowTemplate: template,
+    ...(templates ? { workflowTemplates: templates } : {}),
+    onboardingSession: updatedSession,
+  });
 }

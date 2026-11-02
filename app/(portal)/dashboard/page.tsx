@@ -9,6 +9,9 @@ import { STAGES } from '@/domain/cases/stages';
 import { presentedStages } from '@/domain/organization/workflowStagePresentation';
 import { computeKpis } from '@/domain/reports/calculations';
 import { useOrganization } from '@/hooks/useOrganization';
+import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
+import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { resolveOrganizationStages } from '@/domain/workflow/organizationStages';
 import { useDashboardData } from '@/hooks/useDashboard';
 import { PageGreetingHeader } from '@/components/dashboard/PageGreetingHeader';
 import { DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip';
@@ -63,7 +66,7 @@ export default function DashboardPage() {
   // read from the server-side counts endpoint below, never from this.
   const { data: allCases } = useCases();
   const allViewModels = useCaseViewModels(allCases);
-  const kpis = useMemo(() => computeKpis(allViewModels), [allViewModels]);
+  const kpis = useMemo(() => computeKpis(allViewModels, organizationId), [allViewModels, organizationId]);
   // SLA tracking (2026-10): Needs Attention already includes SLA cases (the
   // view model decides, from the shared evaluation); the most urgent first.
   const urgentCases = useMemo(
@@ -96,7 +99,27 @@ export default function DashboardPage() {
   // `displayStage` stays a canonical value — it only drives stage colour
   // and the bottleneck flag. See
   // domain/organization/workflowStagePresentation.ts.
+  // Service-specific workflows (2026-10): an organization whose cases run
+  // on several templates gets one row per ORGANIZATION stage (the ordered
+  // union across its approved workflows — domain/workflow/organizationStages.ts),
+  // counted server-side per (template, raw stage); the bottleneck flag
+  // comes from the templates' own isAttentionStage. Everyone else keeps
+  // the STAGES rows below, unchanged.
+  const stagesByTemplate = isWorkflowByServiceType(organizationId);
+  const { data: workflowTemplates } = useWorkflowTemplates({ enabled: stagesByTemplate });
   const stageBreakdownRows: StageBarRow[] = useMemo(() => {
+    if (stagesByTemplate) {
+      const model = resolveOrganizationStages(organizationId, workflowTemplates ?? []);
+      const counts = model.stages.map((stage) => countsData?.byStage[stage.label] ?? null);
+      const maxCount = Math.max(1, ...counts.map((c) => c ?? 0));
+      return model.stages.map((stage, index) => ({
+        label: stage.label,
+        count: counts[index],
+        pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
+        displayStage: index,
+        isAttentionStage: stage.isAttentionStage,
+      }));
+    }
     const presented = presentedStages(organizationId, STAGES);
     const counts = presented.map((stage) => {
       const parts = stage.canonicalDisplayStages.map((ds) => countsData?.byStage[STAGES[ds]] ?? null);
@@ -111,7 +134,7 @@ export default function DashboardPage() {
       pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
       displayStage: stage.canonicalDisplayStages[0],
     }));
-  }, [countsData, organizationId]);
+  }, [countsData, organizationId, stagesByTemplate, workflowTemplates]);
 
   // Stage Preview's own case rows (SOLIS true redesign, Phase 1) — grouped
   // from the already-fetched `allViewModels`, keyed by the case's own

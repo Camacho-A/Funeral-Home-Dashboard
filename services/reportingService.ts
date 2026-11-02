@@ -6,8 +6,14 @@ import type { PaymentRecordStatus } from '../types/payment';
 import { buildCaseViewModel } from '../domain/cases/viewModel';
 import { STAGES, LAST_DISPLAY_STAGE } from '../domain/cases/stages';
 import { presentedStages } from '../domain/organization/workflowStagePresentation';
+import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
+import { caseIsInOrganizationStage, resolveOrganizationStages } from '../domain/workflow/organizationStages';
+import { listOrganizationWorkflowTemplates } from './organizationWorkflowTemplates';
 import {
   computeStageBreakdown,
+  computeStageBreakdownByOrganizationStage,
+  isCaseViewOnTerminalStage,
+  reportStageRef,
   computeStaffWorkload,
   computeVeteranCaseStatuses,
   type StageBreakdownRow,
@@ -114,8 +120,13 @@ export async function countActiveCases(
   dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<number> {
   const views = await loadCaseViewModels(organizationId, dataAdapterMode);
+  // Service-specific workflows (2026-10): "active" is "not on its own
+  // workflow's terminal stage" for an organization with several templates.
+  const isActive = isWorkflowByServiceType(organizationId)
+    ? (c: CaseViewModel) => !isCaseViewOnTerminalStage(c)
+    : (c: CaseViewModel) => c.displayStage < LAST_DISPLAY_STAGE;
   return views.filter(
-    (c) => c.displayStage < LAST_DISPLAY_STAGE && (filters.staffProfileId === undefined || c.ownerStaffId === filters.staffProfileId),
+    (c) => isActive(c) && (filters.staffProfileId === undefined || c.ownerStaffId === filters.staffProfileId),
   ).length;
 }
 
@@ -141,7 +152,15 @@ async function terminalStageChangeEvents(
   filters: { fromDate?: string; toDate?: string },
   dataAdapterMode: DataAdapterMode,
 ): Promise<Array<{ caseId: string; createdAt: string }>> {
-  const terminalLabel = STAGES[LAST_DISPLAY_STAGE];
+  // Service-specific workflows (2026-10): every template's own terminal
+  // stage name counts (activity labels come from the case's snapshot).
+  const terminalLabels = isWorkflowByServiceType(organizationId)
+    ? new Set(
+        resolveOrganizationStages(organizationId, await listOrganizationWorkflowTemplates(organizationId, dataAdapterMode))
+          .stages.filter((stage) => stage.isTerminal)
+          .map((stage) => stage.label),
+      )
+    : new Set<string>([STAGES[LAST_DISPLAY_STAGE]]);
   const { fromDate, toDate } = { ...defaultDateRange(), ...filters };
   const matches: Array<{ caseId: string; createdAt: string }> = [];
   let cursor: string | null = null;
@@ -152,16 +171,17 @@ async function terminalStageChangeEvents(
       if (event.createdAt < fromDate || event.createdAt > toDate) continue;
       // Manual completion (Phase 5A.1): a staff "Mark completed" is
       // recorded as `case.completed`, never as a stage change — it counts
-      // as reaching the end of the workflow too. (Callers count distinct
-      // cases, so an automatic completion recorded both ways counts once.)
+      // as reaching the end of the workflow too. An AUTOMATIC completion is
+      // already counted by its stage change, so only manual ones count here
+      // (counting both could date one case in two periods).
       if (event.eventType === ACTIVITY_EVENT_TYPES.CASE_COMPLETED) {
-        matches.push({ caseId: event.caseId, createdAt: event.createdAt });
+        if (completionEventMode(event.metadata) === 'manual') matches.push({ caseId: event.caseId, createdAt: event.createdAt });
         continue;
       }
       if (event.eventType !== ACTIVITY_EVENT_TYPES.CASE_STAGE_CHANGED) continue;
       try {
         const parsed = JSON.parse(event.newValue ?? 'null') as { stage?: string } | null;
-        if (parsed?.stage === terminalLabel) matches.push({ caseId: event.caseId, createdAt: event.createdAt });
+        if (parsed?.stage !== undefined && terminalLabels.has(parsed.stage)) matches.push({ caseId: event.caseId, createdAt: event.createdAt });
       } catch {
         // Malformed newValue on a pre-Phase-24 row — skip rather than throw.
       }
@@ -223,6 +243,25 @@ export async function countOverdueCases(
 export type CaseStageCountRow = { stage: string; displayStage: number; count: number };
 
 export async function caseCountsByStage(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<CaseStageCountRow[]> {
+  // Service-specific workflows (2026-10): one row per organization stage,
+  // each case counted by its own (template, version, raw stage) — the same
+  // membership as the Dashboard — at the stage its view model shows it
+  // (reportStageRef), like Manors' rows below and the active/completed
+  // figures. `displayStage` is the row's position.
+  if (isWorkflowByServiceType(organizationId)) {
+    const [cases, staffList, templates] = await Promise.all([
+      casesService.listForOrganization(organizationId, dataAdapterMode),
+      staffProfileService.list(organizationId, dataAdapterMode),
+      listOrganizationWorkflowTemplates(organizationId, dataAdapterMode),
+    ]);
+    const refs = cases.map((c) => reportStageRef(c, buildCaseViewModel(c, { staffList })));
+    const model = resolveOrganizationStages(organizationId, templates);
+    return model.stages.map((stage, index) => ({
+      stage: stage.label,
+      displayStage: index,
+      count: refs.filter((ref) => caseIsInOrganizationStage(stage, ref)).length,
+    }));
+  }
   const views = await loadCaseViewModels(organizationId, dataAdapterMode);
   // Manors intake-stage combination (2026-10): rows are the USER-FACING
   // stages, so Manors reports six instead of seven. Each presented stage
@@ -242,6 +281,16 @@ export async function caseCountsByStage(organizationId: string, dataAdapterMode:
     the live, currently-in-stage snapshot (see this metric's own registry
     description for how it differs from `averageCaseCycleDays`). */
 export async function averageDaysInStageSnapshot(organizationId: string, dataAdapterMode: DataAdapterMode = 'mock'): Promise<StageBreakdownRow[]> {
+  if (isWorkflowByServiceType(organizationId)) {
+    const [cases, staffList, templates] = await Promise.all([
+      casesService.listForOrganization(organizationId, dataAdapterMode),
+      staffProfileService.list(organizationId, dataAdapterMode),
+      listOrganizationWorkflowTemplates(organizationId, dataAdapterMode),
+    ]);
+    const views = cases.map((c) => buildCaseViewModel(c, { staffList }));
+    const refs = new Map(cases.map((c, index) => [c.id, reportStageRef(c, views[index])]));
+    return computeStageBreakdownByOrganizationStage(views, resolveOrganizationStages(organizationId, templates), refs);
+  }
   const views = await loadCaseViewModels(organizationId, dataAdapterMode);
   return computeStageBreakdown(views, organizationId);
 }
@@ -470,7 +519,7 @@ export async function staffWorkload(
     tasksService.listForOrganization(organizationId, dataAdapterMode),
   ]);
   const targets = filters.staffProfileId ? staffList.filter((s: StaffProfile) => s.id === filters.staffProfileId) : staffList;
-  const caseWorkload = computeStaffWorkload(views, targets);
+  const caseWorkload = computeStaffWorkload(views, targets, organizationId);
   return caseWorkload.map((row) => ({
     staffProfileId: row.staffId,
     name: row.name,
@@ -665,5 +714,14 @@ async function runFinancialReport(
     }
     default:
       throw new ReportRunnerError(`Unhandled financialReportKey "${financialReportKey}".`);
+  }
+}
+
+function completionEventMode(metadata: string | null | undefined): string | null {
+  try {
+    const parsed = JSON.parse(metadata ?? 'null') as { mode?: unknown } | null;
+    return typeof parsed?.mode === 'string' ? parsed.mode : null;
+  } catch {
+    return null;
   }
 }

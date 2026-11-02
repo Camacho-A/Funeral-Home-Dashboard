@@ -1,7 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { Case } from '@/types/case';
 import { casesService } from '@/services/casesService';
-import { advanceToNextStage } from '@/domain/cases/transitions';
+import { advanceToNextStage, advanceToNextSnapshotStage } from '@/domain/cases/transitions';
+import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
 import { caseRevision } from '@/lib/wixCaseMapper';
 import { isCaseRevisionConflictError } from '@/domain/cases/caseRevisionConflict';
 import { useOrganization } from './useOrganization';
@@ -38,9 +39,13 @@ export function useAdvanceCaseStage() {
      * Every selected case is attempted; refusals are reported together.
      */
     mutationFn: async (cases: Case[]) => {
+      // Service-specific workflows (2026-10): bounded by each case's own
+      // snapshot for an organization with several templates; unchanged
+      // (+1) for everyone else.
+      const advance = isWorkflowByServiceType(organization.organizationId) ? advanceToNextSnapshotStage : advanceToNextStage;
       const results = await Promise.allSettled(
         cases.map((c) =>
-          casesService.update(organization, c.id, advanceToNextStage(c), organization.dataAdapterMode, {
+          casesService.update(organization, c.id, advance(c), organization.dataAdapterMode, {
             expectedRevision: caseRevision(c),
           }),
         ),
@@ -59,7 +64,7 @@ export function useAdvanceCaseStage() {
       // Whatever did advance is reflected; refusals show current data.
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
     },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['cases', organization.organizationId] });
       queryClient.invalidateQueries({ queryKey: ['case', organization.organizationId] });
     },

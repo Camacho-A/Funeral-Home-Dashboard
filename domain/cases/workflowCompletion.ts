@@ -1,6 +1,4 @@
-import type { Case } from '../../types/case';
-import { lastDisplayStage, findStageByRawStage } from '../workflow/resolveStages';
-import { isTerminalReturnRequirementComplete } from './returnMethod';
+import { evaluateCaseCompletion, type CompletionCase } from './completionEligibility';
 
 /**
  * Automatic archiving (2026-10). The single, canonical answer to "is this
@@ -17,7 +15,13 @@ import { isTerminalReturnRequirementComplete } from './returnMethod';
  *      the case's frozen `workflowSnapshot`, never a hardcoded stage
  *      number, so an organization with a different template is evaluated
  *      against its own.
- *   2. The terminal return-of-remains requirement is satisfied:
+ *   2. Its completion requirements are satisfied. Service-specific
+ *      completion (2026-10): WHICH requirements is now the frozen
+ *      snapshot's completion policy (domain/cases/completionEligibility.ts)
+ *      — a burial or entombment workflow is finished by its own required
+ *      final items, with no remains to return. A snapshot without a policy
+ *      (every Manors/evergreen case, every case created before policies
+ *      existed) keeps exactly the rule below:
  *      `pickupStatus === 'released'` for pickup, or
  *      `shippingDeliveryStatus === 'delivered'` for shipping.
  *
@@ -33,18 +37,13 @@ import { isTerminalReturnRequirementComplete } from './returnMethod';
  * A case with no `workflowSnapshot` is never complete: without its own
  * template there is no "last stage" to be at, and guessing one would be
  * the hardcoding this function exists to avoid.
+ *
+ * The parameter accepts the same partial shape as before (the extra Case
+ * fields a policy may read are optional), so every existing caller
+ * compiles and behaves unchanged.
  */
-export function isCaseWorkflowComplete(
-  case_: Pick<Case, 'rawStage' | 'workflowSnapshot' | 'returnMethod' | 'pickupStatus' | 'shippingDeliveryStatus'>,
-): boolean {
-  const snapshot = case_.workflowSnapshot;
-  if (!snapshot) return false;
-
-  const displayStage = findStageByRawStage(snapshot, case_.rawStage)?.displayStage;
-  if (displayStage === undefined) return false;
-  if (displayStage !== lastDisplayStage(snapshot)) return false;
-
-  return isTerminalReturnRequirementComplete(case_);
+export function isCaseWorkflowComplete(case_: CompletionCase): boolean {
+  return evaluateCaseCompletion(case_).eligible;
 }
 
 /**

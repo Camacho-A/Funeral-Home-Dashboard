@@ -1,5 +1,6 @@
 import type { DataAdapterMode } from '../lib/env';
 import { completeArrangementFormChecklistItem } from './automaticChecklistCompletion';
+import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
 import type { Case } from '../types/case';
 import type { ExternalFormConfig } from '../types/externalFormConfig';
 import type { ExternalFormSubmission } from '../types/externalFormSubmission';
@@ -175,6 +176,22 @@ export async function createCaseFromIntakeSubmission(
       `[form intake] Submission ${submission.id} is missing required field(s) (${missing.join(', ')}) — left unmatched, no case created.`,
     );
     return { created: false, reason: `missing_required_fields:${missing.join(',')}` };
+  }
+
+  // Service-specific workflows (2026-10). An organization whose workflow
+  // is chosen by service type (Gus) cannot have a case created from a
+  // form submission: nothing in the submission names the service, and
+  // guessing one would put the case on the wrong workflow. Fail safely,
+  // exactly like missing required fields below — the submission stays
+  // `unmatched` in Unmatched Forms for staff to create/attach the case by
+  // hand, choosing the service. POST /api/cases would refuse it anyway
+  // (422, service type required); this just avoids claiming the
+  // submission for a request that can only fail.
+  if (isWorkflowByServiceType(config.organizationId)) {
+    console.error(
+      `[form intake] Submission ${submission.id}: this organization selects workflows by service type and the submission names none — left unmatched for staff review, no case created.`,
+    );
+    return { created: false, reason: 'service_type_required' };
   }
 
   /**

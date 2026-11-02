@@ -374,6 +374,58 @@ export type Case = {
       clients (`caseRevision`). Wire-compatible with Gus SOLIS, which
       shares the same Wix `cases` rows. Never client-writable. */
   revision?: number;
+  /**
+   * Service-specific workflows (2026-10). Append-only record of every
+   * workflow this case moved AWAY from (POST /api/cases/[caseId]/workflow),
+   * each entry carrying the complete prior progress so nothing a staff
+   * member completed is ever lost when the service type changes. Absent on
+   * every case that never changed workflow (all Manors/evergreen cases).
+   */
+  workflowHistory?: CaseWorkflowHistoryEntry[];
+  /**
+   * Consistent service changes (2026-10). The id of the last coordinated
+   * service change applied to this case (POST
+   * /api/cases/[caseId]/service-change) — the fencing token its
+   * compare-and-swap is conditioned on, so two concurrent changes planned
+   * from the same state can never both apply. Absent on every case that
+   * never went through one. Never accepted from a client patch.
+   */
+  lastServiceChangeId?: string | null;
+  /**
+   * Service-specific completion (2026-10). Set only by the staff "Mark
+   * completed" action (POST /api/cases/[caseId]/complete) for a case whose
+   * frozen completion policy allows manual completion — see
+   * domain/cases/completionEligibility.ts. Absent on every other case.
+   * Never accepted from a client patch (excluded from CaseUpdate).
+   */
+  manualCompletion?: CaseManualCompletion | null;
+};
+
+/** Service-specific completion (2026-10). See Case.manualCompletion. */
+export type CaseManualCompletion = {
+  completedAt: string;
+  /** Identity id of the staff member who completed the case. */
+  completedBy: string;
+  completedByName?: string | null;
+  /** Why the case was completed by hand — required, and audited. */
+  reason: string;
+};
+
+export type CaseWorkflowHistoryEntry = {
+  workflowTemplateId: string;
+  workflowTemplateVersion: number;
+  serviceTypeCode: string | null;
+  rawStage: number;
+  checklistState: Record<string, boolean>;
+  fieldValues: Record<number, string>;
+  /** When the case left this workflow. */
+  changedAt: string;
+  changedByUserId: string;
+  /** Consistent service changes (2026-10). The coordinated service change
+      that moved the case away from this workflow — its idempotency key, so
+      a retried request finds it already applied. Absent for changes made
+      through POST /api/cases/[caseId]/workflow alone. */
+  serviceChangeId?: string;
 };
 
 /**
@@ -433,6 +485,10 @@ export type CaseUpdate = Partial<
     | 'workflowTemplateId'
     | 'workflowTemplateVersion'
     | 'workflowSnapshot'
+    | 'workflowHistory'
+    | 'lastServiceChangeId'
+    | 'revision'
+    | 'manualCompletion'
     | 'caseNumber'
     | 'revision'
   >

@@ -20,6 +20,7 @@ import { getSlaTargetDays } from '../cases/sla';
  * organization's own profile):
  * - how the arrangement form is fulfilled (an external form integration
  *   such as JotForm, or staff confirmation) — the requirement is the same;
+ * - what the organization calls each stage (names only);
  * - which Case fields complete "Certifier Information" (Manors requires
  *   name + fax since its template v7; the platform default is name + phone;
  *   each organization chooses in its profile, and an administrator can
@@ -104,6 +105,10 @@ export type CremationFoundationOptions = {
   arrangementFormIntegrationId: string | null;
   /** Case fields that complete "Certifier Information". */
   certifierRequiredCaseFields?: readonly string[];
+  /** The organization's own names for stages, by stage key (e.g. Gus calls
+      the arrangement-form stage "JotForm Application"). Names only — the
+      steps, their order and their ids never change. */
+  stageLabels?: Readonly<Record<string, string>>;
 };
 
 const RAW_STAGE_COUNT = 8;
@@ -158,7 +163,7 @@ export function buildCremationFoundationStages(options: CremationFoundationOptio
     return {
       rawStage,
       displayStage,
-      label: STAGES[displayStage],
+      label: options.stageLabels?.[STAGE_KEYS[rawStage]] ?? STAGES[displayStage],
       isAttentionStage: isBottleneckStage(displayStage),
       slaTargetDays: getSlaTargetDays(displayStage),
       checklist: { items: foundationItems(rawStage, options) },

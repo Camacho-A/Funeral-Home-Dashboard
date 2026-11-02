@@ -14,7 +14,7 @@ import {
 import { getSlaTargetDays } from '../../domain/cases/sla';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds';
 import { mockCollection } from './mockStore';
-import { buildServiceWorkflowVersion, CREMATION_SERVICE_WORKFLOWS, foundationOptionsFor, type ServiceWorkflowDefinition } from '../../domain/workflow/serviceWorkflows';
+import { buildServiceWorkflowTemplateDefinitions } from '../../domain/workflow/serviceWorkflows';
 import { JOTFORM_INTEGRATION_ID } from './externalFormIntegrations';
 
 /**
@@ -307,7 +307,7 @@ const standardCremationStagesV5: StageTemplate[] = Array.from(
  * anywhere in SOLIS to invent one for (nextOfKinPhone is unmasked too).
  * decedent and payment sections are unchanged from v1.
  */
-const standardCremationIntakeV5: IntakeTemplate = {
+export const standardCremationIntakeV5: IntakeTemplate = {
   sections: [
     standardCremationIntake.sections[0],
     {
@@ -505,6 +505,11 @@ export const secondOrgWorkflowTemplateFixture: WorkflowTemplate = {
  */
 export const GUS_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-standard-cremation';
 
+const GUS_STAGE_NAME_BY_PLATFORM_NAME: Record<string, string> = {
+  'Jotform Application': 'JotForm Application',
+  'DC Application Sent': 'Death Certificate Application Sent',
+};
+
 export function buildGusWorkflowTemplateFixture(): WorkflowTemplate {
   return {
     id: GUS_WORKFLOW_TEMPLATE_ID,
@@ -518,6 +523,8 @@ export function buildGusWorkflowTemplateFixture(): WorkflowTemplate {
         caseTypes: ['cremation'],
         stages: structuredClone(standardCremationStagesV5).map((stage) => ({
           ...stage,
+          // The stage names Gus supplied (its profile's cremationStageLabels).
+          label: GUS_STAGE_NAME_BY_PLATFORM_NAME[stage.label] ?? stage.label,
           checklist: {
             ...stage.checklist,
             items: stage.checklist.items.map((item) => ({ ...item, externalFormIntegrationId: null })),
@@ -540,41 +547,45 @@ export const gusWorkflowTemplateFixture: WorkflowTemplate = buildGusWorkflowTemp
  * (so existing demo cases keep their snapshot) and gains v2 composed from
  * the foundation. Gus's arrangement form is not connected yet, so its
  * requirement is fulfilled by staff confirmation (no integration id);
- * Certifier Information needs name + fax, from Gus's profile.
+ * Certifier Information needs name + fax, from Gus's profile. Gus's three
+ * burial/entombment services are drafts cases cannot use until their steps
+ * are defined (domain/workflow/serviceWorkflows.ts).
  */
-const GUS_FOUNDATION_OPTIONS = foundationOptionsFor(GUS_ORGANIZATION_ID, { arrangementFormIntegrationId: null });
 const GUS_SERVICE_TEMPLATE_CREATED_AT = '2026-11-01T00:00:00.000Z';
 
 export const GUS_VIEWING_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-cremation-with-viewing';
 export const GUS_FINAL_GOODBYE_WORKFLOW_TEMPLATE_ID = 'workflow-template-gus-camacho-jr-cremation-with-final-goodbye';
 
-function gusServiceTemplate(id: string, definition: ServiceWorkflowDefinition, earlierVersions: WorkflowTemplate['versions'] = []): WorkflowTemplate {
-  const nextVersion = (earlierVersions.at(-1)?.version ?? 0) + 1;
-  return {
-    id,
-    organizationId: GUS_ORGANIZATION_ID,
-    name: definition.name,
-    isEnabled: true,
-    caseTypes: [definition.caseType],
-    versions: [
-      ...earlierVersions,
-      buildServiceWorkflowVersion({
-        definition,
-        foundation: GUS_FOUNDATION_OPTIONS,
-        intake: standardCremationIntakeV5,
-        version: nextVersion,
-        createdAt: GUS_SERVICE_TEMPLATE_CREATED_AT,
-      }),
-    ],
-  };
+/** Mock template id per service: Direct Cremation keeps the id its demo
+    cases already reference; the others follow the same pattern. */
+export function gusServiceTemplateId(serviceTypeCode: string): string {
+  return serviceTypeCode === 'DIRECT_CREMATION'
+    ? GUS_WORKFLOW_TEMPLATE_ID
+    : `workflow-template-gus-camacho-jr-${serviceTypeCode.toLowerCase().replace(/_/g, '-')}`;
 }
 
 export function buildGusServiceWorkflowTemplateFixtures(): WorkflowTemplate[] {
-  return [
-    gusServiceTemplate(GUS_WORKFLOW_TEMPLATE_ID, CREMATION_SERVICE_WORKFLOWS.DIRECT_CREMATION, buildGusWorkflowTemplateFixture().versions),
-    gusServiceTemplate(GUS_VIEWING_WORKFLOW_TEMPLATE_ID, CREMATION_SERVICE_WORKFLOWS.CREMATION_WITH_VIEWING),
-    gusServiceTemplate(GUS_FINAL_GOODBYE_WORKFLOW_TEMPLATE_ID, CREMATION_SERVICE_WORKFLOWS.CREMATION_WITH_FINAL_GOODBYE),
-  ];
+  const definitions = buildServiceWorkflowTemplateDefinitions({
+    organizationId: GUS_ORGANIZATION_ID,
+    arrangementFormIntegrationId: null,
+    intake: standardCremationIntakeV5,
+    createdAt: GUS_SERVICE_TEMPLATE_CREATED_AT,
+  });
+  return definitions.map((definition) => {
+    // Direct Cremation keeps its earlier version, so existing demo cases
+    // keep their snapshot; the shared-foundation version follows it.
+    const earlier = definition.serviceTypeCode === 'DIRECT_CREMATION' ? buildGusWorkflowTemplateFixture().versions : [];
+    return {
+      id: gusServiceTemplateId(definition.serviceTypeCode),
+      organizationId: GUS_ORGANIZATION_ID,
+      name: definition.name,
+      description: definition.description,
+      isEnabled: true,
+      caseTypes: definition.caseTypes,
+      serviceTypeCodes: [definition.serviceTypeCode],
+      versions: [...earlier, { ...definition.version, version: earlier.length + 1 }],
+    };
+  });
 }
 
 export const gusServiceWorkflowTemplateFixtures: WorkflowTemplate[] = buildGusServiceWorkflowTemplateFixtures();

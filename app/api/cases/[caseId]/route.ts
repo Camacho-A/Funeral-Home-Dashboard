@@ -32,6 +32,7 @@ import {
   recordShipmentDelivered,
   recordContactRestrictionChanged,
   recordCaseArchiveChanged,
+  recordCaseCompleted,
   type FieldChange,
 } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
@@ -43,7 +44,10 @@ import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
 import { getOrganization } from '@/services/organizationProvisioningService';
 import { getDateOfBirthFutureError, getDateOfDeathFutureError, getFutureDateError, resolveOrgLocalToday } from '@/utils/inputMask';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
-import { becameComplete, touchesWorkflowCompletion } from '@/domain/cases/workflowCompletion';
+import { touchesWorkflowCompletion } from '@/domain/cases/workflowCompletion';
+import { completionTransition } from '@/domain/cases/completionEligibility';
+import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { snapshotStageLabel } from '@/domain/workflow/organizationStages';
 import { notifyCaseCompleted } from '@/services/caseNotifications';
 import { composeDecedentName } from '@/domain/cases/decedentName';
 import { archivedCaseWriteRefusal } from '@/domain/cases/archivedCaseWrites';
@@ -146,7 +150,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
  * updateWixDataItem comment) — the validated patch is merged onto that
  * full object, never sent as a bare partial.
  */
-function stageLabel(rawStage: number): string {
+function stageLabel(rawStage: number, case_?: Case | null): string {
+  // Service-specific workflows (2026-10): an organization whose cases run
+  // on several templates names the stage from the case's OWN snapshot.
+  if (case_ && isWorkflowByServiceType(case_.organizationId)) {
+    return snapshotStageLabel(case_.workflowSnapshot, rawStage) ?? `Stage ${rawStage}`;
+  }
   return STAGES[toDisplayStage(rawStage)] ?? `Stage ${rawStage}`;
 }
 
@@ -505,8 +514,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
      * Best-effort and deliberately last: an archiving failure must never
      * fail, or roll back, the case edit that already succeeded.
      */
-    if (!existing.isDeleted && becameComplete(existing, result)) {
-      try {
+    // Service-specific completion (2026-10, from Gus SOLIS): judged by the
+    // case's own frozen completion policy; a case without one (every Manors
+    // case) keeps today's rule — the return of cremated remains, then
+    // archive — exactly as before.
+    const transition = existing.isDeleted ? null : completionTransition(existing, result);
+    if (transition?.becameComplete) {
+      if (transition.archive) try {
         // Case concurrency (2026-10): sets only the archive fields, on the
         // case as it is NOW, conditioned on its revision — it used to
         // re-send the whole row from the edit's own response, undoing any
@@ -542,6 +556,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
           'Failed to automatically archive a completed case (the case update itself succeeded):',
           error instanceof Error ? error.message : error,
         );
+      }
+
+      // How and under which policy the case completed — recorded for a case
+      // whose workflow declares a completion policy; a legacy case (no
+      // policy) records exactly what it always did.
+      if (result.workflowSnapshot?.completionPolicy) {
+        try {
+          await recordCaseCompleted(
+            { organizationId, actorIdentityId: null, actorMembershipId: null, actorRoleKey: null, correlationId, isSystemGenerated: true },
+            caseId,
+            {
+              mode: transition.mode ?? 'automatic',
+              policyKind: transition.policy.kind,
+              requiresRemainsReturn: transition.policy.requiresRemainsReturn,
+              requiredFinalItems: transition.policy.requiredFinalItems,
+              legacyPolicy: false,
+              archivesOnCompletion: transition.archive,
+              workflowTemplateId: result.workflowTemplateId,
+              workflowTemplateVersion: result.workflowTemplateVersion,
+              serviceTypeCode: result.workflowSnapshot?.serviceTypeCode ?? null,
+            },
+            'wix',
+          );
+        } catch (error) {
+          console.error('Failed to record case.completed activity event:', error instanceof Error ? error.message : error);
+        }
       }
 
       /**
@@ -677,7 +717,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         const existingRecord = existing as unknown as Record<string, unknown>;
 
         if (patchRecord.rawStage !== undefined && patchRecord.rawStage !== existing.rawStage) {
-          await recordStageChanged(activityCtx, caseId, stageLabel(existing.rawStage), stageLabel(patchRecord.rawStage as number), 'wix');
+          await recordStageChanged(activityCtx, caseId, stageLabel(existing.rawStage, existing), stageLabel(patchRecord.rawStage as number, existing), 'wix');
         }
 
         // Conditional shipping/tracking (2026-09): returnMethod and the five

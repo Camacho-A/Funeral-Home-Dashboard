@@ -1,0 +1,9 @@
+/* Service-specific workflows (2026-10): which service/workflow the case uses. */
+.label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  margin: var(--space-3) 0 var(--space-5);
+}

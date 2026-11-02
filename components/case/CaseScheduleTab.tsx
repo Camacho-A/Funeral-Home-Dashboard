@@ -16,6 +16,7 @@ import { CremainsPickupSection } from './CremainsPickupSection';
 import { isExpectedCremainsPickup } from '@/domain/scheduling/cremainsPickupPresentation';
 import { useCase } from '@/hooks/useCase';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
+import { showsRemainsReturnControls } from '@/domain/cases/manualCompletionOffer';
 import styles from './CaseScheduleTab.module.css';
 
 /**
@@ -85,10 +86,16 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
   const canCancel = permissions === null || permissions.includes('schedule.cancel');
 
   const appointments = appointmentsQuery.data ?? [];
+  // Service-specific completion (2026-10): a case whose own completion
+  // policy returns no cremated remains (burial / entombment) has no
+  // cremains to pick up, so the dedicated section is not offered. Any
+  // pickup appointment already stored for it is still listed below with
+  // the other appointments — hidden section, never hidden data.
+  const showCremainsPickup = showsRemainsReturnControls(caseQuery.data ?? null);
   // The expected cremains pickup has its own dedicated section above, so
   // it is deliberately excluded from the generic lists — one pickup, one
   // card, never presented twice.
-  const generalAppointments = appointments.filter((a) => !isExpectedCremainsPickup(a));
+  const generalAppointments = showCremainsPickup ? appointments.filter((a) => !isExpectedCremainsPickup(a)) : appointments;
   const upcoming = generalAppointments.filter((a) => !isTerminalAppointmentStatus(a.status)).sort((a, b) => a.startAt.localeCompare(b.startAt));
   const completed = generalAppointments.filter((a) => a.status === 'completed' || a.status === 'no_show').sort((a, b) => b.startAt.localeCompare(a.startAt));
   const cancelled = generalAppointments.filter((a) => a.status === 'cancelled').sort((a, b) => b.startAt.localeCompare(a.startAt));
@@ -148,14 +155,16 @@ export function CaseScheduleTab({ caseId }: { caseId: string }) {
           Overdue state, the paperwork date, and whether the date is still
           automatic. Every ACTION stays on the row itself, so there is only
           one place to confirm, re-date or receive. */}
-      <CremainsPickupSection
-        caseId={caseId}
-        organizationId={organizationId}
-        appointments={appointments}
-        case_={caseQuery.data ?? null}
-        canSchedule={canCreate}
-        organizationTimezone={organizationRecord.data?.timezone}
-      />
+      {showCremainsPickup && (
+        <CremainsPickupSection
+          caseId={caseId}
+          organizationId={organizationId}
+          appointments={appointments}
+          case_={caseQuery.data ?? null}
+          canSchedule={canCreate}
+          organizationTimezone={organizationRecord.data?.timezone}
+        />
+      )}
 
       {/* Schedule (redesign, 2026-10): its own card under the pickup.
           Upcoming is always shown; Completed and Cancelled only when they

@@ -19,8 +19,10 @@ import { useMutation } from '@tanstack/react-query';
 import { createCaseLogEntry } from '@/lib/caseLogClient';
 import { pricingClient } from '@/services/pricingClient';
 import { calculateOrderTotals } from '@/domain/pricing/calculateOrder';
-import { SERVICE_TYPE_CATEGORY } from '@/domain/pricing/serviceCodes';
 import { buildIntakeFieldValues, buildStructuredCaseFields } from '@/domain/workflow/resolveIntake';
+import { isWorkflowByServiceType, selectWorkflowTemplate } from '@/domain/workflow/selectWorkflowTemplate';
+import { latestApprovedVersion } from '@/domain/workflow/snapshot';
+import { displayStagesInOrder } from '@/domain/workflow/resolveStages';
 import { resolveSectionFields, type ResolvedIntakeField } from '@/domain/workflow/resolveIntakeField';
 import { NEXT_OF_KIN_RELATIONSHIP_OPTIONS } from '@/domain/cases/nextOfKinRelationship';
 import {
@@ -38,7 +40,6 @@ import type { Case, NextOfKinRelationship, ReturnMethod } from '@/types/case';
 import type { IntakeTemplate } from '@/types/workflowTemplate';
 import type { ServiceSelections } from '@/types/caseOrder';
 import styles from './NewCaseModal.module.css';
-import { isWorkflowByServiceType, serviceOptionsFor } from '@/domain/workflow/serviceWorkflows';
 
 /**
  * Phase 11 (Workflow Template Architecture): intake sections/fields are no
@@ -182,17 +183,61 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // this is only the starting value, never a permanent branch. See
   // domain/cases/returnMethod.ts.
   const [returnMethod, setReturnMethod] = useState<ReturnMethod>('undecided');
+  // Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces the
+  // old informational-only payment intake field — see
+  // ServicesAndChargesSelector's own comment. Starts at the zero-cost
+  // selection (base service only) so the Live Itemized Summary is
+  // meaningful from the moment the modal opens, before staff touches
+  // anything.
+  const { data: serviceCatalog = [], isSuccess: catalogLoaded } = useServiceCatalog();
+  const [servicesSelections, setServicesSelections] = useState<ServiceSelections>({
+    weightTier: 'under_200',
+    extraDeathCertificateQuantity: 0,
+    mailCremated: false,
+    keepsakeTransferQuantity: 0,
+    urnTransfer: false,
+    shipping: false,
+  });
   const { data: templates, isSuccess: templatesLoaded } = useWorkflowTemplates();
-  // Service-based workflows (2026-11): an organization that opens every
-  // case for a named service (Gus) picks it here; the case gets that
-  // service's workflow. Everyone else sees exactly the form they had.
-  const chooseService = isWorkflowByServiceType(organization.organizationId);
-  const serviceOptions = chooseService ? serviceOptionsFor(templates ?? []) : [];
-  const [serviceTypeCode, setServiceTypeCode] = useState<string>('');
-  const template = chooseService && serviceTypeCode
-    ? templates?.find((t) => t.id === serviceOptions.find((o) => o.serviceTypeCode === serviceTypeCode)?.templateId)
-    : templates?.find((t) => t.isEnabled);
-  const templateIntake = template?.versions[template.versions.length - 1]?.intake;
+  // Service-specific workflows (2026-10). For an organization with
+  // `workflowByServiceType` the chosen service type decides the workflow
+  // (domain/workflow/selectWorkflowTemplate.ts — the same rule the server
+  // re-runs), so the intake form and stage preview below follow the
+  // selection. Every other organization keeps "first enabled template,
+  // latest version" exactly as before.
+  const byServiceType = isWorkflowByServiceType(organization.organizationId);
+  const workflowSelection = byServiceType
+    ? selectWorkflowTemplate(templates ?? [], organization.organizationId, servicesSelections.serviceTypeCode, {
+        serviceDisplayName: (code) => serviceCatalog.find((item) => item.serviceCode === code)?.displayName,
+      })
+    : null;
+  // Until a service with an approved workflow is chosen, the intake form
+  // shows the organization's first approved workflow's intake (so the form
+  // never collapses to the generic fallback mid-entry); the stage preview
+  // and the Create button wait for a real selection.
+  const fallbackApprovedTemplate = byServiceType
+    ? templates?.find((t) => t.isEnabled && latestApprovedVersion(t) !== null)
+    : undefined;
+  const templateIntake = byServiceType
+    ? workflowSelection?.ok
+      ? workflowSelection.version.intake
+      : fallbackApprovedTemplate
+        ? latestApprovedVersion(fallbackApprovedTemplate)?.intake
+        : undefined
+    : (() => {
+        const template = templates?.find((t) => t.isEnabled);
+        return template?.versions[template.versions.length - 1]?.intake;
+      })();
+  const workflowPreviewStages = workflowSelection?.ok
+    ? displayStagesInOrder({
+        workflowTemplateId: workflowSelection.template.id,
+        workflowTemplateVersion: workflowSelection.version.version,
+        stages: workflowSelection.version.stages,
+        intake: workflowSelection.version.intake,
+      })
+    : [];
+  const workflowBlockMessage =
+    byServiceType && templatesLoaded && workflowSelection && !workflowSelection.ok ? workflowSelection.message : null;
   // FALLBACK_INTAKE only ever applies once the real fetch has genuinely
   // resolved and come back with no usable intake fields — never while
   // `templates` is still loading (`intake: undefined` renders zero fields
@@ -226,28 +271,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // note-save retry never re-creates the case (never a duplicate).
   const [createdCase, setCreatedCase] = useState<Case | null>(null);
 
-  // Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces the
-  // old informational-only payment intake field — see
-  // ServicesAndChargesSelector's own comment. Starts at the zero-cost
-  // selection (base service only) so the Live Itemized Summary is
-  // meaningful from the moment the modal opens, before staff touches
-  // anything.
-  const { data: serviceCatalog = [], isSuccess: catalogLoaded } = useServiceCatalog();
-  const [servicesSelections, setServicesSelections] = useState<ServiceSelections>({
-    weightTier: 'under_200',
-    extraDeathCertificateQuantity: 0,
-    mailCremated: false,
-    keepsakeTransferQuantity: 0,
-    urnTransfer: false,
-    shipping: false,
-  });
-  // Service-based workflows (2026-11): the Service chosen above is also the
-  // order's service when the catalog sells it as a service type (Gus), so
-  // staff choose it once.
-  const orderSelections: ServiceSelections =
-    chooseService && serviceTypeCode && serviceCatalog.some((item) => item.category === SERVICE_TYPE_CATEGORY && item.serviceCode === serviceTypeCode)
-      ? { ...servicesSelections, serviceTypeCode }
-      : servicesSelections;
   // Manors launch-prep: a fixed field, deliberately outside the
   // organization's configurable intake template — the same reasoning as
   // ServicesAndChargesSelector above (always rendered, never dependent on
@@ -329,7 +352,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   function resetForm() {
-    setServiceTypeCode('');
     setDraft({});
     setTouched({});
     setRevealedFields({});
@@ -429,7 +451,7 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
   // but a non-empty value must still be well-formed before submitting.
   const nextOfKinEmailTrimmed = nextOfKinEmailInput.trim();
   const hasInvalidNextOfKinEmail = nextOfKinEmailTrimmed !== '' && !isValidEmail(nextOfKinEmailTrimmed);
-  const canSubmit = !hasMissingRequired && !hasFieldErrors && !hasInvalidNextOfKinEmail && (!chooseService || serviceTypeCode !== '');
+  const canSubmit = !hasMissingRequired && !hasFieldErrors && !hasInvalidNextOfKinEmail && workflowBlockMessage === null;
 
   function goToCase(caseId: string) {
     resetForm();
@@ -496,7 +518,9 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
         assignedStaffId: assignedStaffId ?? undefined,
         fieldValues: buildIntakeFieldValues(effectiveIntake, draft),
         returnMethod,
-        ...(chooseService ? { serviceTypeCode } : {}),
+        // Sent regardless of whether a case order is created below (an
+        // unpriced service still decides the workflow).
+        ...(byServiceType ? { serviceTypeCode: servicesSelections.serviceTypeCode ?? null } : {}),
       });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Failed to create case.');
@@ -511,10 +535,10 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     // Services & Charges" on the case page already handles — and staff add
     // services there once an administrator has set the price. The selector
     // tells them so before they submit (see its unpricedNotice below).
-    const hasUnpricedSelection = calculateOrderTotals(serviceCatalog, orderSelections).unpricedItems.length > 0;
+    const hasUnpricedSelection = calculateOrderTotals(serviceCatalog, servicesSelections).unpricedItems.length > 0;
     if (!hasUnpricedSelection) {
       try {
-        await createOrder.mutateAsync({ caseId: newCase.id, selections: orderSelections });
+        await createOrder.mutateAsync({ caseId: newCase.id, selections: servicesSelections });
       } catch {
         setSubmitError('Case created, but the case order failed to save — set up services from the case page.');
         goToCase(newCase.id);
@@ -850,21 +874,6 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                       readonly look. */}
                   <div className={styles.readOnlyValue}>{session.displayName}</div>
                 </div>
-                {chooseService && (
-                  <div>
-                    <label className="sx-label" htmlFor="new-case-service">
-                      Service
-                    </label>
-                    <SelectField id="new-case-service" className="sx-select" value={serviceTypeCode} onChange={(e) => setServiceTypeCode(e.target.value)} required>
-                      <option value="">Choose a service…</option>
-                      {serviceOptions.map((option) => (
-                        <option key={option.serviceTypeCode} value={option.serviceTypeCode}>
-                          {option.name}
-                        </option>
-                      ))}
-                    </SelectField>
-                  </div>
-                )}
                 <div>
                   <div className="sx-label">Assigned Staff</div>
                   {/* Manors go-live fix: defaults to yourself, always — only
@@ -992,12 +1001,36 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
                   <div className="sx-span-all">
                     <ServicesAndChargesSelector
                       catalog={serviceCatalog}
-                      selections={orderSelections}
+                      selections={servicesSelections}
                       onChange={setServicesSelections}
-                      hideServiceTypes={chooseService}
                       unpricedNotice="The case will still be created, without services — add them from the case page once the price is set."
                     />
                   </div>
+                  {byServiceType && workflowPreviewStages.length > 0 && workflowSelection?.ok && (
+                    <div className="sx-span-all" data-testid="new-case-workflow-preview">
+                      <div className="sx-label">Workflow for this service — {workflowSelection.template.name}</div>
+                      <ol className={styles.workflowPreview}>
+                        {workflowPreviewStages.map((stage) => (
+                          <li key={stage.displayStage}>
+                            {stage.label} <span className={styles.workflowPreviewCount}>({stage.checklist.items.length} {stage.checklist.items.length === 1 ? 'step' : 'steps'})</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {workflowBlockMessage && (
+                    <div className="sx-span-all">
+                      {/* "Choose a service" is guidance, not an error; a
+                          service whose workflow can't be used is. */}
+                      <div
+                        className={`sx-form-banner ${workflowSelection && !workflowSelection.ok && workflowSelection.reason === 'service_type_required' ? 'sx-form-banner-info' : 'sx-form-banner-error'}`}
+                        role={workflowSelection && !workflowSelection.ok && workflowSelection.reason === 'service_type_required' ? undefined : 'alert'}
+                        data-testid="new-case-workflow-blocked"
+                      >
+                        {workflowBlockMessage}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

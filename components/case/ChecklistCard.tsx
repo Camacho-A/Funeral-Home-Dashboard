@@ -417,6 +417,7 @@ export function ChecklistCard({
   releaseSuggestions,
   resolveActorName,
   adminOnlyIndexes,
+  showRemainsReturn = true,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -468,6 +469,14 @@ export function ChecklistCard({
       to everyone else; the server refuses the change regardless. Omit (or
       pass an empty list) for an administrator. */
   adminOnlyIndexes?: readonly number[];
+  /** Service-specific completion (2026-10). False when the case's own
+      completion policy returns no cremated remains (burial / entombment):
+      the return-of-remains record / "Record family pickup" action is never
+      offered, even if an item carries one. The view model already only
+      derives that item for a policy that requires the return
+      (domain/cases/viewModel.ts); this is the card's own guarantee.
+      Defaults to true — legacy, Manors and cremation cases unchanged. */
+  showRemainsReturn?: boolean;
 }) {
   const [openCompletion, setOpenCompletion] = useState<number | null>(null);
   // An earlier stage is editable (2026-10): staff complete or correct its
@@ -552,7 +561,8 @@ export function ChecklistCard({
           // left to do here, so it is not shown at all (the record stays on
           // Case Information and in the stored checklist, untouched).
           if (item.returnRequirement) {
-            if (item.done) return null;
+            // A policy that returns no cremated remains never offers it.
+            if (item.done || !showRemainsReturn) return null;
             return (
               <div key={item.index} className={styles.item}>
                 <div className={styles.releaseStepTitle}>Release to family</div>

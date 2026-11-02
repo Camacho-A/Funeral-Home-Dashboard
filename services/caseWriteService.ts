@@ -1,3 +1,4 @@
+import { CaseRevisionConflictError } from '../domain/cases/caseRevisionConflict';
 import { queryWixDataItems, conditionalPatchWixDataItemFields } from '../lib/wixDataApi';
 import { caseRevision, caseWriteCondition, mapWixCaseItem, storedCaseRevision, type WixCaseItem } from '../lib/wixCaseMapper';
 import { caseFixtures } from './__mocks__/fixtures';
@@ -67,12 +68,18 @@ function sameValue(a: unknown, b: unknown): boolean {
  * read. `fields` are Wix field names (lib/wixCaseMapper.ts's
  * buildCaseFieldPatch builds them from a CaseUpdate).
  */
-export async function writeCaseFields(row: { id: string; data: WixCaseItem }, fields: Record<string, unknown>): Promise<CaseWriteResult> {
+export async function writeCaseFields(
+  row: { id: string; data: WixCaseItem },
+  fields: Record<string, unknown>,
+  /** Further conditions the row must still meet (e.g. a coordinated
+      service change's fencing token), added to the revision condition. */
+  options: { extraCondition?: Record<string, unknown> } = {},
+): Promise<CaseWriteResult> {
   const organizationId = row.data.organizationId as string;
   const caseId = row.data.beaconCaseId as string;
   const nextRevision = caseRevision(row.data) + 1;
   const toSet = { ...fields, revision: nextRevision };
-  const condition = caseWriteCondition(row.data);
+  const condition = caseWriteCondition(row.data, options.extraCondition);
 
   let status = 0;
   let reason = 'the case could not be saved';
@@ -115,11 +122,18 @@ export async function writeCaseFields(row: { id: string; data: WixCaseItem }, fi
 
 /** What a recompute decides from the case as it is now: the Wix fields to
     set, or null for "nothing to do". */
-export type CaseFieldDecision = Record<string, unknown> | null;
+export type CaseFieldDecision = Record<string, unknown> | null | { refuse: string };
+
+function isRefusal(decision: CaseFieldDecision): decision is { refuse: string } {
+  return decision !== null && typeof (decision as { refuse?: unknown }).refuse === 'string' && Object.keys(decision).length === 1;
+}
 
 export type CaseRetryResult =
   | { result: 'applied'; case_: Case; row: LoadedCaseRow }
   | { result: 'unchanged'; case_: Case; row: LoadedCaseRow }
+  /** The decision, made from the case as it is now, refuses the change
+      (`{ refuse }`) — nothing was written. */
+  | { result: 'refused'; reason: string; case_: Case }
   | { result: 'conflict'; current: LoadedCaseRow | null }
   | { result: 'not_found' }
   | { result: 'failed'; status: number; reason: string };
@@ -148,6 +162,7 @@ export async function updateCaseWithRetry(
     if (!row) return { result: 'not_found' };
     const decision = await decide(row);
     if (decision === null || Object.keys(decision).length === 0) return { result: 'unchanged', case_: row.case_, row };
+    if (isRefusal(decision)) return { result: 'refused', reason: decision.refuse, case_: row.case_ };
     const written = await writeCaseFields(row, decision);
     if (written.result !== 'conflict') return written;
     lastConflict = written.current;
@@ -165,10 +180,19 @@ export async function updateCaseWithRetry(
  * doesn't exist in this organization. Callers that hold a client revision
  * check it before calling (casesService.update).
  */
-export function writeMockCase(organizationId: string, caseId: string, build: (current: Case) => Case): Case | null {
+export function writeMockCase(
+  organizationId: string,
+  caseId: string,
+  build: (current: Case) => Case,
+  /** Refuse (CaseRevisionConflictError) unless the case is still at this revision. */
+  options: { expectedRevision?: number } = {},
+): Case | null {
   const index = caseFixtures.findIndex((c) => c.id === caseId && c.organizationId === organizationId);
   if (index === -1) return null;
   const current = caseFixtures[index];
+  if (options.expectedRevision !== undefined && caseRevision(current) !== options.expectedRevision) {
+    throw new CaseRevisionConflictError(current);
+  }
   const updated: Case = { ...build(current), revision: caseRevision(current) + 1 };
   caseFixtures[index] = updated;
   return updated;

@@ -8,7 +8,20 @@ import { formatDaysAgo } from '@/utils/format';
 import { toDisplayTitleCase } from '@/utils/string';
 import styles from './CasesByStagePanel.module.css';
 
-export type StageBarRow = { label: string; count: number | null; pct: number; displayStage: number };
+export type StageBarRow = {
+  label: string;
+  count: number | null;
+  pct: number;
+  displayStage: number;
+  /** Service-specific workflows (2026-10): the bottleneck flag from the
+      organization's own templates (isAttentionStage). Absent = the
+      historical STAGES label match (isBottleneckStage), unchanged. */
+  isAttentionStage?: boolean;
+};
+
+function isAttentionRow(row: StageBarRow): boolean {
+  return row.isAttentionStage ?? isBottleneckStage(row.displayStage);
+}
 
 /** The handful of fields the Stage Preview row needs — case number,
     decedent name, and a recency signal. No `updatedAt`/`lastUpdated`
@@ -87,8 +100,8 @@ export function CasesByStagePanel({
           nonZeroStages.map((row) => (
             <div
               key={row.label}
-              className={isBottleneckStage(row.displayStage) ? styles.overviewSegmentDanger : styles.overviewSegment}
-              style={isBottleneckStage(row.displayStage) ? undefined : { background: stageColor(row.displayStage) }}
+              className={isAttentionRow(row) ? styles.overviewSegmentDanger : styles.overviewSegment}
+              style={isAttentionRow(row) ? undefined : { background: stageColor(row.displayStage) }}
             />
           ))
         )}
@@ -99,7 +112,7 @@ export function CasesByStagePanel({
           const isOpen = openStage === row.label;
           const count = row.count ?? 0;
           const cases = casesByStage[row.label] ?? [];
-          const isDanger = isBottleneckStage(row.displayStage) && count > 0;
+          const isDanger = isAttentionRow(row) && count > 0;
           const previewId = `stage-preview-${row.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
 
           return (

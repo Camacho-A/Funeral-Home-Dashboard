@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
 import { NextResponse } from 'next/server';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -259,6 +260,22 @@ export async function POST(request: Request) {
 
   if (!(await canCreateCase({ identityId: userId, organizationId, roleKey: role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to create cases for this organization.' }, { status: 403 });
+  }
+
+  // Service-specific workflows (2026-10). For an organization whose
+  // workflow is chosen by service type, a historical submission names no
+  // service, so the case's workflow can't be determined — refused before
+  // anything is claimed or fetched, never guessed. The submission is left
+  // as it was (unmatched, in Unmatched Forms) for staff to handle by hand.
+  if (isWorkflowByServiceType(organizationId)) {
+    return NextResponse.json(
+      {
+        error:
+          'Historical import cannot choose a workflow: this organization selects workflows by service type, and the submission does not name one. Create the case from New Case (choosing the service) and link the submission from Unmatched Forms.',
+        workflowSelectionRefused: 'service_type_required',
+      },
+      { status: 422 },
+    );
   }
 
   const config = await externalFormConfigService.getById(organizationId, formConfigId, dataAdapterMode);

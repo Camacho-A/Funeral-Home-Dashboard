@@ -205,6 +205,8 @@ type GusCaseSeed = {
   isStalled: boolean;
   stalledReason?: string;
   paymentStatus: Case['paymentStatus'];
+  /** The service the case was opened for. Default: Direct Cremation. */
+  serviceTypeCode?: 'DIRECT_CREMATION' | 'CREMATION_WITH_VIEWING' | 'CREMATION_WITH_FINAL_GOODBYE';
 };
 
 /** Spread across every raw stage of the standard workflow (0-7), with two
@@ -220,6 +222,9 @@ const GUS_CASE_SEEDS: readonly GusCaseSeed[] = [
   { decedentName: 'EXAMPLE DECEDENT SEVEN', dateOfBirth: '06/18/1952', daysAgo: 12, timeOfDeath: '16:30', placeOfDeath: 'FAMILY HOME', weight: '175 lb', nextOfKinName: 'SKYLER EXAMPLE', nextOfKinPhone: '(555) 010-0107', nextOfKinEmail: null, nextOfKinRelationship: 'spouse', assignedStaffId: GUS_ADMIN_STAFF_ID, rawStage: 5, daysWaitingInStage: 2, isStalled: false, paymentStatus: 'paid_in_full' },
   { decedentName: 'EXAMPLE DECEDENT EIGHT', dateOfBirth: '03/27/1935', daysAgo: 15, timeOfDeath: '11:55', placeOfDeath: 'SAMPLE HOSPICE CENTER', weight: '128 lb', nextOfKinName: 'DREW PLACEHOLDER', nextOfKinPhone: '(555) 010-0108', nextOfKinEmail: 'drew.placeholder@example.test', nextOfKinRelationship: 'daughter', assignedStaffId: GUS_DIRECTOR_STAFF_ID, rawStage: 6, daysWaitingInStage: 1, isStalled: false, paymentStatus: 'paid_in_full' },
   { decedentName: 'EXAMPLE DECEDENT NINE', dateOfBirth: '10/09/1947', daysAgo: 21, timeOfDeath: '07:25', placeOfDeath: 'SAMPLE GENERAL HOSPITAL', weight: '190 lb', nextOfKinName: 'HAYDEN FICTIONAL', nextOfKinPhone: '(555) 010-0109', nextOfKinEmail: null, nextOfKinRelationship: 'son', assignedStaffId: GUS_ADMIN_STAFF_ID, rawStage: 7, daysWaitingInStage: 0, isStalled: false, paymentStatus: 'paid_in_full' },
+  // Gus's other two cremation services (shared platform, 2026-11).
+  { decedentName: 'EXAMPLE DECEDENT TEN', dateOfBirth: '05/21/1949', daysAgo: 2, timeOfDeath: '14:10', placeOfDeath: 'SAMPLE GENERAL HOSPITAL', weight: '165 lb', nextOfKinName: 'AVERY SAMPLE', nextOfKinPhone: '(555) 010-0110', nextOfKinEmail: 'avery.sample@example.test', nextOfKinRelationship: 'spouse', assignedStaffId: GUS_DIRECTOR_STAFF_ID, rawStage: 2, daysWaitingInStage: 1, isStalled: false, paymentStatus: 'paid_in_full', serviceTypeCode: 'CREMATION_WITH_VIEWING' },
+  { decedentName: 'EXAMPLE DECEDENT ELEVEN', dateOfBirth: '08/03/1943', daysAgo: 11, timeOfDeath: '20:35', placeOfDeath: 'FAMILY HOME', weight: '172 lb', nextOfKinName: 'RILEY EXAMPLE', nextOfKinPhone: '(555) 010-0111', nextOfKinEmail: null, nextOfKinRelationship: 'daughter', assignedStaffId: GUS_ADMIN_STAFF_ID, rawStage: 5, daysWaitingInStage: 2, isStalled: false, paymentStatus: 'paid_in_full', serviceTypeCode: 'CREMATION_WITH_FINAL_GOODBYE' },
 ];
 
 function startOfUtcDay(date: Date): Date {
@@ -239,15 +244,13 @@ function formatMmDdYyyy(date: Date): string {
  * browser bundles (both evaluate this module in mock mode) produce
  * identical rows.
  */
-const GUS_DEMO_SERVICE_ROTATION = ['DIRECT_CREMATION', 'CREMATION_WITH_VIEWING', 'CREMATION_WITH_FINAL_GOODBYE'] as const;
-
 export function buildGusCaseFixtures(now: Date = new Date()): Case[] {
   const today = startOfUtcDay(now);
   const year = today.getUTCFullYear();
   return GUS_CASE_SEEDS.map((seed, index) => {
     // Shared platform (2026-11): each demo case is opened for one of Gus's
     // three cremation services, on that service's workflow.
-    const serviceTypeCode = GUS_DEMO_SERVICE_ROTATION[index % GUS_DEMO_SERVICE_ROTATION.length];
+    const serviceTypeCode = seed.serviceTypeCode ?? 'DIRECT_CREMATION';
     const template = gusServiceWorkflowTemplateFixtures.find((t) => latestTemplateVersion(t).serviceTypeCodes?.includes(serviceTypeCode))!;
     const version = latestTemplateVersion(template);
     const deathDate = new Date(today.getTime() - seed.daysAgo * 24 * 60 * 60 * 1000);

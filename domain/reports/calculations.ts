@@ -4,6 +4,10 @@ import { STAGES, LAST_DISPLAY_STAGE } from '../cases/stages';
 import { presentedStages } from '../organization/workflowStagePresentation';
 import { getSlaTargetDays, formatSlaTarget } from '../cases/sla';
 import { VA_STEPS } from '../cases/veteran';
+import type { Case } from '../../types/case';
+import { isWorkflowByServiceType } from '../workflow/selectWorkflowTemplate';
+import { caseIsInOrganizationStage, type OrganizationStageModel } from '../workflow/organizationStages';
+import { findStageByRawStage } from '../workflow/resolveStages';
 
 /**
  * Reports-screen calculations, ported from design/support.js's renderVals().
@@ -12,11 +16,30 @@ import { VA_STEPS } from '../cases/veteran';
  * computing reports from anything else would duplicate that derivation.
  */
 
-export function computeKpis(cases: CaseViewModel[]) {
-  const active = cases.filter((c) => c.displayStage < LAST_DISPLAY_STAGE);
+/**
+ * Service-specific workflows (2026-10). Whether a case sits on its OWN
+ * workflow's terminal stage — for an organization whose cases run on
+ * several templates, where the global LAST_DISPLAY_STAGE constant doesn't
+ * describe every case. Read from the case's own (snapshot-derived) stage
+ * mapping, so a template with more or fewer stages is handled correctly.
+ */
+export function isCaseViewOnTerminalStage(c: CaseViewModel): boolean {
+  const canonical = c.canonicalDisplayStagesByPresentedIndex?.flat() ?? [];
+  const last = canonical.length > 0 ? Math.max(...canonical) : LAST_DISPLAY_STAGE;
+  return c.displayStage >= last;
+}
+
+export function computeKpis(cases: CaseViewModel[], organizationId?: string) {
+  // Service-specific workflows (2026-10): per-case terminal stage for an
+  // organization with service workflows; the global constant (unchanged)
+  // for everyone else, including every caller that passes no organization.
+  const perCase = organizationId !== undefined && isWorkflowByServiceType(organizationId);
+  const isCompleted = perCase ? isCaseViewOnTerminalStage : (c: CaseViewModel) => c.displayStage === LAST_DISPLAY_STAGE;
+  const isActive = perCase ? (c: CaseViewModel) => !isCaseViewOnTerminalStage(c) : (c: CaseViewModel) => c.displayStage < LAST_DISPLAY_STAGE;
+  const active = cases.filter(isActive);
   return {
     activeCases: active.length,
-    completedCases: cases.filter((c) => c.displayStage === LAST_DISPLAY_STAGE).length,
+    completedCases: cases.filter(isCompleted).length,
     overdueCases: cases.filter((c) => c.isOverdue).length,
     totalCases: cases.length,
   };
@@ -98,6 +121,63 @@ export function computeStageBreakdown(cases: CaseViewModel[], organizationId: st
   });
 }
 
+/** The (template, version, raw stage) a report row counts a case under. */
+export type ReportStageRef = Pick<Case, 'workflowTemplateId' | 'workflowTemplateVersion' | 'rawStage'>;
+
+/**
+ * Service-specific workflows (2026-10). Where a REPORT places a case: its
+ * own raw stage, except while the view model holds a case on its terminal
+ * stage back one position because the return of remains is not yet
+ * confirmed (domain/cases/transitions.ts#resolveEffectiveDisplayStage) —
+ * then the raw stage of the stage it is shown at. That is the position
+ * every other report figure already uses (`displayStage`, which the
+ * active/completed KPIs read), and exactly how Manors' report rows bucket
+ * by `displayStage`; without it such a case would be both "active" and in
+ * the "Completed" row. The Dashboard's server-side counts are unaffected
+ * (raw stage, for every organization).
+ */
+export function reportStageRef(case_: Case, view: Pick<CaseViewModel, 'displayStage'>): ReportStageRef {
+  const ref = { workflowTemplateId: case_.workflowTemplateId, workflowTemplateVersion: case_.workflowTemplateVersion, rawStage: case_.rawStage };
+  const snapshot = case_.workflowSnapshot;
+  if (!snapshot || findStageByRawStage(snapshot, case_.rawStage)?.displayStage === view.displayStage) return ref;
+  const shownAt = snapshot.stages.filter((stage) => stage.displayStage === view.displayStage).map((stage) => stage.rawStage);
+  return shownAt.length === 0 ? ref : { ...ref, rawStage: Math.max(...shownAt) };
+}
+
+/**
+ * Service-specific workflows (2026-10). The stage breakdown for an
+ * organization whose cases run on several templates: one row per
+ * ORGANIZATION stage (domain/workflow/organizationStages.ts), a case
+ * belonging to a row by its own (workflowTemplateId, rawStage) — the same
+ * membership the Dashboard counts and Cases list filter use — and each
+ * row's SLA target taken from the templates themselves. `caseRefs` maps a
+ * view model's id to its case's template/version/raw stage (view models
+ * don't carry the template id) — see reportStageRef.
+ */
+export function computeStageBreakdownByOrganizationStage(
+  cases: CaseViewModel[],
+  model: OrganizationStageModel,
+  caseRefs: ReadonlyMap<string, Pick<Case, 'workflowTemplateId' | 'rawStage'> & Partial<Pick<Case, 'workflowTemplateVersion'>>>,
+): StageBreakdownRow[] {
+  return model.stages.map((stage) => {
+    const inStage = cases.filter((c) => {
+      const ref = caseRefs.get(c.id);
+      return ref !== undefined && caseIsInOrganizationStage(stage, ref);
+    });
+    const target = stage.slaTargetDays;
+    const avgDays = inStage.length ? inStage.reduce((sum, c) => sum + c.daysWaitingInStage, 0) / inStage.length : 0;
+    const isBottleneck = target != null && avgDays > target;
+    return {
+      label: stage.label,
+      count: inStage.length,
+      avgDays: Math.round(avgDays * 10) / 10,
+      targetLabel: formatSlaTarget(target),
+      isBottleneck,
+      avgColor: isBottleneck ? 'danger' : 'neutral',
+    };
+  });
+}
+
 export type StaffWorkloadRow = {
   staffId: string;
   name: string;
@@ -108,10 +188,15 @@ export type StaffWorkloadRow = {
 export function computeStaffWorkload(
   cases: CaseViewModel[],
   staffList: StaffProfile[],
+  organizationId?: string,
 ): StaffWorkloadRow[] {
+  const isActive =
+    organizationId && isWorkflowByServiceType(organizationId)
+      ? (c: CaseViewModel) => !isCaseViewOnTerminalStage(c)
+      : (c: CaseViewModel) => c.displayStage < LAST_DISPLAY_STAGE;
   return staffList.map((staff) => {
     const owned = cases.filter(
-      (c) => c.ownerStaffId === staff.id && c.displayStage < LAST_DISPLAY_STAGE,
+      (c) => c.ownerStaffId === staff.id && isActive(c),
     );
     return {
       staffId: staff.id,

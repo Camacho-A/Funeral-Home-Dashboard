@@ -11,6 +11,9 @@ import { useCaseCounts } from '@/hooks/useCaseCounts';
 import { useAdvanceCaseStage } from '@/hooks/useAdvanceCaseStage';
 import { useOrganization } from '@/hooks/useOrganization';
 import { STAGES } from '@/domain/cases/stages';
+import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
+import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { organizationStageLabels, resolveOrganizationStages } from '@/domain/workflow/organizationStages';
 import {
   canonicalDisplayStagesForPresentedLabel,
   presentedStageLabels,
@@ -31,8 +34,11 @@ import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
  * resolving exactly as it did before. The server applies the same rule
  * (see app/api/cases/route.ts).
  */
-function isValidStage(value: string | null, organizationId: string): boolean {
+function isValidStage(value: string | null, organizationId: string, organizationStages: string[] | null): boolean {
   if (value === null) return false;
+  // Service-specific workflows (2026-10): the organization's own stage
+  // list across its approved workflows (domain/workflow/organizationStages.ts).
+  if (organizationStages) return organizationStages.includes(value);
   if ((STAGES as readonly string[]).includes(value)) return true;
   return presentedStageLabels(organizationId, STAGES).includes(value);
 }
@@ -58,7 +64,22 @@ function CasesPageContent() {
   const { organizationId } = useOrganization();
   const searchParams = useSearchParams();
   const stageParam = searchParams.get('stage');
-  const stage = isValidStage(stageParam, organizationId) ? stageParam : null;
+  const { data: workflowTemplates } = useWorkflowTemplates({ enabled: isWorkflowByServiceType(organizationId) });
+  const organizationStages = useMemo(
+    () =>
+      isWorkflowByServiceType(organizationId)
+        ? organizationStageLabels(resolveOrganizationStages(organizationId, workflowTemplates ?? []))
+        : null,
+    [organizationId, workflowTemplates],
+  );
+  // While the templates are still loading, the requested stage is kept
+  // as-is (the server validates it) rather than flashing "All Cases".
+  const stage =
+    organizationStages !== null && workflowTemplates === undefined
+      ? stageParam
+      : isValidStage(stageParam, organizationId, organizationStages)
+        ? stageParam
+        : null;
   /**
    * Archived Cases (2026-10). A distinct view of the same list, reached at
    * /cases?archived=1 — not a stage, because archiving is orthogonal to
@@ -107,10 +128,11 @@ function CasesPageContent() {
   const headerCount = useMemo(() => {
     if (stage === null) return countsData?.total;
     if (!countsData) return undefined;
+    if (organizationStages) return countsData.byStage[stage];
     const canonical = canonicalDisplayStagesForPresentedLabel(organizationId, stage, STAGES);
     if (!canonical) return undefined;
     return canonical.reduce((sum, ds) => sum + (countsData.byStage[STAGES[ds]] ?? 0), 0);
-  }, [stage, countsData, organizationId]);
+  }, [stage, countsData, organizationId, organizationStages]);
 
   const heading = archived ? 'Archived Cases' : (stage ?? 'All Cases');
   const subheading = archived
@@ -216,7 +238,7 @@ function CasesPageContent() {
             onChange={(event) => handleStageChange(event.target.value)}
           >
             <option value="">All stages</option>
-            {presentedStageLabels(organizationId, STAGES).map((label) => (
+            {(organizationStages ?? presentedStageLabels(organizationId, STAGES)).map((label) => (
               <option key={label} value={label}>
                 {label}
               </option>

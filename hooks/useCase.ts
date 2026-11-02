@@ -8,10 +8,11 @@ import { useOrganization } from './useOrganization';
  * only the page component (app/(portal)/cases/[caseId]/page.tsx) reads
  * `params`.
  */
-export function useCase(caseId: string) {
+export function useCase(caseId: string, options: { enabled?: boolean } = {}) {
   const organization = useOrganization();
   return useQuery({
     queryKey: ['case', organization.organizationId, caseId],
     queryFn: () => casesService.get(organization, caseId, organization.dataAdapterMode),
+    enabled: options.enabled ?? true,
   });
 }

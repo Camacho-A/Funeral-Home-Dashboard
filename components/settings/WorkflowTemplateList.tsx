@@ -7,6 +7,9 @@ export type WorkflowTemplateListItem = {
   name: string;
   isEnabled: boolean;
   caseTypes: string[];
+  /** Service-specific workflows (2026-10): set only for an organization
+      whose versions require approval — whether any version is approved. */
+  approved?: boolean;
 };
 
 /**
@@ -56,6 +59,14 @@ export function WorkflowTemplateList({
           <div className="sx-cell-title">{template.name}</div>
           <div className="sx-cell-sub">
             {template.caseTypes.join(', ')} · <span className={template.isEnabled ? 'sx-status sx-status-ok' : 'sx-status'}>{template.isEnabled ? 'Enabled' : 'Disabled'}</span>
+            {template.approved !== undefined && (
+              <>
+                {' · '}
+                <span className={template.approved ? 'sx-status sx-status-ok' : 'sx-status'} data-testid={`workflow-template-approval-${template.id}`}>
+                  {template.approved ? 'Approved' : 'Draft — requires approval'}
+                </span>
+              </>
+            )}
           </div>
         </button>
       ))}

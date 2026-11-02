@@ -1,5 +1,11 @@
 import type { OrganizationContext } from '../types/organization';
-import type { IntakeTemplate, StageTemplate, WorkflowTemplate } from '../types/workflowTemplate';
+import type {
+  IntakeTemplate,
+  StageTemplate,
+  WorkflowApprovalAttestation,
+  WorkflowCompletionPolicy,
+  WorkflowTemplate,
+} from '../types/workflowTemplate';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Like
@@ -55,6 +61,12 @@ export async function getEnabledForCaseType(
   return templates.find((t) => t.isEnabled && t.caseTypes.includes(caseType)) ?? null;
 }
 
+/** Workflow template editor (2026-10): a refused save/approval's
+    validation problems travel on the thrown Error as `details`. */
+function withDetails(error: Error, details: unknown): Error & { details?: string[] } {
+  return Array.isArray(details) && details.every((d) => typeof d === 'string') ? Object.assign(error, { details }) : error;
+}
+
 /**
  * Phase 18 (Workflow Management) / Phase 19 (Configurable Intake Form
  * Builder). Submits an admin's edited `stages` and `intake` as one brand-new
@@ -66,7 +78,11 @@ export async function getEnabledForCaseType(
 export async function createVersion(
   context: OrganizationContext,
   templateId: string,
-  input: { stages: StageTemplate[]; intake: IntakeTemplate },
+  /** `serviceTypeCodes` (2026-10): the service assignment the version
+      proposes — only for organizations with service-specific workflows.
+      `completionPolicy` (2026-10): the version's completion rules — only
+      for organizations whose versions require approval. */
+  input: { stages: StageTemplate[]; intake: IntakeTemplate; serviceTypeCodes?: string[]; completionPolicy?: WorkflowCompletionPolicy },
 ): Promise<WorkflowTemplate> {
   const response = await fetch(`/api/workflow-templates/${encodeURIComponent(templateId)}/versions`, {
     method: 'POST',
@@ -75,10 +91,40 @@ export async function createVersion(
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.error ?? 'Failed to save workflow changes.');
+    throw withDetails(new Error(body?.error ?? 'Failed to save workflow changes.'), body?.details);
   }
   const body = (await response.json()) as { workflowTemplate: WorkflowTemplate };
   return body.workflowTemplate;
 }
 
-export const workflowTemplatesService = { list, get, getEnabledForCaseType, createVersion };
+/**
+ * Service-specific workflows (2026-10). Approves one draft version so live
+ * cases may use it — see
+ * app/api/workflow-templates/[templateId]/versions/[version]/approve/route.ts.
+ */
+export async function approveVersion(
+  context: OrganizationContext,
+  templateId: string,
+  version: number,
+  /** Unfinished-workflow protection (2026-10): the approver's review
+      attestation — the route refuses an approval without it (422). */
+  attestation?: WorkflowApprovalAttestation,
+): Promise<WorkflowTemplate> {
+  const response = await fetch(
+    `/api/workflow-templates/${encodeURIComponent(templateId)}/versions/${encodeURIComponent(String(version))}/approve`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ organizationId: context.organizationId, ...(attestation ? { attestation } : {}) }),
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    // A 422 carries the full list of problems that block approval.
+    throw withDetails(new Error(body?.error ?? 'Failed to approve the workflow version.'), body?.details);
+  }
+  const body = (await response.json()) as { workflowTemplate: WorkflowTemplate };
+  return body.workflowTemplate;
+}
+
+export const workflowTemplatesService = { list, get, getEnabledForCaseType, createVersion, approveVersion };

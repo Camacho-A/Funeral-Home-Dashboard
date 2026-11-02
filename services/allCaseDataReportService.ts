@@ -7,11 +7,18 @@ import { listForOrganization as listDocumentsForOrganization, renderHtmlToPdfBuf
 import { getForOrganization as getOrganization } from './organizationsService';
 import { STAGES, toDisplayStage } from '../domain/cases/stages';
 import { presentedStageLabels, toPresentedStageIndex } from '../domain/organization/workflowStagePresentation';
+import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
+import { snapshotStageLabel } from '../domain/workflow/organizationStages';
 
 /** The user-facing label for a case's current stage — see
     domain/organization/workflowStagePresentation.ts. Identical to the
     canonical label for every organization except Manors. */
-function presentedCurrentStageLabel(organizationId: string, rawStage: number): string {
+function presentedCurrentStageLabel(organizationId: string, rawStage: number, case_?: Case): string {
+  // Service-specific workflows (2026-10): the case's own snapshot names
+  // its stage for an organization whose cases run on several templates.
+  if (case_ && isWorkflowByServiceType(organizationId)) {
+    return snapshotStageLabel(case_.workflowSnapshot, rawStage) ?? '';
+  }
   const displayStage = toDisplayStage(rawStage);
   const labels = presentedStageLabels(organizationId, STAGES);
   return labels[toPresentedStageIndex(organizationId, displayStage, STAGES)] ?? STAGES[displayStage] ?? '';
@@ -182,7 +189,7 @@ export async function buildAllCaseDataRows(
       // case's CURRENT stage, so it uses the user-facing label to stay
       // consistent with the Dashboard and Case Detail. The report's rows,
       // filters, and date range are unchanged.
-      stage: presentedCurrentStageLabel(organizationId, c.rawStage),
+      stage: presentedCurrentStageLabel(organizationId, c.rawStage, c),
       createdAt: formatReportDate(c.createdAt),
       daysInStage: String(c.daysWaitingInStage),
       decedentName: c.decedentName,

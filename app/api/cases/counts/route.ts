@@ -6,6 +6,10 @@ import { buildCaseListWixFilter, buildCaseSearchWixFilter, matchesCaseSearch } f
 import { STAGES, rawStagesForDisplayStage } from '@/domain/cases/stages';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canReadCases, canReadPickup } from '@/services/authorizationPolicyService';
+import { isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { resolveOrganizationStages, wixFilterForOrganizationStage } from '@/domain/workflow/organizationStages';
+import { fetchWixWorkflowTemplates } from '@/lib/wixWorkflowTemplateMapper';
+import { countCasesByOrganizationStage } from '@/services/casesService';
 
 /**
  * Case list scalability, Phase 2 (2026-09). Efficient tab counts —
@@ -60,6 +64,34 @@ export async function GET(request: Request) {
     ]);
     if (!hasFullRead && !hasPickupOnlyRead) {
       return NextResponse.json({ total: 0, byStage: {}, error: 'Not authorized to view cases for this organization.' }, { status: 403 });
+    }
+
+    // Service-specific workflows (2026-10): an organization whose cases run
+    // on several templates counts per organization stage — each one an
+    // `$or` of (workflowTemplateId, raw stages) pairs (see
+    // domain/workflow/organizationStages.ts). Everyone else takes the
+    // unchanged STAGES path below.
+    if (isWorkflowByServiceType(organizationId)) {
+      if (adapter === 'mock') {
+        const eligible = caseFixtures.filter(
+          (c) => c.organizationId === organizationId && !c.isDeleted && matchesCaseSearch(c, searchQuery),
+        );
+        return NextResponse.json({ total: eligible.length, byStage: countCasesByOrganizationStage(organizationId, eligible) });
+      }
+      const model = resolveOrganizationStages(organizationId, await fetchWixWorkflowTemplates(organizationId));
+      const searchFilter = buildCaseSearchWixFilter(searchQuery);
+      const totalFilter = buildCaseListWixFilter({ organizationId, rawStages: null, searchFilter });
+      const [total, ...stageCounts] = await Promise.all([
+        countWixDataItems('cases', totalFilter),
+        ...model.stages.map((stage) =>
+          countWixDataItems('cases', buildCaseListWixFilter({ organizationId, rawStages: null, searchFilter, stageFilter: wixFilterForOrganizationStage(stage) })),
+        ),
+      ]);
+      const byStage: Record<string, number> = {};
+      model.stages.forEach((stage, index) => {
+        byStage[stage.label] = stageCounts[index];
+      });
+      return NextResponse.json({ total, byStage });
     }
 
     if (adapter === 'mock') {

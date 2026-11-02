@@ -265,11 +265,20 @@ export type OrganizationFeaturePreferences = {
       (name + phone). An organization's existing templates are data and are
       never changed by this; it applies when a workflow is built for it. */
   certifierRequiredCaseFields: readonly string[] | null;
+  /** The organization's own stage names in workflows built from the shared
+      cremation foundation, by stage key (2026-11). Null = the platform's
+      names. Names only; steps are never changed by this. */
+  cremationStageLabels: Readonly<Record<string, string>> | null;
   /** Whether `hiddenModules` is also enforced SERVER-SIDE (pages + APIs
       answer 404), not just removed from navigation
       (lib/auth/hiddenModuleGuard.ts). Platform default: false — the
       historical nav-only behaviour, kept for Manors. */
   enforceHiddenModulesServerSide: boolean;
+  /** Workflow template versions require explicit administrator approval
+      before live cases may use them; new versions are saved as drafts.
+      Platform default: false — every version is usable as soon as it is
+      saved, exactly as before. */
+  workflowApprovalRequired: boolean;
 };
 
 export type CrematoryAuthorizationDocumentSource = 'arrangement_form_page' | 'not_configured';
@@ -362,7 +371,9 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   caseSsn: false,
   workflowByServiceType: false,
   certifierRequiredCaseFields: null,
+  cremationStageLabels: null,
   enforceHiddenModulesServerSide: false,
+  workflowApprovalRequired: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -545,9 +556,14 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     signatureRequestsEnabled: false,
     hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
     workflowByServiceType: true,
+    // A workflow change is saved as a draft and used by cases only once an
+    // administrator approves it.
+    workflowApprovalRequired: true,
     enforceHiddenModulesServerSide: true,
     // Same certifier requirement as Manors, fax included (decided 2026-11).
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
+    // The stage names the funeral home supplied.
+    cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },
     // Prepared and reviewed in SOLIS, never emailed until Gus's recipients,
     // Outlook mailbox and authorization document source are set up.
     sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured' },

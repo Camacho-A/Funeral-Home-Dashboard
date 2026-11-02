@@ -1,7 +1,7 @@
 import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from '../types/sla';
 import { SLA_DELAY_REASONS, SLA_EVENT_KEYS, SLA_MILESTONE_KEYS } from '../types/sla';
 import { caseSsnSummary } from '../domain/cases/caseSsn';
-import type { Case, CaseUpdate, ChecklistCompletionRecord, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
+import type { Case, CaseManualCompletion, CaseUpdate, CaseWorkflowHistoryEntry, ChecklistCompletionRecord, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail, isValidCalendarDate } from '../utils/inputMask';
 import { DEFAULT_RETURN_METHOD, isValidReturnMethod, isValidShippingDeliveryStatus } from '../domain/cases/returnMethod';
@@ -81,6 +81,15 @@ export type WixCaseItem = {
   workflowTemplateId?: unknown;
   workflowTemplateVersion?: unknown;
   workflowSnapshot?: unknown;
+  /** Service-specific workflows (2026-10). Optional; absent on every case
+      that never changed workflow. */
+  workflowHistory?: unknown;
+  /** Consistent service changes (2026-10). Optional fencing token; absent
+      on every case that never went through a coordinated service change. */
+  lastServiceChangeId?: unknown;
+  /** Service-specific completion (2026-10). Optional object column, set
+      only by POST /api/cases/[caseId]/complete. */
+  manualCompletion?: unknown;
   intakeOwnerId?: unknown;
   caseHandlerId?: unknown;
   currentStage?: unknown;
@@ -338,6 +347,144 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     caseType: item.caseType,
     workflowSnapshot: item.workflowSnapshot,
     ...(typeof item.revision === 'number' ? { revision: item.revision } : {}),
+    // Lenient (never a reason to drop the case): only present when stored.
+    ...(Array.isArray(item.workflowHistory) ? { workflowHistory: mapWorkflowHistory(item.workflowHistory) } : {}),
+    ...(typeof item.lastServiceChangeId === 'string' ? { lastServiceChangeId: item.lastServiceChangeId } : {}),
+    ...(mapManualCompletion(item.manualCompletion) ? { manualCompletion: mapManualCompletion(item.manualCompletion) } : {}),
+  };
+}
+
+/** Service-specific completion (2026-10). Lenient: a malformed or absent
+    column reads as "not completed by hand" (undefined), never as a reason
+    to drop the case. Never accepted from a client patch —
+    validateAndPickCaseUpdate has no entry for it. */
+function mapManualCompletion(value: unknown): CaseManualCompletion | undefined {
+  if (!isPlainObject(value)) return undefined;
+  if (typeof value.completedAt !== 'string' || typeof value.completedBy !== 'string' || typeof value.reason !== 'string') return undefined;
+  return {
+    completedAt: value.completedAt,
+    completedBy: value.completedBy,
+    ...(typeof value.completedByName === 'string' ? { completedByName: value.completedByName } : {}),
+    reason: value.reason,
+  };
+}
+
+/**
+ * Service-specific workflows (2026-10). Reads `workflowHistory` leniently:
+ * an entry missing its template id/version is skipped, and malformed
+ * optional parts fall back to empty values — history is an audit record,
+ * so one bad entry must never make the whole case unreadable.
+ */
+function mapWorkflowHistory(value: unknown[]): CaseWorkflowHistoryEntry[] {
+  return value.flatMap((entry): CaseWorkflowHistoryEntry[] => {
+    if (!isPlainObject(entry)) return [];
+    if (typeof entry.workflowTemplateId !== 'string' || typeof entry.workflowTemplateVersion !== 'number') return [];
+    return [
+      {
+        workflowTemplateId: entry.workflowTemplateId,
+        workflowTemplateVersion: entry.workflowTemplateVersion,
+        serviceTypeCode: typeof entry.serviceTypeCode === 'string' ? entry.serviceTypeCode : null,
+        rawStage: typeof entry.rawStage === 'number' ? entry.rawStage : 0,
+        checklistState: isPlainObject(entry.checklistState) ? (entry.checklistState as Record<string, boolean>) : {},
+        fieldValues: isPlainObject(entry.fieldValues) ? (entry.fieldValues as Record<number, string>) : {},
+        changedAt: typeof entry.changedAt === 'string' ? entry.changedAt : '',
+        changedByUserId: typeof entry.changedByUserId === 'string' ? entry.changedByUserId : '',
+        ...(typeof entry.serviceChangeId === 'string' ? { serviceChangeId: entry.serviceChangeId } : {}),
+      },
+    ];
+  });
+}
+
+/**
+ * Service-specific workflows (2026-10). The one write that may replace a
+ * case's workflow — used ONLY by POST /api/cases/[caseId]/workflow, after
+ * staff confirmed the preview. Deliberately separate from
+ * applyCaseUpdateToWixData/validateAndPickCaseUpdate, whose allowlist
+ * still never accepts workflow fields: the generic PATCH can never swap a
+ * snapshot. Returns the complete merged item (updateWixDataItem is a full
+ * replace).
+ */
+export function applyWorkflowChangeToWixData(
+  existing: WixCaseItem,
+  change: {
+    workflowTemplateId: string;
+    workflowTemplateVersion: number;
+    workflowSnapshot: CaseWorkflowSnapshot;
+    caseType: string;
+    rawStage: number;
+    checklistState: Record<string, boolean>;
+    fieldValues: Record<number, string>;
+    historyEntry: CaseWorkflowHistoryEntry;
+  },
+): WixCaseItem {
+  const priorHistory = Array.isArray(existing.workflowHistory) ? existing.workflowHistory : [];
+  return {
+    ...existing,
+    workflowTemplateId: change.workflowTemplateId,
+    workflowTemplateVersion: change.workflowTemplateVersion,
+    workflowSnapshot: change.workflowSnapshot,
+    caseType: change.caseType,
+    currentStage: change.rawStage,
+    checklistState: change.checklistState,
+    fieldValues: change.fieldValues,
+    daysWaitingInStage: 0,
+    workflowHistory: [...priorHistory, change.historyEntry],
+  };
+}
+
+/**
+ * Consistent service changes (2026-10). The case half of a coordinated
+ * service change (services/caseServiceChangeService.ts) as ONE conditional
+ * patch: exactly the fields applyWorkflowChangeToWixData would change —
+ * the same new snapshot, remapped progress and appended history — plus the
+ * `lastServiceChangeId` fencing token, set together by
+ * conditionalPatchWixDataItemFields (never a full replace, so a field this
+ * change doesn't own is never rewritten from a stale read).
+ *
+ * The condition is everything the change was planned from: the case's
+ * organization and id, its workflow template/version, its stage, and the
+ * previous fencing token (`$eq: null` when it never had one — the
+ * live-verified form for "unset"). Case concurrency (2026-10): it now also
+ * carries the case's `revision` (caseWriteCondition), and the revision is
+ * incremented with the patch — so a checklist tick, field edit or payment
+ * that lands between the plan and the write is detected too, where before
+ * only a workflow/stage move was. If any of them moved, Wix refuses the
+ * whole patch (HTTP 428) and nothing is written.
+ *
+ * Returns the fields to set and the operation's own preconditions; the
+ * revision half is added by services/caseWriteService.ts#writeCaseFields,
+ * the one place every case write gets it. `condition` is the complete
+ * filter the write is made under, for callers and tests that want it whole.
+ */
+export function buildServiceChangeCasePatch(
+  existing: WixCaseItem,
+  change: Parameters<typeof applyWorkflowChangeToWixData>[1] & { serviceChangeId: string },
+): { fields: Record<string, unknown>; extraCondition: Record<string, unknown>; condition: { filter: Record<string, unknown> } } {
+  const merged = applyWorkflowChangeToWixData(existing, {
+    ...change,
+    historyEntry: { ...change.historyEntry, serviceChangeId: change.serviceChangeId },
+  });
+  const extraCondition = {
+    workflowTemplateId: { $eq: existing.workflowTemplateId },
+    workflowTemplateVersion: { $eq: existing.workflowTemplateVersion },
+    currentStage: { $eq: existing.currentStage },
+    lastServiceChangeId: { $eq: typeof existing.lastServiceChangeId === 'string' ? existing.lastServiceChangeId : null },
+  };
+  return {
+    fields: {
+      workflowTemplateId: merged.workflowTemplateId,
+      workflowTemplateVersion: merged.workflowTemplateVersion,
+      workflowSnapshot: merged.workflowSnapshot,
+      caseType: merged.caseType,
+      currentStage: merged.currentStage,
+      checklistState: merged.checklistState,
+      fieldValues: merged.fieldValues,
+      daysWaitingInStage: merged.daysWaitingInStage,
+      workflowHistory: merged.workflowHistory,
+      lastServiceChangeId: change.serviceChangeId,
+    },
+    extraCondition,
+    condition: caseWriteCondition(existing, extraCondition),
   };
 }
 
@@ -864,9 +1011,10 @@ export function caseRevision(item: Pick<WixCaseItem, 'revision'> | Pick<Case, 'r
  * from. If anything moved, Wix refuses the whole patch (HTTP 428) and
  * nothing is written.
  */
-export function caseWriteCondition(existing: WixCaseItem): { filter: Record<string, unknown> } {
+export function caseWriteCondition(existing: WixCaseItem, extraCondition: Record<string, unknown> = {}): { filter: Record<string, unknown> } {
   return {
     filter: {
+      ...extraCondition,
       organizationId: { $eq: existing.organizationId },
       beaconCaseId: { $eq: existing.beaconCaseId },
       revision: { $eq: storedCaseRevision(existing) },

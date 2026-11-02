@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { IntakeTemplate, StageTemplate } from '@/types/workflowTemplate';
+import type { IntakeTemplate, StageTemplate, WorkflowCompletionPolicy } from '@/types/workflowTemplate';
 import { workflowTemplatesService } from '@/services/workflowTemplatesService';
 import { useOrganization } from './useOrganization';
 
@@ -16,7 +16,7 @@ export function useCreateWorkflowVersion(templateId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: { stages: StageTemplate[]; intake: IntakeTemplate }) =>
+    mutationFn: (input: { stages: StageTemplate[]; intake: IntakeTemplate; serviceTypeCodes?: string[]; completionPolicy?: WorkflowCompletionPolicy }) =>
       workflowTemplatesService.createVersion(organization, templateId, input),
     onSuccess: (updated) => {
       queryClient.setQueryData(['workflowTemplate', organization.organizationId, templateId], updated);

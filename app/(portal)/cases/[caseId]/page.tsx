@@ -44,6 +44,8 @@ import { getRegisteredOrganizationProfile } from '@/domain/organization/organiza
 import type { StepperStage } from '@/components/case/StageStepper';
 import { CaseInformationCard } from '@/components/case/CaseInformationCard';
 import { CaseEditConflictBanner } from '@/components/case/CaseEditConflictBanner';
+import { MarkCaseCompletedSection } from '@/components/case/MarkCaseCompletedSection';
+import { showsRemainsReturnControls } from '@/domain/cases/manualCompletionOffer';
 import { CaseWorkflowRepairPanel } from '@/components/case/CaseWorkflowRepairPanel';
 import { WorkflowStageOverview } from '@/components/case/WorkflowStageOverview';
 import { CaseOrderCard } from '@/components/case/CaseOrderCard';
@@ -259,6 +261,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
     setViewingDisplayStage(canonical === viewModel!.displayStage ? null : canonical);
   }
 
+  // Service-specific completion (2026-10): burial / entombment policies
+  // return no cremated remains, so their return/pickup controls are not
+  // shown (display only — stored values are untouched). True for every
+  // case without a policy and every cremation policy.
+  const showRemainsReturn = showsRemainsReturnControls(case_);
+
   const staffOptions = staffList.map((staff) => ({ id: staff.id, name: staff.displayName }));
 
   const logEntries = [...(caseLog.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -346,6 +354,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             shippingDateShipped={case_.shippingDateShipped}
             shippingDeliveryStatus={case_.shippingDeliveryStatus}
             shippingDeliveredAt={case_.shippingDeliveredAt}
+            showRemainsReturn={showRemainsReturn}
             ownerStaffId={viewModel.ownerStaffId}
             staffOptions={staffOptions}
             onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}
@@ -429,6 +438,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           {archiveCase.error.message}
         </div>
       )}
+
 
       <div className={styles.tabs} role="tablist" ref={tabsRef}>
         <button
@@ -581,6 +591,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                   { role: 'Next of kin', name: case_.nextOfKinName },
                   { role: 'Arrangement contact', name: case_.arrangementContactName },
                 ]}
+                showRemainsReturn={showRemainsReturn}
                 isMedicalExaminerCase={case_.isMedicalExaminerCase === true}
                 /* Classification belongs to intake, so the control lives on
                    the intake step alone rather than repeating on every
@@ -594,6 +605,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                     : undefined
                 }
               />
+              {/* Service-specific completion (2026-10): renders nothing
+                  unless this case's own policy allows manual completion
+                  and the viewer holds its permission. */}
+              <MarkCaseCompletedSection caseId={caseId} case_={case_} />
             </section>
             )}
 

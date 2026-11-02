@@ -6,6 +6,7 @@ import {
   validateAndPickCaseUpdate,
   applyCaseUpdateToWixData,
   describeMapWixCaseItemFailure,
+  applyWorkflowChangeToWixData,
 } from './wixCaseMapper';
 import { staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
 
@@ -1293,5 +1294,46 @@ describe('checklistCompletions and SLA fields (2026-10)', () => {
   it('none of these is ever accepted from a client patch', () => {
     const { patch } = validateAndPickCaseUpdate({ checklistCompletions: { '0:8': record }, slaEvents: {}, slaDelays: {}, stageEnteredAt: 'x' });
     expect(patch).toEqual({});
+  });
+});
+
+describe('Case.workflowHistory (service-specific workflows, 2026-10) — optional, lenient', () => {
+  it('absent stays absent — existing rows map exactly as before', () => {
+    const mapped = mapWixCaseItem(validItem)!;
+    expect('workflowHistory' in mapped).toBe(false);
+  });
+
+  it('maps stored history, skipping unusable entries and defaulting malformed parts', () => {
+    const mapped = mapWixCaseItem({
+      ...validItem,
+      workflowHistory: [
+        { workflowTemplateId: 't-old', workflowTemplateVersion: 1, serviceTypeCode: 'DIRECT_CREMATION', rawStage: 4, checklistState: { '3:0': true }, fieldValues: { 3: '150 lb' }, changedAt: '2026-10-15T00:00:00.000Z', changedByUserId: 'identity-1' },
+        { workflowTemplateId: 't-older', workflowTemplateVersion: 2, checklistState: 'bad' },
+        'not-an-entry',
+        { workflowTemplateVersion: 3 },
+      ],
+    })!;
+    expect(mapped.workflowHistory).toEqual([
+      { workflowTemplateId: 't-old', workflowTemplateVersion: 1, serviceTypeCode: 'DIRECT_CREMATION', rawStage: 4, checklistState: { '3:0': true }, fieldValues: { 3: '150 lb' }, changedAt: '2026-10-15T00:00:00.000Z', changedByUserId: 'identity-1' },
+      { workflowTemplateId: 't-older', workflowTemplateVersion: 2, serviceTypeCode: null, rawStage: 0, checklistState: {}, fieldValues: {}, changedAt: '', changedByUserId: '' },
+    ]);
+  });
+
+  it('the generic update allowlist still never accepts workflow fields', () => {
+    const { patch } = validateAndPickCaseUpdate({ workflowHistory: [], workflowSnapshot: {}, workflowTemplateId: 'x', rawStage: 2 });
+    expect(patch).toEqual({ rawStage: 2 });
+  });
+
+  it('applyWorkflowChangeToWixData replaces the workflow and APPENDS history', () => {
+    const snapshot = { ...validItem.workflowSnapshot, workflowTemplateId: 't-new', serviceTypeCode: 'CREMATION_WITH_VIEWING' };
+    const entry = { workflowTemplateId: 't-old', workflowTemplateVersion: 1, serviceTypeCode: null, rawStage: 3, checklistState: {}, fieldValues: {}, changedAt: 'now', changedByUserId: 'u' };
+    const once = applyWorkflowChangeToWixData({ ...validItem, currentStage: 3 }, {
+      workflowTemplateId: 't-new', workflowTemplateVersion: 2, workflowSnapshot: snapshot as never, caseType: 'cremation', rawStage: 1, checklistState: { '0:1': true }, fieldValues: {}, historyEntry: entry,
+    });
+    expect(once).toMatchObject({ workflowTemplateId: 't-new', workflowTemplateVersion: 2, currentStage: 1, checklistState: { '0:1': true }, daysWaitingInStage: 0, workflowHistory: [entry] });
+    expect(once.decedentName).toBe(validItem.decedentName);
+    const twice = applyWorkflowChangeToWixData(once, { workflowTemplateId: 't-3', workflowTemplateVersion: 1, workflowSnapshot: snapshot as never, caseType: 'cremation', rawStage: 0, checklistState: {}, fieldValues: {}, historyEntry: { ...entry, workflowTemplateId: 't-new' } });
+    expect(twice.workflowHistory).toHaveLength(2);
+    expect(mapWixCaseItem(twice)?.workflowHistory).toHaveLength(2);
   });
 });

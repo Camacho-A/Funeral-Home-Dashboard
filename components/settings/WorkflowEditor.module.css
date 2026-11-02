@@ -238,3 +238,222 @@
   justify-content: flex-end;
   gap: var(--space-4);
 }
+
+/* Service-specific workflows (2026-10): draft/approved status + approval. */
+.templateDescription {
+  font-size: var(--font-size-12-5);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-5) 0;
+}
+
+.approvalBanner {
+  font-size: var(--font-size-12-5);
+  color: var(--color-danger-text);
+  margin: 0 0 var(--space-5) 0;
+}
+
+.draftBadge,
+.approvedBadge {
+  font-size: var(--font-size-10-5);
+  font-weight: var(--font-weight-bold);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-xl);
+}
+
+.draftBadge {
+  background: var(--color-surface-subtle);
+  color: var(--color-danger-text);
+}
+
+.approvedBadge {
+  background: var(--color-brand-tint);
+  color: var(--color-brand-hover);
+}
+
+.approvalConfirm {
+  font-size: var(--font-size-13);
+  margin-top: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-subtle);
+}
+
+.approvalConfirm p {
+  margin: 0 0 var(--space-4) 0;
+}
+
+.approvalActions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.approvalError {
+  color: var(--color-danger-text);
+  margin-top: var(--space-4);
+}
+
+/* Workflow template editor (2026-10): structure editing, requirements,
+   service assignment, preview and approval problems. */
+.helpText {
+  font-size: var(--font-size-12);
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-4) 0;
+}
+
+.mutedNote {
+  font-size: var(--font-size-12);
+  color: var(--color-text-muted);
+}
+
+.itemRow {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.deleteFieldButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.versionEntry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.versionProblems {
+  font-size: var(--font-size-12);
+  color: var(--color-danger-text);
+  padding-bottom: var(--space-3);
+}
+
+.serviceAssignment {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-7) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.previewToggleRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.preview {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-7) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.previewStage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.previewStageTitle {
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+}
+
+.previewItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: var(--font-size-12-5);
+}
+
+.previewItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.previewBox {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.problemList {
+  margin: var(--space-2) 0 0 0;
+  padding-left: var(--space-8);
+}
+
+.approvalProblems {
+  font-size: var(--font-size-12-5);
+  color: var(--color-danger-text);
+  background: var(--color-surface-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--space-5) var(--space-6);
+}
+
+.approvalProblemsTitle {
+  font-weight: var(--font-weight-semibold);
+}
+
+.readyNote {
+  font-size: var(--font-size-12-5);
+  color: var(--color-brand-hover);
+  margin: 0;
+}
+
+/* Service-specific completion (2026-10): the Completion section, the
+   preview's completion summary and the approval review attestation. */
+.completionSection {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.completionToggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-13);
+}
+
+.completionItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.completionNote {
+  font-size: var(--font-size-12);
+  color: var(--color-warning-text, var(--color-text-secondary));
+  margin: 0;
+}
+
+.attestationList {
+  list-style: none;
+  margin: 0 0 var(--space-4) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

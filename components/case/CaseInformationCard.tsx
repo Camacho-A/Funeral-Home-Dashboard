@@ -663,6 +663,7 @@ export function CaseInformationCard({
   shippingDateShipped,
   shippingDeliveryStatus,
   shippingDeliveredAt,
+  showRemainsReturn = true,
   ownerStaffId,
   staffOptions,
   onReassignOwner,
@@ -771,6 +772,16 @@ export function CaseInformationCard({
   shippingDateShipped: string | null;
   shippingDeliveryStatus: ShippingDeliveryStatus | null;
   shippingDeliveredAt: string | null;
+  /** Service-specific completion (2026-10). False when the case's own
+      completion policy returns no cremated remains (burial / entombment —
+      domain/cases/manualCompletionOffer.ts#showsRemainsReturnControls):
+      Return method, Cremated Remains (pickup release) and the shipping
+      fields are not shown. Display only — the stored values are never
+      cleared, and showing them again (e.g. after a service change back to
+      cremation) shows them exactly as they were. Defaults to true, so
+      every caller that does not pass it (and every legacy / Manors /
+      cremation case) is unchanged. */
+  showRemainsReturn?: boolean;
   ownerStaffId: string | null;
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
@@ -1135,7 +1146,7 @@ export function CaseInformationCard({
           </SelectField>
           {paymentSummary && <PaymentSummaryLine summary={paymentSummary} />}
         </div>
-        {!showOwner && (
+        {!showOwner && showRemainsReturn && (
           <>
             {returnMethodControl}
             {returnMethod === 'pickup' && crematedRemainsControl}
@@ -1166,7 +1177,7 @@ export function CaseInformationCard({
               ))}
             </SelectField>
           </div>
-          {returnMethodControl}
+          {showRemainsReturn && returnMethodControl}
         </div>
       )}
 
@@ -1184,7 +1195,7 @@ export function CaseInformationCard({
       />
 
       <div className={`${styles.grid} ${styles.operationalRow}`}>
-        {returnMethod === 'pickup' && (
+        {showRemainsReturn && returnMethod === 'pickup' && (
           <>
             {showOwner && crematedRemainsControl}
             {pickupStatus === 'released' && (
@@ -1205,7 +1216,7 @@ export function CaseInformationCard({
           </>
         )}
 
-        {returnMethod === 'shipping' && (
+        {showRemainsReturn && returnMethod === 'shipping' && (
           <>
             <EditableField
               label="Carrier"

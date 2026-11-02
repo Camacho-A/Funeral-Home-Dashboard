@@ -46,3 +46,14 @@ describe('createCaseFromIntakeSubmission — tenancy guards', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
+
+describe('createCaseFromIntakeSubmission — service-specific workflows (2026-10)', () => {
+  it('never creates a Gus case from a form: no service type is named, so the submission stays unmatched for staff', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const outcome = await createCaseFromIntakeSubmission({ config, submission, mappedFields: FIELDS, request }, CTX, 'mock');
+    expect(outcome).toEqual({ created: false, reason: 'service_type_required' });
+    // Refused before the submission is claimed or POST /api/cases is called.
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});

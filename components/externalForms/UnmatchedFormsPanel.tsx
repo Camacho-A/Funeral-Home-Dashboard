@@ -71,6 +71,10 @@ function describeCaseCreationFailure(reason: string): string {
   if (reason === 'already_claimed') {
     return 'Another delivery of this same submission was already creating a case.';
   }
+  // Service-specific workflows (2026-10).
+  if (reason === 'service_type_required') {
+    return 'Each service has its own workflow, and this submission does not say which service the family chose. Create the case from New Case (choosing the service), then link this submission to it.';
+  }
   if (reason === 'no_active_staff_profile') {
     return 'This organization has no active staff profile to attribute an intake case to.';
   }

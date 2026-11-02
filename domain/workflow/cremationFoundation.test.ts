@@ -6,10 +6,8 @@ import {
   buildServiceWorkflowVersion,
   CREMATION_SERVICE_WORKFLOWS,
   foundationOptionsFor,
-  isWorkflowByServiceType,
-  selectWorkflowTemplate,
-  serviceOptionsFor,
 } from './serviceWorkflows';
+import { isWorkflowByServiceType, selectWorkflowTemplate } from './selectWorkflowTemplate';
 import { findStep } from './workflowSteps';
 import { buildCaseWorkflowSnapshot } from './snapshot';
 import { standardCremationWorkflowTemplateFixture, CERTIFIER_FAX_REQUIRED_CASE_FIELDS, workflowTemplateFixtures } from '../../services/__mocks__/workflowTemplates';
@@ -156,30 +154,34 @@ describe('choosing the workflow for a new case', () => {
   it('Manors keeps "first enabled template, latest version", whatever is passed', () => {
     expect(isWorkflowByServiceType(MANORS_ORGANIZATION_ID)).toBe(false);
     for (const serviceTypeCode of [undefined, null, 'CREMATION_WITH_VIEWING']) {
-      const selection = selectWorkflowTemplate(manorsTemplates, { workflowByServiceType: false, serviceTypeCode });
+      const selection = selectWorkflowTemplate(manorsTemplates, MANORS_ORGANIZATION_ID, serviceTypeCode);
       expect(selection).toMatchObject({ ok: true, template: { id: 'workflow-template-standard-cremation' }, version: { version: 7 }, serviceTypeCode: null });
     }
   });
 
-  it('Gus must name a service, gets that service’s template, and an unknown service is refused', () => {
+  it('Gus must name a service, gets that service’s template, and a service without one is refused', () => {
     expect(isWorkflowByServiceType(GUS_CAMACHO_ORGANIZATION_ID)).toBe(true);
-    expect(selectWorkflowTemplate(gusTemplates, { workflowByServiceType: true })).toEqual({ ok: false, reason: 'service_required' });
-    expect(selectWorkflowTemplate(gusTemplates, { workflowByServiceType: true, serviceTypeCode: 'DIRECT_BURIAL' })).toEqual({ ok: false, reason: 'unknown_service' });
-    const viewing = selectWorkflowTemplate(gusTemplates, { workflowByServiceType: true, serviceTypeCode: 'CREMATION_WITH_VIEWING' });
+    expect(selectWorkflowTemplate(gusTemplates, GUS_CAMACHO_ORGANIZATION_ID, null)).toMatchObject({ ok: false, reason: 'service_type_required' });
+    expect(selectWorkflowTemplate(gusTemplates, GUS_CAMACHO_ORGANIZATION_ID, 'DIRECT_ENTOMBMENT')).toMatchObject({ ok: false, reason: 'not_approved' });
+    expect(selectWorkflowTemplate(gusTemplates, GUS_CAMACHO_ORGANIZATION_ID, 'DIRECT_BURIAL')).toMatchObject({ ok: false, reason: 'no_template_for_service' });
+    const viewing = selectWorkflowTemplate(gusTemplates, GUS_CAMACHO_ORGANIZATION_ID, 'CREMATION_WITH_VIEWING');
     expect(viewing).toMatchObject({ ok: true, template: { name: 'Cremation with Viewing' }, serviceTypeCode: 'CREMATION_WITH_VIEWING' });
   });
 
   it('two templates claiming one service is refused rather than guessed', () => {
     const dup = structuredClone(gusTemplates[0]) as WorkflowTemplate;
     dup.id = 'duplicate';
-    expect(selectWorkflowTemplate([...gusTemplates, dup], { workflowByServiceType: true, serviceTypeCode: 'DIRECT_CREMATION' })).toEqual({ ok: false, reason: 'ambiguous_service' });
+    expect(selectWorkflowTemplate([...gusTemplates, dup], GUS_CAMACHO_ORGANIZATION_ID, 'DIRECT_CREMATION')).toMatchObject({ ok: false, reason: 'ambiguous_service_template' });
   });
 
-  it('disabled templates are not offered', () => {
+  it('a disabled template is not used, and a draft version is never used for a case', () => {
     const disabled = gusTemplates.map((t) => (t.name === 'Cremation with Viewing' ? { ...t, isEnabled: false } : t));
-    expect(serviceOptionsFor(disabled).map((o) => o.name)).toEqual(['Direct Cremation', 'Cremation with Final Goodbye']);
-    expect(serviceOptionsFor(gusTemplates).map((o) => o.name)).toEqual(['Direct Cremation', 'Cremation with Viewing', 'Cremation with Final Goodbye']);
-    expect(serviceOptionsFor(manorsTemplates)).toEqual([]);
+    expect(selectWorkflowTemplate(disabled, GUS_CAMACHO_ORGANIZATION_ID, 'CREMATION_WITH_VIEWING')).toMatchObject({ ok: false, reason: 'no_template_for_service' });
+    const goodbye = structuredClone(gusTemplates.find((t) => t.name === 'Cremation with Final Goodbye')!) as WorkflowTemplate;
+    const approved = goodbye.versions.at(-1)!.version;
+    goodbye.versions.push({ ...structuredClone(goodbye.versions.at(-1)!), version: approved + 1, status: 'draft' });
+    const others = gusTemplates.filter((t) => t.id !== goodbye.id);
+    expect(selectWorkflowTemplate([...others, goodbye], GUS_CAMACHO_ORGANIZATION_ID, 'CREMATION_WITH_FINAL_GOODBYE')).toMatchObject({ ok: true, version: { version: approved } });
   });
 
   it('the case snapshot records the service and composition — and a Manors snapshot is exactly as before', () => {

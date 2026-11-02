@@ -302,11 +302,19 @@ export function buildCaseListWixFilter(params: {
       existing caller keeps excluding archived cases unchanged. 'all'
       omits the filter entirely rather than asking for both values. */
   scope?: CaseListScope;
+  /** Service-specific workflows (2026-10). A per-template stage filter
+      (domain/workflow/organizationStages.ts#wixFilterForOrganizationStage —
+      an `$or` of `{ workflowTemplateId, currentStage: { $in } }`), used
+      INSTEAD of `rawStages` for an organization whose cases run on several
+      templates. Omitted by every other caller, whose filter shape is
+      unchanged. */
+  stageFilter?: Record<string, unknown> | null;
 }): Record<string, unknown> {
   const scope = params.scope ?? 'active';
   const base: Record<string, unknown> = { organizationId: params.organizationId };
   if (scope !== 'all') base.isArchived = scope === 'archived';
   if (params.rawStages) base.currentStage = { $in: params.rawStages };
-  if (!params.searchFilter) return base;
-  return { $and: [base, params.searchFilter] };
+  const clauses = [params.stageFilter, params.searchFilter].filter((c): c is Record<string, unknown> => Boolean(c));
+  if (clauses.length === 0) return base;
+  return { $and: [base, ...clauses] };
 }

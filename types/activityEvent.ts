@@ -153,6 +153,29 @@ export const ACTIVITY_EVENT_TYPES = {
       since the editor loaded it. Same type string as Gus SOLIS. */
   CASE_UPDATE_CONFLICT: 'case.update.conflict',
   CASE_STAGE_CHANGED: 'case.stage.changed',
+  /** Service-specific workflows (2026-10). A case moved onto another
+      workflow template because its service type changed — recorded only by
+      POST /api/cases/[caseId]/workflow, after staff confirmed the preview. */
+  CASE_WORKFLOW_CHANGED: 'case.workflow.changed',
+  /** Consistent service changes (2026-10). A coordinated service change
+      (POST /api/cases/[caseId]/service-change) wrote its new case order
+      but could not write the case's workflow, so the order change was
+      undone (a restoring order version — nothing deleted). The case is
+      consistent; staff only need to retry. `warning`. */
+  CASE_SERVICE_CHANGE_COMPENSATED: 'case.service_change.compensated',
+  /** Consistent service changes (2026-10). A coordinated service change
+      failed AND its compensation failed too: the case's order and workflow
+      may disagree. The explicit needs-repair marker (`critical`, metadata
+      `needsRepair: true`) — never a silent inconsistency. */
+  CASE_SERVICE_CHANGE_FAILED: 'case.service_change.failed',
+  /** Case concurrency (2026-10). The operation journal of a coordinated
+      service change — one append-only entry per step it reaches
+      (`metadata.status`: prepared → order_committed → case_committed |
+      compensated | failed, then `resolved` when an administrator closes an
+      interrupted one). Category `system` with no caseId, so the case's own
+      timeline is not cluttered; it is what lets an operation interrupted by
+      a crash be FOUND afterwards (services/serviceChangeJournal.ts). */
+  CASE_SERVICE_CHANGE_JOURNAL: 'case.service_change.journal',
   /** Conditional shipping/tracking (2026-09). Mirrors CASE_STAGE_CHANGED's
       "specific, human-readable description" convention rather than falling
       into the generic CASE_UPDATED bucket — see
@@ -326,10 +349,20 @@ export const ACTIVITY_EVENT_TYPES = {
   AUTH_LOGIN_SUCCESS: 'auth.login.success',
   AUTH_LOGIN_FAILED: 'auth.login.failed',
 
-  /** Reserved — no integration point built this phase (a same-shape
-      fast-follow to `CASE_ORDER_CHANGED`). */
+  /** Workflow template editor (2026-10) — wired. UPDATED: a new workflow
+      template version was saved (a draft, for an organization whose
+      versions require approval), recorded by POST
+      /api/workflow-templates/[templateId]/versions. PUBLISHED: a version
+      was approved and is now what new cases use, recorded by POST
+      .../versions/[version]/approve. See services/activityService.ts's
+      recordWorkflowTemplateVersionSaved/Approved. */
   WORKFLOW_TEMPLATE_UPDATED: 'workflow.template.updated',
   WORKFLOW_TEMPLATE_PUBLISHED: 'workflow.template.published',
+  /** Unfinished-workflow protection (2026-10). An approval attempt the
+      approve route REFUSED (missing review attestation, an incomplete or
+      placeholder workflow, an unmodified copy, an invalid completion
+      policy) — who tried, which version, and every reason. `warning`. */
+  WORKFLOW_TEMPLATE_APPROVAL_REFUSED: 'workflow.template.approval_refused',
 
   /** Reserved — `onboardingAuditEntries` keeps its own writer. */
   ORGANIZATION_CREATED: 'organization.created',

@@ -4,10 +4,15 @@ import type {
   IntakeTemplate,
   IntakeFieldTemplate,
   IntakeSectionTemplate,
+  WorkflowCompletionPolicy,
   WorkflowTemplate,
-  WorkflowTemplateVersion, WorkflowComposition } from '../types/workflowTemplate';
+  WorkflowTemplateVersion,
+  WorkflowComposition,
+  WorkflowVersionSource,
+} from '../types/workflowTemplate';
 import { queryWixDataItems } from './wixDataApi';
 import { findForbiddenPaymentFields } from './paymentFieldGuard';
+import { parseCompletionPolicy } from '../domain/workflow/completionPolicy';
 
 /**
  * Phase 15B (Wix Workflow Template Read Integration). Mirrors
@@ -50,6 +55,10 @@ export type WixWorkflowTemplateItem = {
   name?: unknown;
   isEnabled?: unknown;
   caseTypes?: unknown;
+  /** Service-specific workflows (2026-10). Optional — absent on every row
+      created before this field existed; read leniently (see below). */
+  serviceTypeCodes?: unknown;
+  description?: unknown;
 };
 
 export type WixWorkflowTemplateVersionItem = {
@@ -62,6 +71,18 @@ export type WixWorkflowTemplateVersionItem = {
   /** Service-based workflows (2026-11). Optional; absent on every Manors row. */
   serviceTypeCodes?: unknown;
   composition?: unknown;
+  /** Service-specific workflows (2026-10). Optional; absent = approved. */
+  status?: unknown;
+  approvedBy?: unknown;
+  approvedAt?: unknown;
+  /** Workflow template editor (2026-10). Optional; absent on older rows. */
+  createdBy?: unknown;
+  createdByName?: unknown;
+  approvedByName?: unknown;
+  /** Service-specific completion (2026-10). Optional objects; absent on
+      every older row (absent policy = today's completion rule). */
+  completionPolicy?: unknown;
+  derivedFrom?: unknown;
 };
 
 /** A validated template record, still missing its `versions` array — see buildWorkflowTemplate. */
@@ -71,6 +92,8 @@ export type WixWorkflowTemplateSummary = {
   name: string;
   isEnabled: boolean;
   caseTypes: string[];
+  serviceTypeCodes?: string[];
+  description?: string | null;
 };
 
 function isStringArray(value: unknown): value is string[] {
@@ -101,6 +124,11 @@ export function mapWixWorkflowTemplateItem(item: WixWorkflowTemplateItem | undef
     name: item.name,
     isEnabled: item.isEnabled,
     caseTypes: item.caseTypes,
+    // Service-specific workflows (2026-10): lenient — a missing or
+    // malformed value is simply absent (the template serves no service
+    // type), never a reason to drop the whole template row.
+    ...(isStringArray(item.serviceTypeCodes) ? { serviceTypeCodes: item.serviceTypeCodes } : {}),
+    ...(typeof item.description === 'string' ? { description: item.description } : {}),
   };
 }
 
@@ -138,6 +166,26 @@ export function mapWixWorkflowTemplateVersionItem(
     createdAt: item.createdAt,
     ...(isStringArray(item.serviceTypeCodes) && item.serviceTypeCodes.length > 0 ? { serviceTypeCodes: item.serviceTypeCodes } : {}),
     ...(composition ? { composition } : {}),
+    // Service-specific workflows (2026-10). Only an explicit 'draft' is a
+    // draft; absent or any unrecognized value reads as before (approved),
+    // so no existing row changes meaning.
+    ...(item.status === 'draft' || item.status === 'approved' ? { status: item.status } : {}),
+    ...(typeof item.approvedBy === 'string' ? { approvedBy: item.approvedBy } : {}),
+    ...(typeof item.approvedAt === 'string' ? { approvedAt: item.approvedAt } : {}),
+    // Workflow template editor (2026-10): lenient like the fields above —
+    // malformed values are simply absent, never a reason to drop the row.
+    ...(typeof item.createdBy === 'string' ? { createdBy: item.createdBy } : {}),
+    ...(typeof item.createdByName === 'string' ? { createdByName: item.createdByName } : {}),
+    ...(typeof item.approvedByName === 'string' ? { approvedByName: item.approvedByName } : {}),
+    // Service-specific completion (2026-10). Same leniency: a policy that
+    // fails its shape check is ABSENT (today's rule), never a dropped row
+    // — the version's approval re-validates whatever is stored.
+    ...(() => {
+      if (item.completionPolicy === undefined || item.completionPolicy === null) return {};
+      const { policy } = parseCompletionPolicy(item.completionPolicy);
+      return policy ? { completionPolicy: policy } : {};
+    })(),
+    ...(isVersionSource(item.derivedFrom) ? { derivedFrom: { templateId: item.derivedFrom.templateId, version: item.derivedFrom.version } } : {}),
   };
 }
 
@@ -149,6 +197,15 @@ function parseComposition(value: unknown): WorkflowComposition | null {
     typeof r === 'object' && r !== null && typeof (r as { key?: unknown }).key === 'string' && typeof (r as { version?: unknown }).version === 'number';
   if (!isRef(v.base) || !Array.isArray(v.extensions) || !v.extensions.every(isRef)) return null;
   return { base: { key: v.base.key, version: v.base.version }, extensions: v.extensions.map((e) => ({ key: e.key, version: e.version })) };
+}
+
+function isVersionSource(value: unknown): value is WorkflowVersionSource {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as Record<string, unknown>).templateId === 'string' &&
+    typeof (value as Record<string, unknown>).version === 'number'
+  );
 }
 
 /**
@@ -181,6 +238,8 @@ export function buildWorkflowTemplate(
     isEnabled: summary.isEnabled,
     caseTypes: summary.caseTypes,
     versions: sortedVersions,
+    ...(summary.serviceTypeCodes ? { serviceTypeCodes: summary.serviceTypeCodes } : {}),
+    ...(summary.description !== undefined ? { description: summary.description } : {}),
   };
 }
 
@@ -307,24 +366,32 @@ function validateChecklistItemPayload(value: unknown, path: string, errors: stri
     errors.push(`${path}.requiredCaseFields must be an array of strings if present.`);
   }
 
+  // Time of Death fix (2026-10): `valueKind: 'time'` is carried through
+  // below (it used to be dropped on every save). Any other value is dropped
+  // rather than rejected — the behaviour Manors' saves already rely on.
+
   if (typeof value.index !== 'number' || typeof value.label !== 'string' || typeof value.hasField !== 'boolean') {
     return null;
   }
+  // Every optional property is carried over exactly as given — present
+  // when the item had it, absent when it did not — so a saved version
+  // round-trips the editor's content field for field (the version you
+  // review is the version you approve).
   return {
     index: value.index,
     label: value.label,
     hasField: value.hasField,
-    isPasswordField: typeof value.isPasswordField === 'boolean' ? value.isPasswordField : undefined,
-    externalFormIntegrationId:
-      typeof value.externalFormIntegrationId === 'string' ? value.externalFormIntegrationId : null,
-    requiredCaseFields:
-      requiredCaseFieldsValid && Array.isArray(value.requiredCaseFields)
-        ? (value.requiredCaseFields as string[])
-        : undefined,
-    // Same defect class as requiredCaseFields above (2026-10): never read
-    // back, so live v6 lost Time of Death's `valueKind: 'time'` when it was
-    // derived from v5. Any future version must carry it through.
+    ...(typeof value.isPasswordField === 'boolean' ? { isPasswordField: value.isPasswordField } : {}),
+    // Always present (null when absent) — the shape every saved version,
+    // Manors' included, has always had.
+    externalFormIntegrationId: typeof value.externalFormIntegrationId === 'string' ? value.externalFormIntegrationId : null,
+    ...(requiredCaseFieldsValid && Array.isArray(value.requiredCaseFields)
+      ? { requiredCaseFields: [...(value.requiredCaseFields as string[])] }
+      : {}),
     ...(value.valueKind === 'time' ? { valueKind: 'time' as const } : {}),
+    // Shared workflow foundation (2026-11): an item's stable id survives
+    // every save, so shared logic keeps finding it by id.
+    ...(typeof value.stepId === 'string' && value.stepId.trim() !== '' ? { stepId: value.stepId } : {}),
   };
 }
 
@@ -365,9 +432,10 @@ function validateStagePayload(value: unknown, path: string, errors: string[]): S
     rawStage: value.rawStage,
     displayStage: value.displayStage,
     label: value.label,
-    isAttentionStage: typeof value.isAttentionStage === 'boolean' ? value.isAttentionStage : undefined,
+    ...(typeof value.isAttentionStage === 'boolean' ? { isAttentionStage: value.isAttentionStage } : {}),
     slaTargetDays: value.slaTargetDays as number | null,
     checklist: { items: items as ChecklistItemTemplate[] },
+    ...(typeof value.stageKey === 'string' && value.stageKey.trim() !== '' ? { stageKey: value.stageKey } : {}),
   };
 }
 
@@ -532,6 +600,15 @@ export function buildWixWorkflowTemplateVersionData(params: {
   createdAt: string;
   serviceTypeCodes?: string[];
   composition?: WorkflowComposition;
+  /** Written only when given, so a version saved for an organization
+      without approval keeps exactly its previous row shape. */
+  status?: WorkflowTemplateVersion['status'];
+  /** Workflow template editor (2026-10) — each written only when given. */
+  createdBy?: string | null;
+  createdByName?: string | null;
+  /** Service-specific completion (2026-10) — each written only when given. */
+  completionPolicy?: WorkflowCompletionPolicy;
+  derivedFrom?: WorkflowVersionSource | null;
 }): WixWorkflowTemplateVersionItem {
   return {
     beaconTemplateId: params.beaconTemplateId,
@@ -543,6 +620,11 @@ export function buildWixWorkflowTemplateVersionData(params: {
     // Written only when present, so a Manors version row is unchanged.
     ...(params.serviceTypeCodes ? { serviceTypeCodes: params.serviceTypeCodes } : {}),
     ...(params.composition ? { composition: params.composition } : {}),
+    ...(params.status ? { status: params.status } : {}),
+    ...(params.createdBy ? { createdBy: params.createdBy } : {}),
+    ...(params.createdByName ? { createdByName: params.createdByName } : {}),
+    ...(params.completionPolicy ? { completionPolicy: params.completionPolicy } : {}),
+    ...(params.derivedFrom ? { derivedFrom: params.derivedFrom } : {}),
   };
 }
 
@@ -562,6 +644,8 @@ export function buildWixWorkflowTemplateData(template: {
   name: string;
   isEnabled: boolean;
   caseTypes: string[];
+  serviceTypeCodes?: string[];
+  description?: string | null;
 }): WixWorkflowTemplateItem {
   return {
     beaconTemplateId: template.id,
@@ -569,5 +653,42 @@ export function buildWixWorkflowTemplateData(template: {
     name: template.name,
     isEnabled: template.isEnabled,
     caseTypes: template.caseTypes,
+    ...(template.serviceTypeCodes ? { serviceTypeCodes: template.serviceTypeCodes } : {}),
+    ...(template.description !== undefined ? { description: template.description } : {}),
+  };
+}
+
+/**
+ * Service-specific workflows (2026-10). The approval write for one
+ * `workflowTemplateVersions` row: the row's complete existing data with
+ * ONLY status/approvedBy/approvedAt changed (updateWixDataItem is a full
+ * replace). Stages, intake, caseTypes and version number are carried over
+ * untouched — approval is metadata about a version, never an edit of its
+ * content, so the collection's "content is append-only" rule holds.
+ */
+export function buildApprovedWixWorkflowTemplateVersionData(
+  existing: WixWorkflowTemplateVersionItem,
+  approval: { approvedBy: string; approvedAt: string; approvedByName?: string | null },
+): WixWorkflowTemplateVersionItem {
+  return { ...existing, ...buildWixWorkflowTemplateVersionApprovalFields(approval) };
+}
+
+/**
+ * Workflow template editor (2026-10). Exactly the fields an approval sets
+ * on a `workflowTemplateVersions` row — what the approve route PATCHES
+ * (conditionally, on `status $eq 'draft'`) instead of replacing the whole
+ * row it read earlier. buildApprovedWixWorkflowTemplateVersionData is the
+ * same change expressed as the full resulting row.
+ */
+export function buildWixWorkflowTemplateVersionApprovalFields(approval: {
+  approvedBy: string;
+  approvedAt: string;
+  approvedByName?: string | null;
+}): Record<string, unknown> {
+  return {
+    status: 'approved',
+    approvedBy: approval.approvedBy,
+    approvedAt: approval.approvedAt,
+    ...(approval.approvedByName ? { approvedByName: approval.approvedByName } : {}),
   };
 }

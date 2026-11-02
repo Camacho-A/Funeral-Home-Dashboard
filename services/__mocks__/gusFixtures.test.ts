@@ -67,7 +67,11 @@ describe('Gus demo cases', () => {
 
   it("run on Gus' own service workflows (2026-11), spread across every stage and all three cremation services, with some needing attention", () => {
     const gusTemplates = workflowTemplateFixtures.filter((t) => t.organizationId === GUS_ORGANIZATION_ID);
-    expect(gusTemplates.map((t) => t.name).sort()).toEqual(['Cremation with Final Goodbye', 'Cremation with Viewing', 'Direct Cremation']);
+    // Three usable cremation services; the three burial/entombment services
+    // are drafts no case can use until their steps are defined.
+    const usable = gusTemplates.filter((t) => t.versions.some((v) => v.status !== 'draft'));
+    expect(usable.map((t) => t.name).sort()).toEqual(['Cremation with Final Goodbye', 'Cremation with Viewing', 'Direct Cremation']);
+    expect(gusTemplates.filter((t) => !usable.includes(t)).map((t) => t.caseTypes[0]).sort()).toEqual(['burial', 'burial', 'entombment']);
     expect(gusTemplates.some((t) => t.id === GUS_WORKFLOW_TEMPLATE_ID)).toBe(true);
     for (const c of gusCases()) {
       const template = gusTemplates.find((t) => t.id === c.workflowTemplateId)!;

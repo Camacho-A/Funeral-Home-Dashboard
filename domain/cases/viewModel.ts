@@ -18,8 +18,9 @@ import {
   lastDisplayStage,
   isOverdue,
 } from '../workflow/resolveStages';
-import { isTerminalReturnRequirementComplete, terminalReturnRequirementLabel, returnMethodStageHeading } from './returnMethod';
+import { terminalReturnRequirementLabel, returnMethodStageHeading } from './returnMethod';
 import { formatSlaTarget } from './sla';
+import { evaluateCaseCompletion } from './completionEligibility';
 import {
   buildVaSteps,
   isVaCallbackDone,
@@ -356,7 +357,18 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // computed once here and drives both the effective-stage rollback below
   // and the terminal checklist item's overridden label/done state, so the
   // two can never drift apart into competing signals.
-  const remainsReturnComplete = isTerminalReturnRequirementComplete(case_);
+  //
+  // Service-specific completion (2026-10): whether the case is complete
+  // is now its frozen snapshot's completion POLICY
+  // (domain/cases/completionEligibility.ts). For a snapshot without one —
+  // every case that existed before policies — and for a cremation policy,
+  // that is exactly the remains-return rule above; for a burial or
+  // entombment policy, no remains are returned, the required final items
+  // decide, and the terminal item is an ordinary checklist item (no
+  // "ashes" wording, no derived override).
+  const completion = evaluateCaseCompletion(case_);
+  const remainsReturnRequired = completion.policy.requiresRemainsReturn;
+  const remainsReturnComplete = completion.requirements.find((requirement) => requirement.key === 'remains_return')?.done ?? false;
   const currentChecklist = applyCombinedIntakeLabelCase(
     applyFamilyContactPresentation(
       applyLegacyCertifierPresentation(resolveChecklist(currentStageItems, rawDisplayStage, case_), case_, false),
@@ -374,7 +386,7 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // state, and marked isDerived so ChecklistCard renders it as a read-only
   // indicator rather than a toggle a staff member could contradict.
   const effectiveCurrentChecklist =
-    rawDisplayStage === lastStage && currentChecklist.length > 0
+    remainsReturnRequired && rawDisplayStage === lastStage && currentChecklist.length > 0
       ? [
           {
             ...currentChecklist[0],
@@ -451,8 +463,10 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // Case Detail-only presentational overlay (never the structural STAGES/
   // snapshot label sla.ts, the dashboard, and reports key off) — see
   // domain/cases/returnMethod.ts#returnMethodStageHeading's own comment.
+  // Only for a workflow that returns remains — a burial's last working
+  // stage keeps its own name.
   const caseDetailStageHeading =
-    effectiveDisplayStage === lastStage - 1 ? returnMethodStageHeading(case_.returnMethod) : stageLabel;
+    remainsReturnRequired && effectiveDisplayStage === lastStage - 1 ? returnMethodStageHeading(case_.returnMethod) : stageLabel;
 
   const owner = resolveOwner(case_, staffList);
   // Used for attribution wherever an actor name is needed but the case may
@@ -488,7 +502,14 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
   // Phase 5's two list components (AllCasesList, StageFilteredPanel) share
   // it rather than re-deriving it.
   const firstUndoneItem = effectiveCurrentChecklist.find((item) => !item.done);
-  const nextActionLabel = firstUndoneItem?.label ?? 'Review case';
+  // Service-specific completion (2026-10): a case on its final stage whose
+  // own policy is still unmet, with nothing left on that stage's
+  // checklist, names what is outstanding (e.g. an undefined completion
+  // requirement) instead of "Review case". Explicit policies only — a
+  // snapshot without one keeps exactly the old fallback.
+  const completionReason =
+    !completion.isLegacyPolicy && !completion.eligible && completion.onFinalStage ? (completion.reasons[0] ?? null) : null;
+  const nextActionLabel = firstUndoneItem?.label ?? completionReason ?? 'Review case';
 
   /**
    * Case status label (2026-10). The list row used to show only
@@ -516,7 +537,10 @@ export function buildCaseViewModel(case_: Case, context: CaseViewModelContext): 
    *   Stalled    — the existing red blocker text, unchanged.
    *   Next action — the existing neutral behaviour, unchanged.
    */
-  const isWorkflowComplete = effectiveDisplayStage === lastStage && remainsReturnComplete;
+  // The case's own completion policy decides (domain/cases/completionEligibility.ts):
+  // for a case without one — every Manors case — that is exactly "last
+  // stage and the remains returned", as before.
+  const isWorkflowComplete = effectiveDisplayStage === lastStage && completion.eligible;
   const rowSummaryText = case_.isDeleted
     ? 'Archived'
     : isWorkflowComplete

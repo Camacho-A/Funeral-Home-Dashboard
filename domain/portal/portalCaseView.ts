@@ -1,6 +1,8 @@
 import type { Case } from '../../types/case';
 import { toDisplayStage, STAGES } from '../cases/stages';
 import { presentedStageLabels, toPresentedStageIndex } from '../organization/workflowStagePresentation';
+import { isWorkflowByServiceType } from '../workflow/selectWorkflowTemplate';
+import { snapshotStageLabel } from '../workflow/organizationStages';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). An explicit
@@ -37,10 +39,13 @@ export function buildPortalCaseView(caseRecord: Case): PortalCaseView {
     // user-facing stage name staff do, so the two surfaces never disagree
     // about what stage a case is in. Presentation only — `rawStage` is
     // untouched. See domain/organization/workflowStagePresentation.ts.
-    stageLabel:
-      presentedStageLabels(caseRecord.organizationId, STAGES)[
-        toPresentedStageIndex(caseRecord.organizationId, toDisplayStage(caseRecord.rawStage), STAGES)
-      ] ?? STAGES[toDisplayStage(caseRecord.rawStage)],
+    // Service-specific workflows (2026-10): an organization whose cases
+    // run on several templates shows the case's own snapshot stage name.
+    stageLabel: isWorkflowByServiceType(caseRecord.organizationId)
+      ? (snapshotStageLabel(caseRecord.workflowSnapshot, caseRecord.rawStage) ?? '')
+      : (presentedStageLabels(caseRecord.organizationId, STAGES)[
+          toPresentedStageIndex(caseRecord.organizationId, toDisplayStage(caseRecord.rawStage), STAGES)
+        ] ?? STAGES[toDisplayStage(caseRecord.rawStage)]),
     caseType: caseRecord.caseType,
   };
 }

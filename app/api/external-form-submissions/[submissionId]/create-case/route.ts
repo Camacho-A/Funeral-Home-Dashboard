@@ -268,6 +268,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ sub
         { status: 422 },
       );
     }
+    // Service-specific workflows (2026-10): the workflow depends on a
+    // service type the submission does not name.
+    if (outcome.reason === 'service_type_required') {
+      return NextResponse.json(
+        {
+          error:
+            'This organization chooses the workflow by service type, and the submission does not name one. Create the case from New Case (choosing the service), then link this submission to it.',
+        },
+        { status: 422 },
+      );
+    }
     // Everything else is a server-side failure; the reason is logged by
     // the service and deliberately not echoed to the client.
     return NextResponse.json({ error: 'Could not create a case from this submission.' }, { status: 500 });

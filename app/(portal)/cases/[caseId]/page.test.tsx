@@ -608,3 +608,16 @@ describe('Case Detail page — a failed load is visible and recoverable', () => 
   });
 });
 
+
+describe('Case Detail page — service-specific completion (2026-10)', () => {
+  it('renders the Mark completed section (it decides its own visibility from the case policy + permissions)', () => {
+    expect(SOURCE).toMatch(/import \{ MarkCaseCompletedSection \} from '@\/components\/case\/MarkCaseCompletedSection';/);
+    expect(SOURCE).toMatch(/<MarkCaseCompletedSection caseId=\{caseId\} case_=\{case_\} \/>/);
+  });
+
+  it('hides remains-return controls in Case Information and the Checklist from the case’s own policy', () => {
+    expect(SOURCE).toMatch(/const showRemainsReturn = showsRemainsReturnControls\(case_\);/);
+    expect(SOURCE).toMatch(/<CaseInformationCard[\s\S]*?showRemainsReturn=\{showRemainsReturn\}/);
+    expect(SOURCE).toMatch(/<ChecklistCard[\s\S]*?showRemainsReturn=\{showRemainsReturn\}/);
+  });
+});

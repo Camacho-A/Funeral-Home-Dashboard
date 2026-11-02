@@ -3,18 +3,50 @@
 import { useEffect, useState } from 'react';
 import { useWorkflowTemplate } from '@/hooks/useWorkflowTemplate';
 import { useCreateWorkflowVersion } from '@/hooks/useCreateWorkflowVersion';
+import { moveIntakeField, validateIntakeFields } from '@/domain/workflow/editing';
 import {
-  moveStage,
-  validateStageSequencing,
-  moveIntakeField,
-  validateIntakeFields,
-} from '@/domain/workflow/editing';
+  addChecklistItem,
+  addStage,
+  groupStagesByDisplayStage,
+  intakeFieldsLinkedToFirstStageItem,
+  isFirstStageLinkedToIntake,
+  itemOrderAfterMove,
+  itemOrderAfterRemoval,
+  moveChecklistItem,
+  moveDisplayStage,
+  remapIntakeAfterFirstStageChange,
+  removeChecklistItem,
+  removeStage,
+  updateChecklistItem,
+  updateStage,
+  type ChecklistItemPatch,
+} from '@/domain/workflow/templateEditing';
+import { problemMessages, validateWorkflowStages } from '@/domain/workflow/templateValidation';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
-import type { IntakeFieldTemplate, IntakeFieldType, IntakeTemplate, StageTemplate } from '@/types/workflowTemplate';
-import { requiredCaseFieldsSummary } from '@/domain/workflow/requiredCaseFieldLabels';
+import type {
+  IntakeFieldTemplate,
+  IntakeFieldType,
+  IntakeTemplate,
+  StageTemplate,
+  WorkflowApprovalAttestation,
+  WorkflowCompletionPolicy,
+  WorkflowTemplateVersion,
+} from '@/types/workflowTemplate';
+import { effectiveCompletionPolicy } from '@/domain/workflow/completionPolicy';
+import { WorkflowCompletionEditor } from '@/components/settings/WorkflowCompletionEditor';
+import { useOrganization } from '@/hooks/useOrganization';
+import { useApproveWorkflowVersion } from '@/hooks/useApproveWorkflowVersion';
+import { isWorkflowApprovalRequired, isWorkflowByServiceType } from '@/domain/workflow/selectWorkflowTemplate';
+import { isApprovedVersion, latestApprovedVersion } from '@/domain/workflow/snapshot';
+import { WorkflowTemplateServiceLine } from '@/components/settings/WorkflowTemplateServiceLine';
+import { WorkflowStageEditor } from '@/components/settings/WorkflowStageEditor';
+import { WorkflowServiceAssignment } from '@/components/settings/WorkflowServiceAssignment';
+import { WorkflowPreview } from '@/components/settings/WorkflowPreview';
+import { DraftApprovalReadiness, ProblemList, VersionApproveControl } from '@/components/settings/WorkflowApprovalProblems';
 import styles from './WorkflowEditor.module.css';
+import { WorkflowEditorClassic } from './WorkflowEditorClassic';
 
 const FIELD_TYPE_OPTIONS: { value: IntakeFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
@@ -68,20 +100,60 @@ function nextAvailableChecklistItemIndex(intake: IntakeTemplate): number {
   return usedIndexes.length === 0 ? 0 : Math.max(...usedIndexes) + 1;
 }
 
+
+/** The service assignment a version stands for: its own proposal, else the
+    template's current assignment. */
+function versionServiceTypeCodes(version: WorkflowTemplateVersion, templateCodes: string[] | undefined): string[] {
+  return [...(version.serviceTypeCodes ?? templateCodes ?? [])];
+}
+
+const sameCodes = (a: readonly string[], b: readonly string[]) => [...a].sort().join('|') === [...b].sort().join('|');
+
+/** Unfinished-workflow protection (2026-10): what the approver affirms,
+    in the page, before "Confirm approval" is enabled. */
+const ATTESTATION_ITEMS: { key: keyof WorkflowApprovalAttestation; label: string }[] = [
+  { key: 'stagesReviewed', label: 'I reviewed this service’s own stages — none is a copied or placeholder step.' },
+  { key: 'checklistReviewed', label: 'I reviewed every checklist item.' },
+  { key: 'completionReviewed', label: 'I reviewed the completion rules (Completion section).' },
+];
+
+const NO_ATTESTATION: WorkflowApprovalAttestation = { stagesReviewed: false, checklistReviewed: false, completionReviewed: false };
+
+function formatDate(iso: string | null | undefined): string {
+  return iso ? new Date(iso).toLocaleDateString() : '';
+}
+
 /**
  * Phase 18 (Workflow Management) / Phase 19 (Configurable Intake Form
- * Builder). Views the selected template's version history and lets an
- * admin edit its latest version's stages (name, SLA target, attention
- * flag, checklist item labels, display order) and — new in Phase 19 — its
- * intake fields (add/edit/delete/reorder, field type, required,
- * placeholder, uppercase, masked, validation, select options) before
- * saving, which always creates one brand-new WorkflowTemplateVersion
- * covering both together (useCreateWorkflowVersion -> POST .../versions),
- * never touching a historical one. Adding/removing stages or checklist
- * items, and editing intake sections themselves (only fields within an
- * existing section), the template's own name/enabled flag, and caseTypes
- * are out of scope — see docs/adr/ADR-019-workflow-management.md and
- * docs/adr/ADR-020-configurable-intake-form-builder.md.
+ * Builder) / workflow template editor (2026-10). Views the selected
+ * template's version history and edits its latest version's content
+ * before saving, which always creates one brand-new
+ * WorkflowTemplateVersion (useCreateWorkflowVersion -> POST .../versions),
+ * never touching a historical one or any existing case (cases keep their
+ * frozen workflowSnapshot).
+ *
+ * What can be edited:
+ * - stages, by DISPLAY stage (what staff see as one step): add, remove,
+ *   rename, reorder, SLA target, attention flag — a combined stage (the
+ *   cremation First Call & Payment) moves and edits as one unit;
+ * - checklist items: add, remove, rename, reorder, and the requirements
+ *   the engine supports (data entry, 12-hour time picker, masked,
+ *   completion from case fields);
+ * - intake fields (Phase 19);
+ * - for an organization with service-specific workflows, the service the
+ *   template serves (applied when the version is approved);
+ * - for an organization whose versions require approval (2026-10), the
+ *   Completion section — how a case of this service is finished
+ *   (WorkflowCompletionEditor), saved with the draft version, shown in the
+ *   preview and validated on approval; and approval itself asks the
+ *   approver to affirm, in the page, that the stages, checklist items and
+ *   completion rules were reviewed (the route requires that attestation).
+ * Every structural operation goes through domain/workflow/templateEditing.ts,
+ * which renumbers rawStage/displayStage/index so the saved version is
+ * always coherent; domain/workflow/templateValidation.ts reports problems
+ * ('draft' level blocks saving, 'approval' level blocks approving) and the
+ * server enforces both. "Preview" renders the draft as staff will see it.
+ * The template's own name/enabled flag and caseTypes are not edited here.
  *
  * `draftStages`/`draftIntake` are local, fully-detached working copies
  * (structuredClone) of the latest version's content — nothing here mutates
@@ -90,17 +162,41 @@ function nextAvailableChecklistItemIndex(intake: IntakeTemplate): number {
  * already relies on.
  */
 export function WorkflowEditor({ templateId }: { templateId: string }) {
+  const { organizationId } = useOrganization();
+  // Structure editing, drafts and approval are for organizations whose
+  // workflow versions go through approval (Gus); everyone else keeps the
+  // editor they had.
+  return isWorkflowApprovalRequired(organizationId) ? <GovernedWorkflowEditor templateId={templateId} /> : <WorkflowEditorClassic templateId={templateId} />;
+}
+
+function GovernedWorkflowEditor({ templateId }: { templateId: string }) {
   const { data: template, isPending } = useWorkflowTemplate(templateId);
   const createVersion = useCreateWorkflowVersion(templateId);
+  // Service-specific workflows (2026-10): draft/approved status and the
+  // "Approve version" action, only for an organization whose versions
+  // require approval. Everyone else sees exactly the previous editor.
+  const { organizationId } = useOrganization();
+  const approvalRequired = isWorkflowApprovalRequired(organizationId);
+  const byServiceType = isWorkflowByServiceType(organizationId);
+  const approveVersion = useApproveWorkflowVersion(templateId);
+  const [pendingApproval, setPendingApproval] = useState<number | null>(null);
   const [draftStages, setDraftStages] = useState<StageTemplate[] | null>(null);
   const [draftIntake, setDraftIntake] = useState<IntakeTemplate | null>(null);
+  const [draftServiceCodes, setDraftServiceCodes] = useState<string[]>([]);
+  const [showPreview, setShowPreview] = useState(false);
+  const [draftCompletionPolicy, setDraftCompletionPolicy] = useState<WorkflowCompletionPolicy | null>(null);
+  const [attestation, setAttestation] = useState<WorkflowApprovalAttestation>(NO_ATTESTATION);
 
   const latestVersion = template?.versions[template.versions.length - 1];
 
   useEffect(() => {
-    if (latestVersion) {
+    if (latestVersion && template) {
       setDraftStages(structuredClone(latestVersion.stages));
       setDraftIntake(structuredClone(latestVersion.intake));
+      setDraftServiceCodes(versionServiceTypeCodes(latestVersion, template.serviceTypeCodes));
+      // A version without a policy is judged by today's rule; the editor
+      // starts from that rule made explicit.
+      setDraftCompletionPolicy(approvalRequired ? effectiveCompletionPolicy(latestVersion) : null);
     }
     // Only re-sync when a save actually lands a new version number — never
     // while the admin has unsaved local edits open.
@@ -117,33 +213,44 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
   const stages = draftStages;
   const intake = draftIntake;
   const version = latestVersion;
+  const savedServiceCodes = versionServiceTypeCodes(version, template.serviceTypeCodes);
 
+  const completionPolicy = approvalRequired ? draftCompletionPolicy : null;
   const isDirty =
     JSON.stringify(stages) !== JSON.stringify(version.stages) ||
-    JSON.stringify(intake) !== JSON.stringify(version.intake);
-  const validationErrors = [...validateStageSequencing(stages), ...validateIntakeFields(intake)];
+    JSON.stringify(intake) !== JSON.stringify(version.intake) ||
+    (byServiceType && !sameCodes(draftServiceCodes, savedServiceCodes)) ||
+    (completionPolicy !== null && JSON.stringify(completionPolicy) !== JSON.stringify(effectiveCompletionPolicy(version)));
+  // 'draft' level only — what must hold for a version to be stored at all.
+  // Completeness ('approval' level) is shown separately and never blocks a
+  // save: an administrator can save work in progress.
+  const validationErrors = [
+    ...problemMessages(validateWorkflowStages(stages, 'draft', completionPolicy ? { completionPolicy } : {})),
+    ...validateIntakeFields(intake),
+  ];
 
-  function updateStage(index: number, patch: Partial<StageTemplate>) {
-    setDraftStages((prev) => prev!.map((stage, i) => (i === index ? { ...stage, ...patch } : stage)));
+  const groups = groupStagesByDisplayStage(stages);
+  const firstStagePinned = isFirstStageLinkedToIntake(stages, intake);
+  const pinnedReason = 'Intake fields fill this stage’s checklist, so it stays first.';
+
+  function editStages(fn: (prev: StageTemplate[]) => StageTemplate[]) {
+    setDraftStages((prev) => fn(prev!));
   }
 
-  function updateChecklistItemLabel(stageIndex: number, itemIndex: number, label: string) {
-    setDraftStages((prev) =>
-      prev!.map((stage, i) =>
-        i !== stageIndex
-          ? stage
-          : {
-              ...stage,
-              checklist: {
-                items: stage.checklist.items.map((item, ii) => (ii === itemIndex ? { ...item, label } : item)),
-              },
-            },
-      ),
-    );
+  function moveItem(groupIndex: number, itemIndex: number, direction: 'up' | 'down') {
+    if (groupIndex === 0) {
+      const order = itemOrderAfterMove(groups[0][0].checklist.items.length, itemIndex, direction);
+      setDraftIntake((prev) => remapIntakeAfterFirstStageChange(prev!, order));
+    }
+    editStages((prev) => moveChecklistItem(prev, groupIndex, itemIndex, direction));
   }
 
-  function move(index: number, direction: 'up' | 'down') {
-    setDraftStages((prev) => moveStage(prev!, index, direction));
+  function removeItem(groupIndex: number, itemIndex: number) {
+    if (groupIndex === 0) {
+      const order = itemOrderAfterRemoval(groups[0][0].checklist.items.length, itemIndex);
+      setDraftIntake((prev) => remapIntakeAfterFirstStageChange(prev!, order));
+    }
+    editStages((prev) => removeChecklistItem(prev, groupIndex, itemIndex));
   }
 
   function updateIntakeField(sectionIndex: number, fieldIndex: number, patch: Partial<IntakeFieldTemplate>) {
@@ -188,12 +295,27 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
   function handleDiscard() {
     setDraftStages(structuredClone(version.stages));
     setDraftIntake(structuredClone(version.intake));
+    setDraftServiceCodes(savedServiceCodes);
+    setDraftCompletionPolicy(approvalRequired ? effectiveCompletionPolicy(version) : null);
   }
 
   function handleSave() {
     if (validationErrors.length > 0) return;
-    createVersion.mutate({ stages, intake });
+    createVersion.mutate({
+      stages,
+      intake,
+      ...(byServiceType ? { serviceTypeCodes: draftServiceCodes } : {}),
+      ...(completionPolicy ? { completionPolicy } : {}),
+    });
   }
+
+  function startApproval(versionNumber: number) {
+    setAttestation(NO_ATTESTATION);
+    setPendingApproval(versionNumber);
+  }
+  const attested = ATTESTATION_ITEMS.every((item) => attestation[item.key]);
+
+  const approveError = approveVersion.error as (Error & { details?: string[] }) | null;
 
   return (
     <div className={styles.editor}>
@@ -202,95 +324,142 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
         <div className={styles.versionBadge}>Version {latestVersion.version}</div>
       </div>
 
+      {byServiceType && <WorkflowTemplateServiceLine serviceTypeCodes={template.serviceTypeCodes ?? []} />}
+      {template.description && <p className={styles.templateDescription}>{template.description}</p>}
+      {approvalRequired && !latestApprovedVersion(template) && (
+        <div className={styles.approvalBanner} role="status" data-testid="workflow-not-approved">
+          Not approved — cases cannot use this workflow until an administrator approves a version.
+        </div>
+      )}
+
       <div className={styles.versionHistory}>
         <div className={styles.sectionLabel}>Version history</div>
         {[...template.versions].reverse().map((v) => (
-          <div key={v.version} className={styles.versionRow}>
-            <span>Version {v.version}</span>
-            <span className={styles.versionDate}>{new Date(v.createdAt).toLocaleDateString()}</span>
-            {v.version === latestVersion.version && <span className={styles.currentBadge}>Current</span>}
+          <div key={v.version} className={styles.versionEntry}>
+            <div className={styles.versionRow}>
+              <span>Version {v.version}</span>
+              <span className={styles.versionDate}>{new Date(v.createdAt).toLocaleDateString()}</span>
+              {(v.createdByName || v.createdBy) && (
+                <span className={styles.versionDate} data-testid={`workflow-version-author-${v.version}`}>
+                  Saved by {v.createdByName ?? v.createdBy}
+                </span>
+              )}
+              {approvalRequired && (
+                <span
+                  className={isApprovedVersion(v) ? styles.approvedBadge : styles.draftBadge}
+                  data-testid={`workflow-version-status-${v.version}`}
+                >
+                  {isApprovedVersion(v) ? 'Approved' : 'Draft — requires approval'}
+                </span>
+              )}
+              {approvalRequired && isApprovedVersion(v) && (v.approvedByName || v.approvedBy) && (
+                <span className={styles.versionDate} data-testid={`workflow-version-approver-${v.version}`}>
+                  Approved by {v.approvedByName ?? v.approvedBy}
+                  {v.approvedAt ? ` on ${formatDate(v.approvedAt)}` : ''}
+                </span>
+              )}
+              {v.version === latestVersion.version && <span className={styles.currentBadge}>Current</span>}
+            </div>
+            {approvalRequired && !isApprovedVersion(v) && pendingApproval !== v.version && (
+              <VersionApproveControl
+                template={template}
+                version={v}
+                disabled={approveVersion.isPending}
+                onApprove={() => startApproval(v.version)}
+              />
+            )}
           </div>
         ))}
+        {approvalRequired && pendingApproval !== null && (
+          <div className={styles.approvalConfirm} role="region" aria-label="Confirm approval" data-testid="workflow-approval-confirm">
+            <p>
+              Approve version {pendingApproval} of {template.name}? New cases for this service will use it immediately.
+              Existing cases keep the workflow they already have.
+            </p>
+            <ul className={styles.attestationList} aria-label="Review before approving" data-testid="workflow-approval-attestation">
+              {ATTESTATION_ITEMS.map((item) => (
+                <li key={item.key} className={styles.completionToggle}>
+                  <Checkbox
+                    checked={attestation[item.key]}
+                    onChange={() => setAttestation((prev) => ({ ...prev, [item.key]: !prev[item.key] }))}
+                    aria-label={item.label}
+                  />
+                  <span>{item.label}</span>
+                </li>
+              ))}
+            </ul>
+            <div className={styles.approvalActions}>
+              <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setPendingApproval(null)} disabled={approveVersion.isPending}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sx-btn sx-btn-primary"
+                disabled={approveVersion.isPending || !attested}
+                title={attested ? undefined : 'Confirm each review above first.'}
+                onClick={() => approveVersion.mutate({ version: pendingApproval, attestation }, { onSuccess: () => setPendingApproval(null) })}
+              >
+                {approveVersion.isPending ? 'Approving…' : 'Confirm approval'}
+              </button>
+            </div>
+            {approveVersion.isError && approveError && (
+              <div className={styles.approvalError} role="alert">
+                {approveError.message}
+                {approveError.details && approveError.details.length > 0 && <ProblemList problems={approveError.details} />}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {byServiceType && (
+        <WorkflowServiceAssignment template={template} selected={draftServiceCodes} onChange={setDraftServiceCodes} />
+      )}
+
+      <div className={styles.previewToggleRow}>
+        <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => setShowPreview((shown) => !shown)} aria-expanded={showPreview}>
+          {showPreview ? 'Hide preview' : 'Preview workflow'}
+        </button>
+      </div>
+      {showPreview && <WorkflowPreview organizationId={organizationId} stages={stages} completionPolicy={completionPolicy} />}
 
       <div className={styles.stages}>
-        {draftStages.map((stage, index) => (
-          <div key={index} className={styles.stageCard}>
-            <div className={styles.stageHeader}>
-              <TextField
-                className={`${styles.stageLabelInput} sx-input`}
-                value={stage.label}
-                onChange={(e) => updateStage(index, { label: e.target.value })}
-                aria-label={`Stage ${index + 1} name`}
-              />
-              <div className={styles.moveButtons}>
-                <button
-                  type="button"
-                  onClick={() => move(index, 'up')}
-                  disabled={index === 0}
-                  aria-label={`Move "${stage.label}" up`}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={() => move(index, 'down')}
-                  disabled={index === draftStages.length - 1}
-                  aria-label={`Move "${stage.label}" down`}
-                >
-                  ↓
-                </button>
-              </div>
-            </div>
-
-            <div className={styles.stageFields}>
-              <label className={styles.slaField}>
-                SLA target (days)
-                <TextField
-                  className="sx-input"
-                  type="number"
-                  min={0}
-                  value={stage.slaTargetDays ?? ''}
-                  onChange={(e) =>
-                    updateStage(index, { slaTargetDays: e.target.value === '' ? null : Number(e.target.value) })
-                  }
-                />
-              </label>
-              <div
-                className={styles.attentionField}
-                onClick={() => updateStage(index, { isAttentionStage: !stage.isAttentionStage })}
-              >
-                <Checkbox
-                  checked={Boolean(stage.isAttentionStage)}
-                  onChange={() => updateStage(index, { isAttentionStage: !stage.isAttentionStage })}
-                  aria-label={`"${stage.label}" is an attention stage`}
-                />
-                <span>Attention stage</span>
-              </div>
-            </div>
-
-            <div className={styles.checklist}>
-              <div className={styles.sectionLabel}>Checklist items</div>
-              {stage.checklist.items.map((item, itemIndex) => {
-                // Read-only: which Case fields complete a derived item.
-                // Not editable here; a change needs a new template version.
-                const completedBy = requiredCaseFieldsSummary(item.requiredCaseFields);
-                return (
-                  <div key={itemIndex}>
-                    <TextField
-                      className={`${styles.checklistItemInput} sx-input`}
-                      value={item.label}
-                      onChange={(e) => updateChecklistItemLabel(index, itemIndex, e.target.value)}
-                      aria-label={`"${stage.label}" checklist item ${itemIndex + 1}`}
-                    />
-                    {completedBy && <div className={styles.completedBy}>Completed by: {completedBy}</div>}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+        {groups.map((group, index) => {
+          const pinsThis = firstStagePinned && index === 0;
+          const pinnedBelow = firstStagePinned && index === 1;
+          return (
+            <WorkflowStageEditor
+              key={index}
+              group={group}
+              position={index}
+              stageCount={groups.length}
+              canMoveUp={index > 0 && !pinnedBelow}
+              canMoveDown={index < groups.length - 1 && !pinsThis}
+              canRemove={groups.length > 1 && !pinsThis}
+              lockedReason={pinsThis ? pinnedReason : null}
+              itemLockReason={(itemIndex) => {
+                if (index !== 0) return null;
+                const linked = intakeFieldsLinkedToFirstStageItem(stages, intake, itemIndex);
+                return linked.length > 0 ? `Filled from the intake field(s) ${linked.join(', ')} — remove or relink those first.` : null;
+              }}
+              handlers={{
+                onUpdateStage: (patch) => editStages((prev) => updateStage(prev, index, patch)),
+                onMoveStage: (direction) => editStages((prev) => moveDisplayStage(prev, index, direction)),
+                onRemoveStage: () => editStages((prev) => removeStage(prev, index)),
+                onAddItem: () => editStages((prev) => addChecklistItem(prev, index)),
+                onUpdateItem: (itemIndex: number, patch: ChecklistItemPatch) => editStages((prev) => updateChecklistItem(prev, index, itemIndex, patch)),
+                onMoveItem: (itemIndex, direction) => moveItem(index, itemIndex, direction),
+                onRemoveItem: (itemIndex) => removeItem(index, itemIndex),
+              }}
+            />
+          );
+        })}
+        <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={() => editStages((prev) => addStage(prev))}>
+          + Add stage
+        </button>
       </div>
+
+      {completionPolicy && <WorkflowCompletionEditor stages={stages} policy={completionPolicy} onChange={setDraftCompletionPolicy} />}
 
       <div className={styles.intakeEditor}>
         <div className={styles.sectionLabel}>Intake form fields</div>
@@ -483,14 +652,24 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
       </div>
 
       {isDirty && validationErrors.length > 0 && (
-        <div className={`${styles.saveError} sx-error`} role="alert">
-          {validationErrors[0]}
+        <div className={`${styles.saveError} sx-error`} role="alert" data-testid="workflow-save-problems">
+          {validationErrors.length === 1 ? validationErrors[0] : <ProblemList problems={validationErrors} />}
         </div>
       )}
       {createVersion.isError && (
         <div className={`${styles.saveError} sx-error`} role="alert">
           {(createVersion.error as Error).message}
         </div>
+      )}
+      {approvalRequired && validationErrors.length === 0 && (
+        <DraftApprovalReadiness
+          template={template}
+          stages={stages}
+          serviceTypeCodes={byServiceType ? draftServiceCodes : undefined}
+          completionPolicy={completionPolicy}
+          derivedFrom={version.derivedFrom ?? null}
+          composition={version.composition ?? null}
+        />
       )}
 
       <div className="sx-save-row">
@@ -503,7 +682,7 @@ export function WorkflowEditor({ templateId }: { templateId: string }) {
           onClick={handleSave}
           disabled={!isDirty || validationErrors.length > 0 || createVersion.isPending}
         >
-          {createVersion.isPending ? 'Saving…' : 'Save as new version'}
+          {createVersion.isPending ? 'Saving…' : approvalRequired ? 'Save as draft version' : 'Save as new version'}
         </button>
       </div>
     </div>
