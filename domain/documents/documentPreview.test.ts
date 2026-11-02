@@ -46,3 +46,12 @@ describe('resolveDocumentPreviewKind', () => {
     expect(resolveDocumentPreviewKind(null, 'scanned-document')).toBe('unsupported');
   });
 });
+
+describe('resolveDocumentPreviewKind — saved emails (2026-11)', () => {
+  it('shows a .eml as an email', async () => {
+    const { resolveDocumentPreviewKind } = await import('./documentPreview');
+    expect(resolveDocumentPreviewKind('message/rfc822', 'authorization.eml')).toBe('email');
+    expect(resolveDocumentPreviewKind('application/octet-stream', 'authorization.eml')).toBe('email');
+    expect(resolveDocumentPreviewKind('application/pdf', 'authorization.eml')).toBe('pdf');
+  });
+});

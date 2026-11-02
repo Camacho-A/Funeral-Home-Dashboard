@@ -26,6 +26,7 @@ vi.mock('@/lib/vercelBlob/vercelBlobStorageProvider', () => ({
 }));
 
 const { POST } = await import('./route');
+const { NOK_AUTHORIZATION_EML } = await import('@/lib/testing/emlFixtures');
 
 const TEST_CASE_ID = 'case-upload-route-test';
 
@@ -138,5 +139,44 @@ describe('POST /api/cases/[caseId]/documents/upload', () => {
     expect(response.status).toBe(403);
 
     mockMembershipFixtures.pop();
+  });
+
+  describe('saved emails (.eml, 2026-11)', () => {
+    const emlUpload = (overrides: { fileName?: string; mimeType?: string; content?: string; documentTypeKey?: string } = {}) => {
+      const formData = new FormData();
+      formData.set('organizationId', DEFAULT_ORGANIZATION_ID);
+      formData.set('file', new File([overrides.content ?? NOK_AUTHORIZATION_EML], overrides.fileName ?? 'Authorization from Maria.eml', { type: overrides.mimeType ?? 'message/rfc822' }));
+      if (overrides.documentTypeKey) formData.set('documentTypeKey', overrides.documentTypeKey);
+      return uploadRequest(formData);
+    };
+
+    it('stores a next of kin email as message/rfc822 with its type, original bytes unchanged', async () => {
+      const response = await emlUpload({ documentTypeKey: 'authorization.next_of_kin' });
+      expect(response.status).toBe(201);
+      const { document } = (await response.json()) as { document: { fileName: string; mimeType: string; documentTypeKey: string } };
+      expect(document).toMatchObject({ fileName: 'Authorization from Maria.eml', mimeType: 'message/rfc822', documentTypeKey: 'authorization.next_of_kin' });
+    });
+
+    it('accepts a .eml the browser sent with no type, stored as message/rfc822', async () => {
+      for (const mimeType of ['', 'application/octet-stream']) {
+        const response = await emlUpload({ mimeType });
+        expect(response.status, mimeType).toBe(201);
+        expect(((await response.json()) as { document: { mimeType: string } }).document.mimeType).toBe('message/rfc822');
+      }
+    });
+
+    it('refuses a .eml that is not an email, and an email uploaded as the permit or Arrangement Forms', async () => {
+      const notEmail = await emlUpload({ content: '%PDF-1.4 fictional' });
+      expect(notEmail.status).toBe(400);
+      expect(((await notEmail.json()) as { error: string }).error).toMatch(/couldn't be read as an email/);
+      for (const documentTypeKey of ['cremation_form.state_permit', 'external_form.arrangement_forms']) {
+        expect((await emlUpload({ documentTypeKey })).status, documentTypeKey).toBe(400);
+      }
+      expect(caseDocumentFixtures).toHaveLength(0);
+    });
+
+    it('a file merely named .eml with another declared type is still refused', async () => {
+      expect((await emlUpload({ mimeType: 'text/html', content: '<script>alert(1)</script>' })).status).toBe(400);
+    });
   });
 });

@@ -527,7 +527,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
                   ref={fileInputRef}
                   type="file"
                   style={{ display: 'none' }}
-                  accept="application/pdf,image/jpeg,image/png,.docx"
+                  accept="application/pdf,image/jpeg,image/png,.docx,.eml,message/rfc822"
                   onChange={handleUploadChange}
                 />
               </>

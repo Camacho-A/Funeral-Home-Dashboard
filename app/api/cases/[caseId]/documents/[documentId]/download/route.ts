@@ -54,6 +54,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
       headers: {
         'Content-Type': contentType,
         'Content-Disposition': `${disposition}; filename="${fileName.replace(/"/g, '')}"`,
+        // Never let a browser guess another type for an uploaded file.
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch (error) {
