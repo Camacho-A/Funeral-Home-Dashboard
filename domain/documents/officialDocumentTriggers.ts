@@ -2,6 +2,7 @@ import type { Case } from '../../types/case';
 import { MANORS_ORGANIZATION_ID } from '../organization/organizationProfiles';
 import { composeDecedentName } from '../cases/decedentName';
 import { caseDateToIso, isoToCaseDate } from '../cases/cremationDates';
+import { crematorySentChecklistKeys } from '../crematory/sentChecklistItems';
 
 /**
  * Which of an organization's own official documents a case change should
@@ -9,13 +10,17 @@ import { caseDateToIso, isoToCaseDate } from '../cases/cremationDates';
  *
  *   Envelope                  needs only the decedent's name — it prints
  *                             "<Name> (Deceased)" and nothing else, so a
- *                             Tag Number is NOT required (2026-10). Created
- *                             automatically when a Tag Number is first
- *                             saved and the case has no Envelope yet;
- *                             regenerated when the name changes. Never
- *                             merely because a case was created, and never
- *                             a second copy because a Tag Number changed
- *                             (see envelopeTrigger + the service).
+ *                             Tag Number is NOT required. Created
+ *                             automatically once the case is SENT TO THE
+ *                             CREMATORY (2026-11: Workflow 3's "Permit sent
+ *                             to crematory" and "Authorization of release
+ *                             sent to crematory" both checked — by SOLIS's
+ *                             send, or by an administrator) and the case has
+ *                             no Envelope yet; regenerated when the name
+ *                             changes. Never merely because a case was
+ *                             created or a Tag Number saved, and never a
+ *                             second copy (see envelopeTrigger + the
+ *                             service).
  *   Certificate of Cremation  needs the name, a valid Tag Number, the date
  *                             of death and the date of cremation — every
  *                             value the official form prints. Generated once
@@ -38,7 +43,8 @@ export function officialDocumentsFor(organizationId: string): readonly OfficialD
 type Relevant = Pick<
   Case,
   'organizationId' | 'decedentName' | 'decedentMiddleName' | 'tagNumber' | 'dateOfDeath' | 'dateOfCremation' | 'isDeleted'
->;
+> &
+  Partial<Pick<Case, 'workflowSnapshot' | 'checklistState'>>;
 
 function present(value: string | null | undefined): boolean {
   return typeof value === 'string' && value.trim() !== '' && value.trim() !== '—';
@@ -74,26 +80,34 @@ export function missingOfficialDocumentFields(kind: OfficialDocumentKind, c: Omi
 
 const fullName = (c: Relevant) => composeDecedentName(c.decedentName ?? '', c.decedentMiddleName ?? null).trim();
 
+/** Whether the case has been sent to the crematory (2026-11): both of
+    Workflow 3's "sent to crematory" items are checked. False for a case
+    whose workflow has no such items (or an organization without Send to
+    Crematory). */
+export function isSentToCrematory(c: Pick<Relevant, 'organizationId' | 'workflowSnapshot' | 'checklistState'>): boolean {
+  const keys = crematorySentChecklistKeys({ organizationId: c.organizationId, workflowSnapshot: c.workflowSnapshot ?? null });
+  return keys.length > 0 && keys.every((key) => c.checklistState?.[key] === true);
+}
+
 /**
  * Why a case change might call for an Envelope, before checking whether the
  * case already has one (the service does, see automaticCaseDocuments.ts):
  *
- *   'name_changed'  the printed name changed on an existing case — keep an
- *                   existing Envelope current (or, as before, create one
- *                   once the case has a Tag Number);
- *   'tag_saved'     a valid Tag Number was newly saved or changed (or the
- *                   case was created with one) — the moment the business
- *                   prepares the Envelope; only creates one when the case
- *                   has none, since the Tag Number is not on it.
+ *   'sent_to_crematory'  the case has just been sent to the crematory —
+ *                        the moment the business prepares the Envelope;
+ *                        creates one only when the case has none.
+ *   'name_changed'       the printed name changed — keep an existing
+ *                        Envelope current (or create the first one on a
+ *                        case already sent to the crematory).
  *
  * Null when nothing affecting the Envelope happened, the name is missing,
- * or the case is archived.
+ * or the case is archived. A Tag Number is never needed (2026-11).
  */
-export function envelopeTrigger(before: Relevant | null, after: Relevant): 'name_changed' | 'tag_saved' | null {
+export function envelopeTrigger(before: Relevant | null, after: Relevant): 'name_changed' | 'sent_to_crematory' | null {
   if (after.isDeleted || !present(after.decedentName)) return null;
   if (before !== null && fullName(before) !== fullName(after)) return 'name_changed';
-  const tagSaved = hasValidTagNumber(after) && (before === null || normalizedTag(before) !== normalizedTag(after));
-  return tagSaved ? 'tag_saved' : null;
+  const sentNow = isSentToCrematory(after) && (before === null || !isSentToCrematory(before));
+  return sentNow ? 'sent_to_crematory' : null;
 }
 
 export function officialDocumentsToRegenerate(before: Relevant | null, after: Relevant): OfficialDocumentKind[] {

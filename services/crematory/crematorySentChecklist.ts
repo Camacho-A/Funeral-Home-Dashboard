@@ -92,6 +92,9 @@ export async function completeCrematorySentChecklist(
   } catch (error) {
     console.error('Failed to sync the expected cremains pickup after Send to Crematory:', error instanceof Error ? error.message : error);
   }
+  // The case is now sent: its Envelope is created (2026-11), if it has none.
+  const { createEnvelopeAfterSentToCrematory } = await import('../automaticCaseDocuments');
+  await createEnvelopeAfterSentToCrematory(ctx, caseId, mode);
   return 'completed';
 }
 

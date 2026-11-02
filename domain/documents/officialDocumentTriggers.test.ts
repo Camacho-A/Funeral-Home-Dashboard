@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { MANORS_ORGANIZATION_ID } from '../organization/organizationProfiles';
-import { envelopeTrigger, missingOfficialDocumentFields, officialDocumentsToRegenerate } from './officialDocumentTriggers';
+import { envelopeTrigger, isSentToCrematory, missingOfficialDocumentFields, officialDocumentsToRegenerate } from './officialDocumentTriggers';
+import { crematorySentChecklistKeys } from '../crematory/sentChecklistItems';
+import { caseFixtures } from '../../services/__mocks__/fixtures';
+import type { Case } from '../../types/case';
+
+/** A real Manors workflow snapshot, so Workflow 3's two "sent to crematory" items exist. */
+const manorsSnapshot = caseFixtures.find((c) => c.organizationId === MANORS_ORGANIZATION_ID && c.workflowSnapshot)!.workflowSnapshot;
 
 const base = {
   organizationId: MANORS_ORGANIZATION_ID,
@@ -10,30 +16,43 @@ const base = {
   dateOfDeath: '10/09/2026',
   dateOfCremation: null as string | null,
   isDeleted: false,
+  workflowSnapshot: manorsSnapshot,
+  checklistState: {} as Case['checklistState'],
 };
+const SENT_KEYS = crematorySentChecklistKeys(base);
+/** Both "sent to crematory" items checked. */
+const sent = <T extends typeof base>(c: T): T => ({ ...c, checklistState: { ...c.checklistState, ...Object.fromEntries(SENT_KEYS.map((k) => [k, true])) } });
 
 describe('officialDocumentsToRegenerate', () => {
   it('creating a case does not produce an envelope by itself', () => {
     expect(officialDocumentsToRegenerate(null, base)).toEqual([]);
   });
 
-  it('saving a valid Tag Number produces the envelope', () => {
-    expect(officialDocumentsToRegenerate(base, { ...base, tagNumber: 'MC-1042' })).toEqual(['envelope']);
+  it('Manors cases have the two "sent to crematory" items the Envelope follows', () => {
+    expect(SENT_KEYS).toHaveLength(2);
+    expect(isSentToCrematory(base)).toBe(false);
+    expect(isSentToCrematory({ ...base, checklistState: { [SENT_KEYS[0]]: true } })).toBe(false);
+    expect(isSentToCrematory(sent(base))).toBe(true);
   });
 
-  it('a case created with a Tag Number already saved gets its envelope', () => {
-    expect(officialDocumentsToRegenerate(null, { ...base, tagNumber: 'MC-1042' })).toEqual(['envelope']);
+  it('sending the case to the crematory produces the envelope — no Tag Number needed (2026-11)', () => {
+    expect(base.tagNumber).toBeNull();
+    expect(officialDocumentsToRegenerate(base, sent(base))).toEqual(['envelope']);
+    expect(envelopeTrigger(base, sent(base))).toBe('sent_to_crematory');
+    // Only one of the two items checked is not "sent" yet.
+    expect(officialDocumentsToRegenerate(base, { ...base, checklistState: { [SENT_KEYS[0]]: true } })).toEqual([]);
   });
 
-  it('a blank or placeholder Tag Number is not valid', () => {
-    expect(officialDocumentsToRegenerate(base, { ...base, tagNumber: '   ' })).toEqual([]);
-    expect(officialDocumentsToRegenerate(base, { ...base, tagNumber: '—' })).toEqual([]);
-  });
-
-  it('changing the Tag Number regenerates the envelope; re-saving the same one (any case or spacing) does not', () => {
+  it('saving or changing a Tag Number no longer produces the envelope', () => {
+    expect(officialDocumentsToRegenerate(base, { ...base, tagNumber: 'MC-1042' })).toEqual([]);
     const tagged = { ...base, tagNumber: 'MC-1042' };
-    expect(officialDocumentsToRegenerate(tagged, { ...tagged, tagNumber: 'MC-2000' })).toEqual(['envelope']);
-    expect(officialDocumentsToRegenerate(tagged, { ...tagged, tagNumber: ' mc-1042 ' })).toEqual([]);
+    expect(officialDocumentsToRegenerate(tagged, { ...tagged, tagNumber: 'MC-2000' })).toEqual([]);
+    expect(officialDocumentsToRegenerate(null, tagged)).toEqual([]);
+  });
+
+  it('a save on a case already sent is no new trigger; a case created already sent gets its envelope', () => {
+    expect(envelopeTrigger(sent(base), { ...sent(base), dateOfDeath: '10/10/2026' })).toBeNull();
+    expect(envelopeTrigger(null, sent(base))).toBe('sent_to_crematory');
   });
 
   it('a name change is an Envelope trigger with or without a Tag Number (the service decides whether one is due)', () => {
@@ -43,11 +62,11 @@ describe('officialDocumentsToRegenerate', () => {
     expect(officialDocumentsToRegenerate(tagged, { ...tagged, decedentMiddleName: 'ANTONIO' })).toEqual(['envelope']);
   });
 
-  it('a case created without a Tag Number gets no Envelope automatically; an unrelated save is no trigger', () => {
+  it('a case not sent to the crematory gets no Envelope automatically; an unrelated save is no trigger', () => {
     expect(envelopeTrigger(null, base)).toBeNull();
     expect(envelopeTrigger(base, { ...base, dateOfDeath: '10/10/2026' })).toBeNull();
-    expect(envelopeTrigger(null, { ...base, tagNumber: 'MC-1' })).toBe('tag_saved');
-    expect(envelopeTrigger(base, { ...base, decedentName: ' ' })).toBeNull();
+    expect(envelopeTrigger(null, { ...base, tagNumber: 'MC-1' })).toBeNull();
+    expect(envelopeTrigger(base, sent({ ...base, decedentName: ' ' }))).toBeNull();
   });
 
   it('recording the date of cremation produces the certificate, and not another envelope', () => {
@@ -81,9 +100,9 @@ describe('officialDocumentsToRegenerate', () => {
     expect(officialDocumentsToRegenerate(base, { ...base, dateOfCremation: '10/14/2026' })).toEqual([]);
     const tagged = { ...base, tagNumber: 'MC-1042', dateOfDeath: '' };
     expect(officialDocumentsToRegenerate(tagged, { ...tagged, dateOfCremation: '10/14/2026' })).toEqual([]);
-    // Saving the missing Tag Number afterwards produces both.
+    // Saving the missing Tag Number afterwards produces the certificate (the Envelope follows the send).
     const cremated = { ...base, dateOfCremation: '10/14/2026' };
-    expect(officialDocumentsToRegenerate(cremated, { ...cremated, tagNumber: 'MC-1042' })).toEqual(['envelope', 'certificate_of_cremation']);
+    expect(officialDocumentsToRegenerate(cremated, { ...cremated, tagNumber: 'MC-1042' })).toEqual(['certificate_of_cremation']);
   });
 });
 
