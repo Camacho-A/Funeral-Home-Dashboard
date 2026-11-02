@@ -64,17 +64,35 @@ Send to Crematory can be offered with `sendingEnabled: false`: staff can
 prepare and review packages, and the server refuses to email anyone
 (`services/crematory/crematorySendService.ts`).
 
-## Not yet on the shared codebase (from the Gus repository)
+## Ported from the Gus repository (2026-11, branch feat/gus-parity-port)
 
-These Gus-only features still live in the separate Gus repository and need
-porting, in this order (shared fixes first):
+- Non-destructive order versioning, journaled order operations and their
+  administrator repair (docs/ORDER_VERSIONING.md) — every organization.
+- Unpriced service-type catalog items ("Price not set"; an order with one is
+  refused) and Settings › Services & Pricing (profile
+  `serviceCatalogPriceEditing`; off for Manors).
+- Archive/restore refreshes after a revision conflict (the rest of Gus's
+  case-revision contract was already here).
+- Hidden modules enforced on the server (`enforceHiddenModulesServerSide`).
+- Workflow drafts and approval (`workflowApprovalRequired`), the structural
+  workflow editor (only where approval is required; Manors keeps its
+  editor), completion policies and manual completion, changing a case's
+  service, per-template stage lists and reports.
+- Organization settings instead of code: certifier fields
+  (`certifierRequiredCaseFields`), stage names (`cremationStageLabels`), the
+  crematory authorization document source
+  (`sendToCrematory.authorizationDocumentSource`).
 
-1. Order versioning and the order operation journal (also a Manors data-integrity fix).
-2. Full case-revision enforcement differences.
-3. Hidden modules enforced on the server.
-4. Unpriced service-type catalog items ("Price not set").
-5. Workflow version drafts and approval.
-6. Completion policies and manual completion.
-7. Changing a case's service (workflow remap, coordinated order change).
-8. The administrator price catalog (needs Wix schema decisions first).
-9. The shared demo store for hosted demos.
+## Not yet ported
+
+1. The administrator price catalog (Gus f3a09c6, 3042bf0): categories,
+   catalog items, FTC classification, deactivation, inventory links,
+   custom-item permission, order-line price snapshots. Needs new Wix
+   collections/fields (Gus runs it on demo data only; live writes answer
+   501) and changes Manors permissions and order re-pricing, so it waits for
+   a schema and business decision.
+2. Gus's Redis demo store: not needed — the shared sandbox keeps its own
+   persistence (browser store + server mock).
+3. Gus onboarding plan / deployment readiness tooling and the separate staff
+   login gate (lib/auth/deploymentLoginAccess.ts) — the login gate changes
+   who can sign in to Manors and needs review first.
