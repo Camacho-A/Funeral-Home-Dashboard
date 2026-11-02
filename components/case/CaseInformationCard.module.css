@@ -109,7 +109,14 @@
   border-radius: 6px;
   padding: 2px 6px;
   cursor: pointer;
+  /* Long unbroken values (an email address) wrap inside the column in
+     every browser: Safari keeps a <button>'s text on one line unless
+     white-space is set, and word-break covers browsers whose button
+     min-content ignores overflow-wrap (2026-11). */
+  white-space: normal;
   overflow-wrap: anywhere;
+  word-break: break-word;
+  min-width: 0;
   transition: background-color var(--sx-ease, 0.12s ease), box-shadow var(--sx-ease, 0.12s ease);
 }
 
@@ -341,6 +348,9 @@ button.missingValue:focus-visible {
    reflow when a case is archived — only the affordance goes away. */
 .readOnlyValue {
   display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   padding: 4px 0;
   font-size: 14px;
   color: var(--sx-text, #16202c);
