@@ -74,6 +74,12 @@ describe('evaluateCrematoryReadiness', () => {
     expect(failing({ ...ready, readyDate: { suggested: '11/06/2026', confirmed: { date: '11/09/2026', suggestedAtConfirmation: '11/06/2026' } } })).toEqual([]);
   });
 
+  it('after sending, the confirmed date stands — the Expected Pickup the send creates never asks for a review', () => {
+    const sentAt = '2026-11-03T17:47:00.000Z';
+    expect(failing({ ...ready, sentAt, readyDate: { suggested: '11/06/2026', confirmed: { date: '11/10/2026', suggestedAtConfirmation: null } } }).map(([k]) => k)).toEqual(['not_sent']);
+    expect(failing({ ...ready, sentAt, readyDate: { suggested: '11/12/2026', confirmed: { date: '11/10/2026', suggestedAtConfirmation: '11/10/2026' } } }).map(([k]) => k)).toEqual(['not_sent']);
+  });
+
   it('a stale or missing package blocks sending but not building; so does missing permission', () => {
     expect(evaluateCrematoryReadiness({ ...ready, package: { fileName: 'x.pdf', current: false } })).toMatchObject({ readyToBuild: true, readyToSend: false });
     expect(failing({ ...ready, package: null })).toEqual([['package', 'Build the Crematory Package.']]);
