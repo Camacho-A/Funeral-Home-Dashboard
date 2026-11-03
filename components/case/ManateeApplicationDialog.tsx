@@ -17,18 +17,21 @@ import {
   type ManateeValueSource,
 } from '@/domain/documents/manateeDeathCertificateApplication';
 import { formatDateInput } from '@/utils/inputMask';
+import { printFile } from '@/utils/print';
 import styles from './ManateeApplicationDialog.module.css';
 
 /**
  * Manatee County — Death Certificate Application (2026-10). Staff review
  * what SOLIS found for the case, fill in or correct anything, choose the
- * certificates, preview the filled form, and save it to the case's
- * documents. Corrections here go into this document only — never back
+ * certificates, preview the filled form, then print it and/or save it to
+ * the case's documents. Corrections here go into this document only — never back
  * into the case.
  *
  * The SSN on file is never sent to this window: it shows only its last
  * four digits. Typing a number here uses that number instead.
  */
+
+const DOCUMENT_NAME = 'Manatee County Death Certificate Application';
 
 const SOURCE_LABEL: Record<Exclude<ManateeValueSource, null>, string> = {
   arrangement_form: 'From the Arrangement Form',
@@ -47,6 +50,7 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
   const [typedSsn, setTypedSsn] = useState('');
   const [step, setStep] = useState<'review' | 'preview' | 'saved'>('review');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewPdf, setPreviewPdf] = useState<Blob | null>(null);
   const [busy, setBusy] = useState<'preview' | 'save' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,12 +91,18 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
       const blob = await previewManateeApplication(organizationId, caseId, input);
       if (previewUrl) URL.revokeObjectURL(previewUrl);
       setPreviewUrl(URL.createObjectURL(blob));
+      setPreviewPdf(blob);
       setStep('preview');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The preview could not be made.');
     } finally {
       setBusy(null);
     }
+  }
+
+  /** Prints the previewed form — the same values Save to Documents stores. Printing alone saves nothing. */
+  function print() {
+    if (previewPdf) printFile(previewPdf, DOCUMENT_NAME, '', '');
   }
 
   async function save() {
@@ -183,8 +193,8 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
 
         {step === 'saved' && (
           <div className="sx-form-banner sx-form-banner-info" role="status">
-            Saved to this case&rsquo;s documents as &ldquo;Manatee County Death Certificate Application&rdquo;. Download or print it from the
-            Documents list. It has not been sent anywhere. The saved form is locked — to correct it, create it again here; the earlier
+            Saved to this case&rsquo;s documents as &ldquo;Manatee County Death Certificate Application&rdquo;. Print it here, or later from
+            the Documents list. It has not been sent anywhere. The saved form is locked — to correct it, create it again here; the earlier
             version stays in History.
           </div>
         )}
@@ -383,10 +393,18 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
             {busy === 'preview' ? 'Preparing preview…' : 'Preview'}
           </button>
         )}
+        {step === 'saved' && previewPdf && (
+          <button type="button" className="sx-btn sx-btn-primary" onClick={print}>
+            Print
+          </button>
+        )}
         {step === 'preview' && (
           <>
             <button type="button" className="sx-btn sx-btn-ghost" disabled={busy !== null} onClick={() => setStep('review')}>
               Back to edit
+            </button>
+            <button type="button" className="sx-btn sx-btn-secondary" disabled={busy !== null || !previewPdf} onClick={print}>
+              Print
             </button>
             <button type="button" className="sx-btn sx-btn-primary" disabled={busy !== null} onClick={save}>
               {busy === 'save' ? 'Saving…' : 'Save to Documents'}
