@@ -39,7 +39,15 @@ export const MAX_APPLICATIONS_PER_BUNDLE = 20;
  */
 export const OUTLOOK_ATTACHMENT_CEILING_BYTES = 25 * 1024 * 1024;
 
-export const FAX_EMAIL_BODY = 'Please process the attached document.';
+/**
+ * Empty on purpose (2026-11). Email-to-fax services commonly turn any email
+ * body text into an extra fax page (a cover page); a controlled Outlook test
+ * through NuSo turned a one-page PDF with a message and signature into a
+ * three-page fax. With no body, the fax should carry only the attachment's
+ * pages — to be confirmed by a controlled test before sending is turned on.
+ * Sent as plain text, so no HTML wrapper or styling travels either.
+ */
+export const FAX_EMAIL_BODY = '';
 
 export class FaxSettingsError extends Error {
   constructor(message: string) {

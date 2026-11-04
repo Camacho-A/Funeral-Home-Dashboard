@@ -787,6 +787,8 @@ export type CaseFaxHistoryEntry = {
   stateLabel: string;
   position: number;
   applicationCount: number;
+  /** Pages in the bundle PDF — the number of fax pages NuSo should report. */
+  pageCount: number;
   documentVersion: number | null;
   submittedAt: string | null;
   deliveredAt: string | null;
@@ -810,6 +812,7 @@ export async function listCaseFaxHistory(organizationId: string, caseId: string,
       stateLabel: FAX_BUNDLE_STATE_LABEL[state],
       position: item.position,
       applicationCount: bundle.applicationCount,
+      pageCount: bundle.pdfPageCount,
       documentVersion: item.documentVersion,
       submittedAt: bundle.submittedAt,
       deliveredAt: bundle.deliveredAt,

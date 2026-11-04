@@ -29,8 +29,11 @@ Wix collections do not exist yet and `sendingEnabled` is `false`.
 
 - **Email:** To `9415545490@fax.nuso.io`; Subject `Manors Cremation - DC
   Application Bundle DC-XXXXXX` (random, non-sensitive reference for
-  matching NuSo confirmations); Body `Please process the attached document.`;
-  one attachment `DC-XXXXXX.pdf`. No decedent information in the email.
+  matching NuSo confirmations); **body empty** (plain text, no message, no
+  signature); one attachment `DC-XXXXXX.pdf`. No decedent information in the
+  email. One PDF page = one fax page is the goal: a controlled Outlook test
+  (message + signature + a one-page PDF) produced a three-page fax, so any
+  body text is treated as becoming extra pages.
 - **Numbering:** a saved application is flattened; each field is its own
   drawing at the field's rectangle. The two Request drawings are identified
   by exact position and size (a blank box is an empty, zero-size drawing). In
@@ -162,39 +165,51 @@ shared rows cannot be changed from there.
 
 ## Vercel preview security (before ANY push — needs approval)
 
-Pushing any branch builds a Preview in all three projects. The Manors
-project's Previews carry the Production values of every live credential
-except JotForm, SSN and templates — Wix API key and site, Resend, Twilio,
-Clover sandbox, Microsoft/Google secrets, R2, the database URL, the session
-secret, the MFA/calendar encryption keys, `DATA_ADAPTER=wix` — and both
-Blob stores (case documents, branding) are connected to Preview too. The
-code has no preview check. So a Preview can read and write live Wix cases
-and documents, decrypt the stored Outlook token and send email, send SMS,
-and accept a Production session token. Mitigation today: Previews require
-Vercel team sign-in. Crons run only on Production deployments.
+Verified read-only on 2026-11-04: all three projects expose system
+environment variables (`autoExposeSystemEnvs: true`), have no custom
+environments and no Ignored Build Step; the Manors project has exactly 3
+Preview deployments (2 × `feat/price-catalog`, 1 × `fix/nok-email-wrap`),
+all READY; both Blob stores (`manors-case-documents`, `manors-branding`)
+are connected to the Manors project for Preview AND Production.
 
-Recommended (each a Vercel change needing approval), in order:
-1. Manors project → Ignored Build Step
-   `[ "$VERCEL_ENV" = "production" ] && exit 1 || exit 0` — no Previews
-   are built in the Manors project at all. Production unaffected; existing
-   Preview deployments keep running until deleted.
-2. Remove the Preview target from every live credential in the Manors
-   project; set Preview `DATA_ADAPTER=mock`, `AUTH_ADAPTER=mock`; delete
-   existing Manors Preview deployments. Production unaffected.
-3. Previews happen only in `manors-solis-sandbox` (mock data, no live
-   credentials, team sign-in). No new credentials are needed for that; a
-   separate non-production Wix site/mailbox would be needed only if a
-   Preview must exercise real integrations.
-4. Safe push: after 1–2, `git push origin feat/manatee-fax-bundle`, then
-   confirm in Vercel that the Manors project shows the build as skipped
-   ("Ignored Build Step") and only the sandbox built.
-5. Rollback: clear the Ignored Build Step / re-add Preview targets
-   (restores today's behaviour exactly).
+Risk: every Preview of the Manors project gets Production's credentials
+(Wix, Resend, Twilio, Clover sandbox, Microsoft/Google secrets, R2,
+database, session secret, `CALENDAR_TOKEN_ENCRYPTION_KEY` — which decrypts
+the stored Outlook mailbox token) and both Blob stores, and the code has no
+preview check. Mitigation today: Previews need Vercel team sign-in.
+Environment variables are fixed into a deployment when it is created, so
+changing them does NOT take access away from an existing Preview — only
+deleting it does.
 
-Alternative without touching Vercel: add the same command as
-`"ignoreCommand"` to this branch's `vercel.json`. It takes effect for every
-deployment built from a branch containing it — so after a merge, Previews
-stop in all three projects. Not done; needs approval.
+Ignored Build Step command (Manors project only), tested in sh and bash:
+
+    if [ "$VERCEL_ENV" = "production" ] || { [ -z "$VERCEL_ENV" ] && [ "$VERCEL_GIT_COMMIT_REF" = "master" ]; }; then exit 1; else exit 0; fi
+
+Exit 1 builds, exit 0 cancels (Vercel). Production (master) → build;
+any Preview → cancelled; if `VERCEL_ENV` were ever missing, master still
+builds, so Production can never be blocked by it. Instant Rollback /
+promote do not build, so they are unaffected.
+
+Procedure (each step needs approval; only the Manors project is touched —
+`gus-solis-sandbox`, `manors-solis-sandbox` and the legacy Gus project are
+not):
+1. Set the Ignored Build Step above. Production keeps serving; the next
+   master merge still builds.
+2. Delete the 3 existing Manors Preview deployments (the only way to take
+   their access away). Production deployments are not touched.
+3. Remove the Preview target from every live credential (keep Production),
+   set Preview `DATA_ADAPTER=mock` and `AUTH_ADAPTER=mock`, and disconnect
+   Preview from both Blob stores. Production values and the running
+   Production deployment are unchanged (a deployment keeps the values it
+   was built with).
+4. Optional hardening: rotate the live secrets if anyone outside the team
+   ever had Preview access (signs everyone out if the session secret
+   rotates).
+5. Safe push: `git push origin feat/manatee-fax-bundle`; confirm the
+   Manors project shows that build CANCELED and only the two mock
+   sandboxes built.
+6. Rollback: clear the Ignored Build Step; re-add Preview targets / Blob
+   connections. Restores today's behaviour exactly.
 
 ## Live setup — each step needs separate approval
 
@@ -209,11 +224,16 @@ stop in all three projects. Not done; needs approval.
    - the connected mailbox (Settings → Crematory) is an authorized outbound
      sender in NuSo — its missing authorization caused earlier failed tests;
    - NuSo account: email-to-fax enabled; Secure IPFax / TLS requirements;
-     attachment size limit (set `maxAttachmentBytes`); whether the subject
-     or body becomes a cover page;
-   - one controlled test: a fictional application, to a fax number we own
-     (temporarily the destination, via a reviewed code change), delivered
-     and confirmed.
+     attachment size limit (set `maxAttachmentBytes`); the account's cover
+     page setting (off), and that an empty body and the subject add no
+     page; that an empty body is accepted;
+   - Exchange admin: no mail-flow rule or signature service appends a
+     disclaimer/signature to the mailbox's outgoing mail (it would become
+     a fax page);
+   - one controlled test: a fictional one-page application to a fax number
+     we own (temporarily the destination, via a reviewed code change) —
+     NuSo must report exactly 1 page; then a two-application bundle — exactly
+     2 pages.
 5. **Turn on** `sendingEnabled: true` for Manors (reviewed deploy).
 
 Rollback: set `sendingEnabled: false` (deploy). The collections affect no

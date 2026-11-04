@@ -8,7 +8,7 @@ vi.mock('@/lib/faxBundlesClient', async (importOriginal) => ({ ...(await importO
 const { CaseFaxStatus } = await import('./CaseFaxStatus');
 
 const entry = (overrides: Partial<CaseFaxHistoryEntry> = {}): CaseFaxHistoryEntry => ({
-  bundleId: 'fxb-1', reference: 'DC-7Q4K9M', state: 'submitted', stateLabel: 'Submitted to NuSo', position: 2, applicationCount: 3, documentVersion: 1,
+  bundleId: 'fxb-1', reference: 'DC-7Q4K9M', state: 'submitted', stateLabel: 'Submitted to NuSo', position: 2, applicationCount: 3, pageCount: 3, documentVersion: 1,
   submittedAt: '2026-11-04T15:00:00.000Z', deliveredAt: null, failureMessage: null, ...overrides,
 });
 const renderStatus = (canRecordOutcome: boolean) =>
@@ -42,6 +42,7 @@ describe('CaseFaxStatus', () => {
     client.recordFaxOutcome.mockResolvedValue({ bundle: { items: [{ caseId: 'case-1' }] }, checklistFailed: [] });
     renderStatus(true);
     fireEvent.click(await screen.findByRole('button', { name: 'Record delivery result' }));
+    expect(screen.getByText(/NuSo should report exactly 3 pages/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText('NuSo reference (optional)'), { target: { value: 'NS-12345' } });
     fireEvent.click(screen.getByRole('button', { name: 'Delivered' }));
     await waitFor(() => expect(client.recordFaxOutcome).toHaveBeenCalledWith('managed-cremations', 'fxb-1', expect.objectContaining({ decision: 'delivered', nusoReference: 'NS-12345', deliveredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/) })));

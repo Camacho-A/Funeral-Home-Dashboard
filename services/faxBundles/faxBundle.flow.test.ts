@@ -209,7 +209,7 @@ describe('one bundle = one PDF = one email = one fax, for 1 to 5+ applications',
     expect(graph.sends()).toHaveLength(1);
     expect(graph.emails()[0].body).toMatchObject({
       subject: preview.subject,
-      body: { contentType: 'Text', content: 'Please process the attached document.' },
+      body: { contentType: 'Text', content: '' },
       toRecipients: [{ emailAddress: { address: GATEWAY } }],
       ccRecipients: [],
     });
@@ -220,6 +220,11 @@ describe('one bundle = one PDF = one email = one fax, for 1 to 5+ applications',
     expect(attachment).toMatchObject({ name: `${preview.reference}.pdf`, contentType: 'application/pdf' });
     // The transmitted bytes are exactly the previewed, stored PDF.
     expect(sha256(Buffer.from(attachment.contentBytes, 'base64'))).toBe(sha256(stored));
+    // Attachment only: nothing in the body (no message, no signature), no CC/BCC,
+    // and the PDF has exactly one page per application page — nothing else to fax.
+    expect(Object.keys(graph.emails()[0].body as object).sort()).toEqual(['body', 'ccRecipients', 'subject', 'toRecipients']);
+    expect((await PDFDocument.load(Buffer.from(attachment.contentBytes, 'base64'))).getPageCount()).toBe(count);
+    expect(result.bundle.pageCount).toBe(count);
     expect(sha256(stored)).toBe(bundleRow(preview.id).pdfChecksumSha256);
   });
 
@@ -262,6 +267,12 @@ describe('one bundle = one PDF = one email = one fax, for 1 to 5+ applications',
     const page3 = (await textItems(stored, 3)).map((i) => i.str).join(' ');
     expect(page3).toContain('Request 2 of 2 · page 2 of 2');
     expect(page3).toContain('Bravo continuation sheet');
+    // Sent: one PDF page per application page — 3 pages, nothing added.
+    const graph = fakeGraph();
+    await service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock');
+    const [attachment] = graph.attachments();
+    expect((await PDFDocument.load(Buffer.from(attachment.contentBytes, 'base64'))).getPageCount()).toBe(3);
+    expect(graph.emails()[0].body).toMatchObject({ body: { contentType: 'Text', content: '' } });
   });
 });
 

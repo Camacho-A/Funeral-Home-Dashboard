@@ -119,7 +119,7 @@ function RecordOutcomeDialog({ organizationId, entry, onClose }: { organizationI
       </div>
       <div className={`sx-modal-body ${styles.form}`}>
         <p className={styles.detail}>
-          Record what NuSo reported for this bundle ({entry.applicationCount === 1 ? '1 application' : `${entry.applicationCount} applications`}). It applies to every case in it.
+          Record what NuSo reported for this bundle ({entry.applicationCount === 1 ? '1 application' : `${entry.applicationCount} applications`}). It applies to every case in it. NuSo should report exactly {entry.pageCount === 1 ? '1 page' : `${entry.pageCount} pages`}; if it reports more, a cover or text page was added — say so in the note.
         </p>
         {error && (
           <div className="sx-form-banner sx-form-banner-error" role="alert">

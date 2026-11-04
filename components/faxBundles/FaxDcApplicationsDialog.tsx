@@ -224,6 +224,7 @@ export function FaxDcApplicationsDialog({
                 <dt>Bundle</dt>
                 <dd>
                   {bundle.reference} · {plural(bundle.applicationCount, 'application')} · {plural(bundle.pageCount, 'page')} · {formatSize(bundle.sizeBytes)}
+                  <span className={styles.hint}>Sent with no message, so the fax should be exactly {plural(bundle.pageCount, 'page')}.</span>
                 </dd>
               </div>
               <div>

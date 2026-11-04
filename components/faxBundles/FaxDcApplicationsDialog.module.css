@@ -208,3 +208,8 @@
 .nowrap {
   white-space: nowrap;
 }
+
+.hint {
+  display: block;
+  color: var(--sx-text-2);
+}
