@@ -10,7 +10,8 @@ import { inspectOrderOperation } from '@/services/orderOperationRepair';
  * of case order changes that did not finish (services/orderOperationJournal.ts):
  * each with what its journal planned, how the order rows and the ledger
  * actually stand now, and which repair is safe. Writes nothing, ever.
- * `?all=1` lists every journaled operation, not just interrupted ones.
+ * `?all=1` lists every journaled operation, not just interrupted ones;
+ * `?caseId=` narrows the report to one case (the case page's recovery panel).
  *
  * Administrators only (admin-tier plus caseOrder.update, which a repair
  * needs). Scoped to the caller's own organization — the organizationId is
@@ -37,7 +38,8 @@ export async function GET(request: Request) {
   try {
     const now = new Date();
     const all = url.searchParams.get('all') === '1';
-    const operations = (await listOrderOperations(organizationId, adapter)).filter((op) => all || isOrderOperationInterrupted(op, now));
+    const caseId = url.searchParams.get('caseId');
+    const operations = (await listOrderOperations(organizationId, adapter)).filter((op) => (all || isOrderOperationInterrupted(op, now)) && (!caseId || op.caseId === caseId));
     const report = [];
     for (const op of operations) {
       const interrupted = isOrderOperationInterrupted(op, now);

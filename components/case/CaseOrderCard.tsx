@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/TextField';
 import { SelectField } from '@/components/ui/SelectField';
 import { EditServicesModal } from '@/components/case/EditServicesModal';
+import { OrderRecoveryPanel } from '@/components/case/OrderRecoveryPanel';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseOrder } from '@/hooks/useCaseOrder';
@@ -72,6 +73,8 @@ export function CaseOrderCard({
   const canEditCaseOrder = permissions.includes('caseOrder.update');
   const canReadPayment = permissions.includes('payment.read');
   const canRecordPayment = permissions.includes('payment.collect');
+  // Order recovery (2026-11): the same pair the repair API requires.
+  const canRecoverOrder = permissions.includes('organization.manage') && canEditCaseOrder;
 
   const { data, isPending } = useCaseOrder(caseId, canReadCaseOrder);
   const { data: payments = [] } = useCasePayments(caseId, canReadPayment);
@@ -155,6 +158,9 @@ export function CaseOrderCard({
             ? "A change to this case's services was interrupted before it finished. The order is locked — no edits or payments — until an administrator repairs it."
             : "A change to this case's services is being saved. Editing and payments are paused for a moment — reload shortly."}
         </div>
+      )}
+      {interruption?.stale && (
+        <OrderRecoveryPanel organizationId={organizationId} caseId={caseId} caseName={caseName} caseNumber={caseNumber} canRecover={canRecoverOrder} />
       )}
       {isPending ? (
         <p className={styles.loading}>Loading…</p>

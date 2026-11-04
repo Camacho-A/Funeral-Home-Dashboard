@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CaseOrderCard } from './CaseOrderCard';
 import { OrganizationProvider } from '@/hooks/useOrganization';
@@ -140,6 +140,29 @@ describe('CaseOrderCard — an interrupted order change (Phase 5A.2)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/interrupted before it finished.*until an administrator repairs it/);
     expect(screen.getByRole('button', { name: 'Record Payment' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /Additional|Edit Services|Set Up Services/ })).not.toBeInTheDocument();
+  });
+
+  it('order recovery (2026-11): staff see that an administrator must recover it; an administrator gets the recovery panel', async () => {
+    renderCard({ order: { order: { ...ACTIVE_ORDER, status: 'superseded', operationInterrupted: true }, lineItems: LINE_ITEMS, auditEntries: [], interruption: INTERRUPTION } });
+    expect(await screen.findByText(/An administrator must recover this order/)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Order recovery' })).not.toBeInTheDocument();
+    cleanup();
+
+    renderCard({
+      permissions: ['caseOrder.read', 'caseOrder.update', 'payment.read', 'payment.collect', 'organization.manage'],
+      order: { order: { ...ACTIVE_ORDER, status: 'superseded', operationInterrupted: true }, lineItems: LINE_ITEMS, auditEntries: [], interruption: INTERRUPTION },
+    });
+    expect(await screen.findByRole('region', { name: 'Order recovery' })).toHaveTextContent('Robert Ellison · Case #B2026-001');
+  });
+
+  it('no recovery panel while a change is merely being saved', async () => {
+    renderCard({
+      permissions: ['caseOrder.read', 'caseOrder.update', 'payment.read', 'payment.collect', 'organization.manage'],
+      order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [], interruption: { ...INTERRUPTION, stale: false } },
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/being saved/);
+    expect(screen.queryByRole('region', { name: 'Order recovery' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/An administrator must recover this order/)).not.toBeInTheDocument();
   });
 
   it('a change still being saved says so (retry shortly), not "call an administrator"', async () => {
