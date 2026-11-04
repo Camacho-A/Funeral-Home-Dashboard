@@ -1,0 +1,102 @@
+/* Saved email (.eml) viewer (2026-11). Same quiet chrome as the PDF viewer:
+   the message is the content. */
+.viewer {
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--sx-surface-2, #f3f5f8);
+  padding: 12px;
+}
+
+.sheet {
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.16);
+  padding: 16px 20px;
+  color: var(--sx-text, #16202c);
+}
+
+.subject {
+  margin: 0 0 12px;
+  font-size: 17px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.headers {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sx-border, #d8dde5);
+  font-size: 13px;
+}
+
+.headers dt {
+  color: var(--sx-text-muted, #5b6675);
+  font-weight: 600;
+}
+
+.headers dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.body {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.empty {
+  color: var(--sx-text-muted, #5b6675);
+  font-style: italic;
+}
+
+.attachments {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--sx-border, #d8dde5);
+}
+
+.attachmentsTitle {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.attachmentList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.attachmentSize {
+  color: var(--sx-text-muted, #5b6675);
+  white-space: nowrap;
+}
+
+.attachmentButton {
+  margin-left: auto;
+  padding: 4px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface, #fff);
+  color: var(--sx-text, #16202c);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}

@@ -7,6 +7,8 @@ import type { ManateeDraft } from '@/domain/documents/manateeDeathCertificateApp
 /** Fictional. The SSN on file never reaches this window — only its last four. */
 const client = vi.hoisted(() => ({ fetchManateeDraft: vi.fn(), previewManateeApplication: vi.fn(), saveManateeApplication: vi.fn() }));
 vi.mock('@/lib/manateeApplicationClient', () => client);
+const printer = vi.hoisted(() => ({ printFile: vi.fn() }));
+vi.mock('@/utils/print', () => printer);
 vi.mock('@/components/documents/DocumentPreview', () => ({ DocumentPreview: () => <div>PDF preview</div> }));
 
 const draft = (overrides: Partial<ManateeDraft> = {}): ManateeDraft => ({
@@ -73,6 +75,28 @@ describe('ManateeApplicationDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save to Documents' }));
     expect(await screen.findByText(/It has not been sent anywhere/)).toBeTruthy();
     expect(client.saveManateeApplication).toHaveBeenCalledTimes(1);
+  });
+
+  it('prints the previewed form without saving it, and can print again after saving', async () => {
+    client.fetchManateeDraft.mockResolvedValue(draft());
+    const pdf = new Blob(['%PDF'], { type: 'application/pdf' });
+    client.previewManateeApplication.mockResolvedValue(pdf);
+    client.saveManateeApplication.mockResolvedValue({ id: 'doc-1' });
+    renderDialog();
+    await screen.findByDisplayValue('Mary Ann');
+    expect(screen.queryByRole('button', { name: 'Print' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('With cause of death'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    await screen.findByText('PDF preview');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    expect(printer.printFile).toHaveBeenCalledWith(pdf, 'Manatee County Death Certificate Application', '', '');
+    expect(client.saveManateeApplication).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Documents' }));
+    await screen.findByText(/It has not been sent anywhere/);
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    expect(printer.printFile).toHaveBeenCalledTimes(2);
   });
 
   it('shows the sex from the forms as F / M, and sends what staff chose', async () => {

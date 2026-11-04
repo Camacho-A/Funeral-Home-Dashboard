@@ -9,7 +9,9 @@
  * modal.
  */
 
-export type DocumentPreviewKind = 'pdf' | 'image' | 'unsupported';
+import { isEmailFile } from './emailMessage';
+
+export type DocumentPreviewKind = 'pdf' | 'image' | 'email' | 'unsupported';
 
 const IMAGE_MIME_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp']);
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'gif', 'webp']);
@@ -33,6 +35,8 @@ export function resolveDocumentPreviewKind(mimeType: string | null | undefined, 
 
   if (mime === 'application/pdf') return 'pdf';
   if (IMAGE_MIME_TYPES.has(mime)) return 'image';
+  // A saved email (.eml, 2026-11) is shown as text by SOLIS.
+  if (isEmailFile(mime, fileName)) return 'email';
 
   // A known-but-undisplayable type (.docx and friends) is unsupported even
   // if its extension were to suggest otherwise — don't second-guess a

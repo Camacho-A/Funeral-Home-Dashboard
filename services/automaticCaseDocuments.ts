@@ -6,7 +6,7 @@ import type { ActivityContext } from './activityService';
 import { DOCUMENT_TYPES } from '../domain/documents/documentTypeRegistry';
 import {
   envelopeTrigger,
-  hasValidTagNumber,
+  isSentToCrematory,
   missingOfficialDocumentFields,
   officialDocumentsFor,
   officialDocumentsToRegenerate,
@@ -144,11 +144,11 @@ export async function generateOfficialDocument(
 }
 
 /**
- * Envelope duplicate guard (2026-10). The Envelope carries only the name:
- *   - a saved or corrected Tag Number creates one only if the case has none
- *     (correcting a Tag Number never produces an identical second copy);
+ * Envelope duplicate guard. The Envelope carries only the name:
+ *   - the case being sent to the crematory (2026-11) creates one only if the
+ *     case has none;
  *   - a name change regenerates an existing Envelope, or creates the first
- *     one on a case that already has a Tag Number (the previous behaviour).
+ *     one on a case already sent to the crematory.
  * Fails safe: if the documents cannot be read, nothing is generated.
  */
 async function envelopeIsDue(before: Case | null, after: Case, dataAdapterMode: DataAdapterMode): Promise<boolean> {
@@ -162,7 +162,27 @@ async function envelopeIsDue(before: Case | null, after: Case, dataAdapterMode: 
     console.error(`[official documents] Could not check case ${after.id} for an existing Envelope; skipping automatic generation:`, error instanceof Error ? error.message : error);
     return false;
   }
-  return trigger === 'tag_saved' ? !hasEnvelope : hasEnvelope || hasValidTagNumber(after);
+  return trigger === 'sent_to_crematory' ? !hasEnvelope : hasEnvelope || isSentToCrematory(after);
+}
+
+/**
+ * After SOLIS sends a case to the crematory (2026-11): the "sent to
+ * crematory" items were just completed by the send, outside a case save,
+ * so the Envelope is created here when the case has none. Re-reads the case
+ * as stored. Never throws.
+ */
+export async function createEnvelopeAfterSentToCrematory(ctx: ActivityContext, caseId: string, dataAdapterMode: DataAdapterMode): Promise<OfficialDocumentOutcome | 'not_due'> {
+  try {
+    const case_ = await loadCaseOnServer(ctx.organizationId, caseId, dataAdapterMode);
+    if (!case_ || case_.organizationId !== ctx.organizationId || !officialDocumentsFor(case_.organizationId).includes('envelope')) return 'not_applicable';
+    if (case_.isDeleted || !isSentToCrematory(case_)) return 'not_due';
+    // Same guard as a case save: never a second Envelope.
+    if (!(await envelopeIsDue({ ...case_, checklistState: {} }, case_, dataAdapterMode))) return 'not_due';
+    return await generateOfficialDocument('envelope', case_, ctx, dataAdapterMode);
+  } catch (error) {
+    console.error(`[official documents] Envelope for case ${caseId} after Send to Crematory was not generated:`, error instanceof Error ? error.message : error);
+    return 'failed';
+  }
 }
 
 /** After a case is created or saved: regenerates whatever the change

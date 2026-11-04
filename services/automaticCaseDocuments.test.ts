@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { caseFixtures } from './__mocks__/fixtures';
 import { MANORS_ORGANIZATION_ID } from '../domain/organization/organizationProfiles';
 import type { Case } from '../types/case';
@@ -16,7 +16,8 @@ const { generateBillingDocument, downloadOrgDocumentBytes, buildEnvelopePdf, bui
 vi.mock('./documentService', () => ({ generateBillingDocument, downloadOrgDocumentBytes, list: listDocuments }));
 vi.mock('./officialDocumentTemplates', () => ({ buildEnvelopePdf, buildCertificateOfCremationPdf }));
 
-const { generateOfficialDocument, regenerateOfficialDocumentsAfterCaseChange } = await import('./automaticCaseDocuments');
+const { generateOfficialDocument, regenerateOfficialDocumentsAfterCaseChange, createEnvelopeAfterSentToCrematory } = await import('./automaticCaseDocuments');
+const { crematorySentChecklistKeys } = await import('../domain/crematory/sentChecklistItems');
 
 const ctx = { organizationId: MANORS_ORGANIZATION_ID, actorIdentityId: 'u', actorMembershipId: null, actorRoleKey: null, correlationId: 'c' };
 const manorsCase = (overrides: Partial<Case> = {}): Case =>
@@ -32,6 +33,12 @@ const manorsCase = (overrides: Partial<Case> = {}): Case =>
     isDeleted: false,
     ...overrides,
   }) as Case;
+
+/** Both of Workflow 3's "sent to crematory" items checked. */
+const sentToCrematory = (c: Case): Case => ({
+  ...c,
+  checklistState: { ...c.checklistState, ...Object.fromEntries(crematorySentChecklistKeys(c).map((key) => [key, true])) },
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -169,11 +176,19 @@ describe('regenerateOfficialDocumentsAfterCaseChange — Envelope and Certificat
   const envelopeOnFile = [{ documentTypeKey: 'letter.envelope', status: 'active' }];
   afterEach(() => listDocuments.mockReset().mockResolvedValue([]));
 
-  it('a Tag Number saved on a case with no Envelope creates it; on a case that has one, nothing is duplicated', async () => {
+  it('a case sent to the crematory with no Envelope gets one — no Tag Number needed; one that has an Envelope gets no duplicate (2026-11)', async () => {
     const before = manorsCase({ tagNumber: null, dateOfCremation: null });
-    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, tagNumber: 'MC-9' }, ctx, 'mock')).toEqual({ envelope: 'generated' });
+    expect(crematorySentChecklistKeys(before)).toHaveLength(2);
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, sentToCrematory(before), ctx, 'mock')).toEqual({ envelope: 'generated' });
+    expect(buildEnvelopePdf).toHaveBeenCalledWith({ decedentDisplayName: 'Louis Anthony Barber' });
     listDocuments.mockResolvedValue(envelopeOnFile);
     vi.clearAllMocks();
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, sentToCrematory(before), ctx, 'mock')).toEqual({});
+    expect(buildEnvelopePdf).not.toHaveBeenCalled();
+  });
+
+  it('saving a Tag Number no longer creates the Envelope', async () => {
+    const before = manorsCase({ tagNumber: null, dateOfCremation: null });
     expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, tagNumber: 'MC-9' }, ctx, 'mock')).toEqual({});
     expect(buildEnvelopePdf).not.toHaveBeenCalled();
   });
@@ -185,11 +200,13 @@ describe('regenerateOfficialDocumentsAfterCaseChange — Envelope and Certificat
     expect(buildEnvelopePdf).toHaveBeenCalledWith({ decedentDisplayName: 'Louis Antonio Barber' });
   });
 
-  it('a name change on a case with neither an Envelope nor a Tag Number creates nothing; a case created without a tag gets none', async () => {
+  it('a name change on a case not yet sent and without an Envelope creates nothing; a new case gets none; once sent, a name change creates the first one', async () => {
     const before = manorsCase({ tagNumber: null, dateOfCremation: null });
     expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, decedentMiddleName: 'ANTONIO' }, ctx, 'mock')).toEqual({});
     expect(await regenerateOfficialDocumentsAfterCaseChange(null, before, ctx, 'mock')).toEqual({});
     expect(generateBillingDocument).not.toHaveBeenCalled();
+    const sent = sentToCrematory(before);
+    expect(await regenerateOfficialDocumentsAfterCaseChange(sent, { ...sent, decedentMiddleName: 'ANTONIO' }, ctx, 'mock')).toEqual({ envelope: 'generated' });
   });
 
   it('the Certificate still requires the Tag Number and is not blocked by, or blocking, the Envelope', async () => {
@@ -198,7 +215,7 @@ describe('regenerateOfficialDocumentsAfterCaseChange — Envelope and Certificat
     downloadOrgDocumentBytes.mockResolvedValue({ buffer: Buffer.from([9]), contentType: 'application/pdf' });
     expect(await generateOfficialDocument('certificate_of_cremation', manorsCase({ tagNumber: null }), ctx, 'mock')).toBe('missing_information');
     const noCert = manorsCase({ dateOfCremation: null, tagNumber: null });
-    const result = await regenerateOfficialDocumentsAfterCaseChange(noCert, { ...noCert, tagNumber: 'MC-1' }, ctx, 'mock');
+    const result = await regenerateOfficialDocumentsAfterCaseChange(noCert, sentToCrematory(noCert), ctx, 'mock');
     expect(result).toEqual({ envelope: 'generated' });
     const both = await regenerateOfficialDocumentsAfterCaseChange(manorsCase({ dateOfCremation: null }), manorsCase(), ctx, 'mock');
     expect(both).toEqual({ certificate_of_cremation: 'generated', cremation_label: 'generated' });
@@ -208,6 +225,48 @@ describe('regenerateOfficialDocumentsAfterCaseChange — Envelope and Certificat
     vi.spyOn(console, 'error').mockImplementation(() => {});
     listDocuments.mockRejectedValue(new Error('storage down'));
     const before = manorsCase({ tagNumber: null, dateOfCremation: null });
-    expect(await regenerateOfficialDocumentsAfterCaseChange(before, { ...before, tagNumber: 'MC-9' }, ctx, 'mock')).toEqual({});
+    expect(await regenerateOfficialDocumentsAfterCaseChange(before, sentToCrematory(before), ctx, 'mock')).toEqual({});
+  });
+});
+
+/** After SOLIS's own Send to Crematory (2026-11): the send completes the two
+    items outside a case save, so the Envelope is created from the stored case. */
+describe('createEnvelopeAfterSentToCrematory', () => {
+  let loadCaseOnServer: MockInstance<typeof import('./serverCaseLoader').loadCaseOnServer>;
+  beforeEach(async () => {
+    const loader = await import('./serverCaseLoader');
+    loadCaseOnServer = vi.spyOn(loader, 'loadCaseOnServer');
+  });
+  afterEach(() => {
+    listDocuments.mockReset().mockResolvedValue([]);
+    loadCaseOnServer.mockRestore();
+  });
+
+  it('creates the Envelope for a sent case that has none — no Tag Number needed', async () => {
+    loadCaseOnServer.mockResolvedValue(sentToCrematory(manorsCase({ tagNumber: null, dateOfCremation: null })));
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('generated');
+    expect(buildEnvelopePdf).toHaveBeenCalledWith({ decedentDisplayName: 'Louis Anthony Barber' });
+  });
+
+  it('never a second Envelope, nothing for a case not sent, archived, nameless, or another organization', async () => {
+    loadCaseOnServer.mockResolvedValue(sentToCrematory(manorsCase()));
+    listDocuments.mockResolvedValue([{ documentTypeKey: 'letter.envelope', status: 'active' }]);
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('not_due');
+    listDocuments.mockResolvedValue([]);
+    loadCaseOnServer.mockResolvedValue(manorsCase());
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('not_due');
+    loadCaseOnServer.mockResolvedValue(sentToCrematory(manorsCase({ isDeleted: true })));
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('not_due');
+    loadCaseOnServer.mockResolvedValue(sentToCrematory(manorsCase({ decedentName: '' })));
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('not_due');
+    loadCaseOnServer.mockResolvedValue(sentToCrematory(manorsCase({ organizationId: 'some-other-home' })));
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('not_applicable');
+    expect(buildEnvelopePdf).not.toHaveBeenCalled();
+  });
+
+  it('never throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    loadCaseOnServer.mockRejectedValue(new Error('Wix down'));
+    expect(await createEnvelopeAfterSentToCrematory(ctx, 'case-1', 'mock')).toBe('failed');
   });
 });

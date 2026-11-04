@@ -129,7 +129,10 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
     "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name.");
 
   const confirmed = input.readyDate.confirmed;
-  const pickupMoved = confirmed !== null && toCaseDate(confirmed.suggestedAtConfirmation) !== toCaseDate(input.readyDate.suggested);
+  // Once sent, the confirmed date is what the crematory received and can no
+  // longer change — and sending is what creates the Expected Pickup, so a
+  // pickup appearing or moving afterwards is never a reason to review it.
+  const pickupMoved = input.sentAt === null && confirmed !== null && toCaseDate(confirmed.suggestedAtConfirmation) !== toCaseDate(input.readyDate.suggested);
   add('ready_date', 'Expected ready date confirmed', confirmed !== null && toCaseDate(confirmed.date) !== null && !pickupMoved,
     confirmed === null
       ? 'Enter or confirm the expected cremation ready date.'

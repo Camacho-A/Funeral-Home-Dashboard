@@ -2,6 +2,7 @@
 
 import { resolveDocumentPreviewKind } from '@/domain/documents/documentPreview';
 import { PdfViewer } from './PdfViewer';
+import { EmailPreview } from './EmailPreview';
 import styles from './PdfViewer.module.css';
 
 /**
@@ -24,6 +25,10 @@ export function DocumentPreview({
 
   if (kind === 'pdf') {
     return <PdfViewer url={url} fileName={fileName} />;
+  }
+
+  if (kind === 'email') {
+    return <EmailPreview url={url} fileName={fileName} />;
   }
 
   if (kind === 'image') {
