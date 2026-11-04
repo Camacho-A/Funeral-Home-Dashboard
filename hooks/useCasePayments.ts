@@ -33,6 +33,20 @@ export function useCasePayments(caseId: string, enabled: boolean = true) {
   });
 }
 
+/**
+ * Case balance and overpayment (2026-11). Keyed under ['caseOrder', …] so
+ * everything that refreshes the order — an order edit or a payment
+ * (invalidateCasePaymentState) — refreshes it too.
+ */
+export function useCaseBalance(caseId: string, enabled: boolean = true) {
+  const organization = useOrganization();
+  return useQuery({
+    queryKey: ['caseOrder', organization.organizationId, caseId, 'balance'],
+    queryFn: () => paymentsClient.getCaseBalance(organization, caseId),
+    enabled,
+  });
+}
+
 const PAYMENT_POLL_INTERVAL_MS = 2500;
 
 /**

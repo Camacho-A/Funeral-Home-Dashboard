@@ -448,7 +448,7 @@ export async function getPaidAmountForCase(
  * caseOrderLineItems directly) keeps the dependency one-directional
  * instead of a cycle.
  */
-async function getWriteOffTotalForCase(
+export async function getWriteOffTotalForCase(
   organizationId: string,
   caseId: string,
   dataAdapterMode: DataAdapterMode,

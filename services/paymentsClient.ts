@@ -1,6 +1,7 @@
 import type { OrganizationContext } from '../types/organization';
 import type { PaymentRecord } from '../types/payment';
 import type { ManualPaymentMethod } from '../domain/billing/manualPaymentMethods';
+import type { CaseBalance } from '../domain/billing/caseBalance';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Client-side calls to
@@ -19,6 +20,18 @@ export async function listPayments(context: OrganizationContext, caseId: string)
   }
   const body = (await response.json()) as { payments: PaymentRecord[] };
   return body.payments;
+}
+
+/** Case balance and overpayment (2026-11): null when the case has no order. */
+export async function getCaseBalance(context: OrganizationContext, caseId: string): Promise<CaseBalance | null> {
+  const response = await fetch(
+    `/api/cases/${encodeURIComponent(caseId)}/payments/balance?organizationId=${encodeURIComponent(context.organizationId)}`,
+  );
+  if (!response.ok) {
+    throw new Error('Failed to load the case balance.');
+  }
+  const body = (await response.json()) as { balance?: CaseBalance | null };
+  return body.balance ?? null;
 }
 
 export async function getPayment(
@@ -98,6 +111,7 @@ export async function simulateMockPaymentSuccess(
 
 export const paymentsClient = {
   listPayments,
+  getCaseBalance,
   getPayment,
   recordManualPayment,
   cancelPayment,

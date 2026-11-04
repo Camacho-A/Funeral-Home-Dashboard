@@ -19,6 +19,9 @@ import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 type FetchHandlers = {
   order?: { order: unknown; lineItems: unknown[]; auditEntries: unknown[]; interruption?: unknown };
   payments?: unknown[];
+  /** GET …/payments/balance (2026-11); absent → no balance (no warning). */
+  balance?: unknown;
+  onBalanceRequest?: () => void;
   checkout?: { paymentId: string; checkoutUrl: string } | { error: string; status: number };
   manualPayment?: { payment: unknown } | { error: string; status: number };
   onManualPaymentRequest?: (body: unknown) => void;
@@ -72,6 +75,10 @@ function stubFetch(handlers: FetchHandlers) {
           return Promise.resolve({ ok: false, status: result.status, json: async () => ({ error: result.error }) });
         }
         return Promise.resolve({ ok: true, json: async () => result });
+      }
+      if (url.includes('/payments/balance')) {
+        handlers.onBalanceRequest?.();
+        return Promise.resolve({ ok: true, json: async () => ({ balance: handlers.balance ?? null }) });
       }
       if (url.includes('/payments')) {
         return Promise.resolve({ ok: true, json: async () => ({ payments: handlers.payments ?? [] }) });
@@ -197,6 +204,49 @@ describe('CaseOrderCard — itemized services, balance, status', () => {
     ];
     renderCard({ order: { order: { ...ACTIVE_ORDER, subtotal: 100_000, total: 100_000, balanceDue: 100_000 }, lineItems: variantLines, auditEntries: [] } });
     expect(await screen.findByText(/Bronze Urn — Companion/)).toBeInTheDocument();
+  });
+});
+
+describe('CaseOrderCard — overpayment (2026-11)', () => {
+  const REDUCED = { ...ACTIVE_ORDER, subtotal: 89_000, total: 89_000, balanceDue: 0, version: 2 };
+  const OVERPAID = { orderTotalCents: 89_000, paidCents: 118_000, writeOffCents: 0, balanceDueCents: 0, overpaymentCents: 29_000 };
+
+  it('warns with the exact excess, shows the credit and an "Overpaid" status — never a negative balance', async () => {
+    renderCard({ order: { order: REDUCED, lineItems: LINE_ITEMS, auditEntries: [] }, balance: OVERPAID });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Payments exceed the order total by $290.00 — credit/overpayment to resolve.');
+    expect(screen.getByRole('alert')).toHaveTextContent('$1,180.00 paid against a $890.00 order. Nothing has been refunded or credited.');
+    expect(screen.getByText('Overpaid')).toBeInTheDocument();
+    expect(screen.getByText('Credit (overpayment)')).toBeInTheDocument();
+    expect(screen.queryByText(/-\$|\(\$/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Record Payment' })).toBeDisabled();
+  });
+
+  it('staff who can refund are told how to resolve it; others are told whom to ask — no refund or credit action either way', async () => {
+    renderCard({ order: { order: REDUCED, lineItems: LINE_ITEMS, auditEntries: [] }, balance: OVERPAID, permissions: ['caseOrder.read', 'payment.read', 'payment.refund'] });
+    expect(await screen.findByRole('alert')).toHaveTextContent(/refund the excess from a payment, or keep it as a credit/);
+    expect(screen.queryByRole('button', { name: /refund|credit/i })).not.toBeInTheDocument();
+    vi.unstubAllGlobals();
+    document.body.innerHTML = '';
+
+    renderCard({ order: { order: REDUCED, lineItems: LINE_ITEMS, auditEntries: [] }, balance: OVERPAID, permissions: ['caseOrder.read', 'payment.read'] });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ask an administrator or accounting to resolve it with the family.');
+    expect(screen.queryByRole('button', { name: /refund|credit/i })).not.toBeInTheDocument();
+  });
+
+  it('no warning when nothing is overpaid', async () => {
+    renderCard({ order: { order: { ...ACTIVE_ORDER, balanceDue: 0 }, lineItems: LINE_ITEMS, auditEntries: [] }, balance: { ...OVERPAID, orderTotalCents: 118_000, overpaymentCents: 0 } });
+    expect(await screen.findByText('Paid in full')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText('Credit (overpayment)')).not.toBeInTheDocument();
+  });
+
+  it('staff without payment.read never request the balance or see the warning', async () => {
+    let requested = false;
+    renderCard({ order: { order: REDUCED, lineItems: LINE_ITEMS, auditEntries: [] }, balance: OVERPAID, permissions: ['caseOrder.read'], onBalanceRequest: () => { requested = true; } });
+    expect(await screen.findByText('Direct Cremation')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText('Overpaid')).not.toBeInTheDocument());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(requested).toBe(false);
   });
 });
 
