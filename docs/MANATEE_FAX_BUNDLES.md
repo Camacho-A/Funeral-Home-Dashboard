@@ -42,10 +42,14 @@ Wix collections do not exist yet and `sendingEnabled` is `false`.
   Request inputs.
 - **Multi-page applications** (none today): later pages carry "Request n of N
   · page k of m" in the bottom margin.
-- **Permissions:** preview/send — `crematory.send` ("Send Crematory
-  Packages"; by default Administrator, Manager, Funeral Director, Office
-  Staff) plus `document.view`; record delivered/failed — Administrator or
-  Manager role only.
+- **Permissions** (2026-11, approved matrix): `fax.send` — prepare, preview,
+  send (Administrator, Manager, Funeral Director, Office Staff, Arranger) plus
+  `document.view`; `fax.confirm` — record delivered / failed (the same roles
+  except Arranger). Checked on the server on every route from the member's
+  role in that organization (roles, grants, organization overrides) — never
+  from the request; `recordFaxBundleOutcome` checks `fax.confirm` again
+  itself. The UI only shows what the member holds. `crematory.send` is
+  unchanged. Live roles need the grants added — see "Permission rollout".
 - **Checklist:** saving a valid application completes "DC application filled
   out"; a CONFIRMED delivery completes "Sent day before ashes arrive".
   Submission never does. Both only on cases whose workflow has those exact
@@ -99,6 +103,99 @@ Indexes: (`organizationId`, `createdAt`), (`organizationId`, `status`),
 
 Indexes: (`organizationId`, `caseId`), (`organizationId`, `bundleId`).
 
+## Permission rollout (live data — needs approval)
+
+Live role grants are rows in Wix written when an organization was set up;
+new code keys reach nobody until granted. The rollout adds **9
+organization-level grant overrides for Manors only**
+(`organizationRolePermissionOverrides`, the rows Settings > Roles writes,
+with its lock and audit) — never the shared default-role rows Gus also
+reads:
+
+| Role | `fax.send` | `fax.confirm` |
+|---|---|---|
+| administrator | grant | grant |
+| manager | grant | grant |
+| funeralDirector | grant | grant |
+| officeStaff | grant | grant |
+| arranger | grant | — |
+
+Override ids are deterministic
+(`roleoverride-managed-cremations-{role}-{key}`); a pair Manors has
+explicitly revoked is left alone and reported. No new collection or field.
+
+Run: `GET /api/organization/rbac/fax-permissions?organizationId=managed-cremations`
+(read-only plan, Administrator) → `POST` the same (applies; idempotent).
+Validation: the GET afterwards shows every pair `already_granted`; one
+member per role checks the Cases page button and the Documents tab
+"Record delivery result". Rollback: remove the 9 overrides in Settings >
+Roles (or `removeOverrideById`).
+
+Side effect: the platform RBAC health report compares the shared rows with
+the code definitions and will list `fax.send`/`fax.confirm` as missing
+default grants. That is informational; its "apply" refuses to run on any
+deployment limited to specific organizations (Manors Production is), so the
+shared rows cannot be changed from there.
+
+## Wix collections — migration checklist (needs approval)
+
+1. Create `faxBundles` and `faxBundleCases` with exactly the fields above,
+   all optional at the Wix level; permissions read/insert/update/remove =
+   Admin; the indexes above. Creating new collections changes no existing
+   collection, index or row, so SOLIS keeps working while it happens; until
+   they exist the fax routes fail closed (no data, nothing sent).
+2. Read back (read-only): fields, types, permissions, indexes.
+3. Disposable live check (fictional rows, throwaway organization id
+   `zz-fax-verification`, deleted afterwards), proving on THESE collections
+   what the code relies on:
+   - a second insert with the same id → 409 (claim guard);
+   - a conditional patch whose `revision`/`status` condition is stale →
+     428 and nothing changed; two simultaneous ones → exactly one applied;
+   - a `$in` status query returns the right rows;
+   - array/object fields (`items`, `history`) round-trip unchanged;
+   - ids ≤ 128 characters.
+   (The same Wix mechanisms are already live-verified and relied on
+   elsewhere: conditional patch — `lib/wixDataApi.ts`, case revisions;
+   duplicate-id 409 — payments.)
+4. Rollback: delete the two collections (only while they hold no real
+   bundles); nothing else references them.
+
+## Vercel preview security (before ANY push — needs approval)
+
+Pushing any branch builds a Preview in all three projects. The Manors
+project's Previews carry the Production values of every live credential
+except JotForm, SSN and templates — Wix API key and site, Resend, Twilio,
+Clover sandbox, Microsoft/Google secrets, R2, the database URL, the session
+secret, the MFA/calendar encryption keys, `DATA_ADAPTER=wix` — and both
+Blob stores (case documents, branding) are connected to Preview too. The
+code has no preview check. So a Preview can read and write live Wix cases
+and documents, decrypt the stored Outlook token and send email, send SMS,
+and accept a Production session token. Mitigation today: Previews require
+Vercel team sign-in. Crons run only on Production deployments.
+
+Recommended (each a Vercel change needing approval), in order:
+1. Manors project → Ignored Build Step
+   `[ "$VERCEL_ENV" = "production" ] && exit 1 || exit 0` — no Previews
+   are built in the Manors project at all. Production unaffected; existing
+   Preview deployments keep running until deleted.
+2. Remove the Preview target from every live credential in the Manors
+   project; set Preview `DATA_ADAPTER=mock`, `AUTH_ADAPTER=mock`; delete
+   existing Manors Preview deployments. Production unaffected.
+3. Previews happen only in `manors-solis-sandbox` (mock data, no live
+   credentials, team sign-in). No new credentials are needed for that; a
+   separate non-production Wix site/mailbox would be needed only if a
+   Preview must exercise real integrations.
+4. Safe push: after 1–2, `git push origin feat/manatee-fax-bundle`, then
+   confirm in Vercel that the Manors project shows the build as skipped
+   ("Ignored Build Step") and only the sandbox built.
+5. Rollback: clear the Ignored Build Step / re-add Preview targets
+   (restores today's behaviour exactly).
+
+Alternative without touching Vercel: add the same command as
+`"ignoreCommand"` to this branch's `vercel.json`. It takes effect for every
+deployment built from a branch containing it — so after a merge, Previews
+stop in all three projects. Not done; needs approval.
+
 ## Live setup — each step needs separate approval
 
 1. **Create the two collections** exactly as above; read back fields,
@@ -121,6 +218,14 @@ Indexes: (`organizationId`, `caseId`), (`organizationId`, `bundleId`).
 
 Rollback: set `sendingEnabled: false` (deploy). The collections affect no
 other feature.
+
+## Known issue elsewhere (separate fix, not part of this feature)
+
+Send to Crematory treats a dropped connection during Outlook's final send
+call as "not sent" (`crematorySendService.ts` checks only
+`OutlookMailError.mayHaveSent`; a network `TypeError` is not one), so a
+send that went out could be offered again. The fax feature treats any such
+failure as Needs Review. Left unchanged here, as instructed.
 
 ## Not built (future)
 

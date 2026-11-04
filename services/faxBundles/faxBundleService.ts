@@ -17,6 +17,7 @@ import { getAppointment } from '../scheduling/appointmentReads';
 import { expectedPickupAppointmentId } from '../cremainsPickupService';
 import { expectedDateOf } from '@/domain/scheduling/cremainsPickupPresentation';
 import { completeChecklistItemsAutomatically } from '../automaticChecklistCompletion';
+import { canConfirmFax } from '../authorizationPolicyService';
 import { reconcileCaseWorkflow } from '../workflowReconciliationService';
 import { checklistItemKey } from '@/domain/workflow/checklistItemKey';
 import { toDisplayCasingIfAllCaps } from '@/utils/string';
@@ -88,13 +89,12 @@ import {
  *     MAY have sent — and an outcome that could not be recorded — leaves the
  *     bundle needing review. Nothing is ever retried automatically;
  *   - "submitted" means Outlook accepted the email for NuSo. Only an
- *     Administrator or Manager records delivered (or failed); delivered
+ *     member with fax.confirm records delivered (or failed); delivered
  *     completes "Sent day before ashes arrive" and keeps every case held, so
  *     a delivered application is never sent again.
  */
 
 const MANATEE_TYPE = DOCUMENT_TYPES.VITAL_RECORDS_MANATEE_DEATH_CERTIFICATE_APPLICATION.key;
-const OUTCOME_ROLES = new Set(['administrator', 'manager']);
 const sha256 = (bytes: Uint8Array) => crypto.createHash('sha256').update(bytes).digest('hex');
 const displayName = (case_: Pick<Case, 'decedentName'>) => toDisplayCasingIfAllCaps((case_.decedentName ?? '').trim()) || 'Unnamed decedent';
 
@@ -262,7 +262,7 @@ function heldReason(bundle: FaxBundle): string {
   const state = faxBundleState(bundle);
   if (state === 'delivered') return `Already faxed and delivered (${bundle.reference}).`;
   if (state === 'submitted') return `Faxed in ${bundle.reference} — waiting for delivery confirmation.`;
-  if (state === 'needs_review') return `${bundle.reference} may have been faxed — an Administrator or Manager must record what happened.`;
+  if (state === 'needs_review') return `${bundle.reference} may have been faxed — someone allowed to record fax results must record what happened.`;
   return `Being faxed right now (${bundle.reference}).`;
 }
 
@@ -529,7 +529,7 @@ export async function sendFaxBundle(ctx: ActivityContext, bundleId: string, subm
       sending: 'This bundle is being sent right now.',
       submitted: 'This bundle was already sent.',
       delivered: 'This bundle was already sent and delivered.',
-      needs_review: 'This bundle may already have been sent. It is never sent again automatically — an Administrator or Manager must record what happened.',
+      needs_review: 'This bundle may already have been sent. It is never sent again automatically — someone allowed to record fax results must record what happened.',
       failed: 'This bundle was not delivered. Preview a new bundle to fax these applications again.',
       discarded: 'This preview is no longer available. Preview the bundle again.',
     };
@@ -574,15 +574,22 @@ export async function sendFaxBundle(ctx: ActivityContext, bundleId: string, subm
       const claim = await claimCaseForFaxBundle(ctx.organizationId, item.caseId, bundle.id, mode);
       if (!claim.claimed) {
         const holder = claim.heldBy ? await getFaxBundle(ctx.organizationId, claim.heldBy, mode) : null;
-        if (holder && isAbandonedSendHold(holder)) {
-          await abandonSend(ctx, holder, holder.caseIds, 'send_hold_released', null, mode);
+        // A hold whose bundle no longer holds the case is stale — left behind
+        // when releasing it failed after a send that never reached Outlook, or
+        // by a send abandoned before Outlook. Provably nothing was sent under
+        // it, so it is cleared and the claim tried once more. A bundle that is
+        // sending, submitted, needing review or delivered is never touched.
+        if (!holder || (await holdingBundle(ctx.organizationId, holder.id, mode)) === null) {
+          if (holder && isAbandonedSendHold(holder)) await abandonSend(ctx, holder, holder.caseIds, 'send_hold_released', null, mode);
+          else if (claim.heldBy) await releaseFaxCaseClaim(ctx.organizationId, item.caseId, claim.heldBy, mode);
           const retry = await claimCaseForFaxBundle(ctx.organizationId, item.caseId, bundle.id, mode);
           if (retry.claimed) {
             claimed.push(item.caseId);
             continue;
           }
         }
-        const reason = holder ? heldReason(holder) : 'It is held by another fax bundle.';
+        const current = holder ? await holdingBundle(ctx.organizationId, holder.id, mode) : null;
+        const reason = current ? heldReason(current) : 'It is held by another fax bundle.';
         await abandonSend(ctx, bundle, claimed, 'send_refused', null, mode);
         throw new FaxBundleError(`Nothing was sent. ${item.caseNumber}: ${reason}`, 409, [{ caseId: item.caseId, reason }]);
       }
@@ -628,12 +635,12 @@ export async function sendFaxBundle(ctx: ActivityContext, bundleId: string, subm
     for (const item of bundle.items) {
       await audit(ctx, item.caseId, ACTIVITY_EVENT_TYPES.FAX_BUNDLE_NEEDS_REVIEW, {
         bundleId: bundle.id,
-        description: `DC application fax bundle ${bundle.reference} (${item.position} of ${bundle.applicationCount}) may have been sent: ${reason} It will not be sent again until an Administrator or Manager records what happened.`,
+        description: `DC application fax bundle ${bundle.reference} (${item.position} of ${bundle.applicationCount}) may have been sent: ${reason} It will not be sent again until someone allowed to record fax results records what happened.`,
         record: { reference: bundle.reference, submissionId, position: item.position, error: reason, mailbox: mailbox.accountEmail },
         severity: 'warning',
       }, mode);
     }
-    throw new FaxBundleError(`${reason} The fax may still have been sent. It will not be sent again until an Administrator or Manager checks Sent Items in ${mailbox.accountEmail} and NuSo, and records what happened.`, 502);
+    throw new FaxBundleError(`${reason} The fax may still have been sent. It will not be sent again until someone allowed to record fax results checks Sent Items in ${mailbox.accountEmail} and NuSo, and records what happened.`, 502);
   }
 
   // Outlook accepted it. Nothing below can turn that into a resend.
@@ -669,14 +676,17 @@ const longDate = (iso: string) => new Date(iso).toLocaleDateString('en-US', { ti
 const longLocalDate = (localDate: string) => new Date(`${localDate}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
 
 /**
- * An Administrator or Manager records what NuSo reported. Delivered keeps
+ * A member with fax.confirm records what NuSo reported. Delivered keeps
  * every case held (never sent again) and completes "Sent day before ashes
  * arrive" with the actual delivery date recorded; Failed releases the cases
  * so they can go in a new bundle. Nothing is sent here.
  */
 export async function recordFaxBundleOutcome(ctx: ActivityContext, bundleId: string, input: FaxOutcomeInput, mode: DataAdapterMode): Promise<{ bundle: FaxBundleView; checklistFailed: string[] }> {
   requireSettings(ctx.organizationId);
-  if (!OUTCOME_ROLES.has(ctx.actorRoleKey ?? '')) throw new FaxBundleError('Only an Administrator or Manager can record whether a fax was delivered.', 403);
+  // The route checks this too; checked again here from the member's role in
+  // this organization (server-side data), so no caller can skip it.
+  const allowed = ctx.actorIdentityId && ctx.actorRoleKey ? await canConfirmFax({ identityId: ctx.actorIdentityId, organizationId: ctx.organizationId, roleKey: ctx.actorRoleKey }, mode) : false;
+  if (!allowed) throw new FaxBundleError('You are not authorized to record whether a fax was delivered.', 403);
   if (input.decision !== 'delivered' && input.decision !== 'failed') throw new FaxBundleError("decision must be 'delivered' or 'failed'.", 400);
   const decision = input.decision;
   const now = new Date();

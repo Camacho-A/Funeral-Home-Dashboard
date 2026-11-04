@@ -448,6 +448,43 @@ describe('Send Fax safeguards', () => {
     expect(bundleRow(first.id)).toMatchObject({ status: 'ready' });
   });
 
+  it('a hold left behind by a failed release (nothing was sent under it) never blocks a later fax', async () => {
+    const [a, b] = await casesWithApplications(2);
+    const first = await service.previewFaxBundle(ctx(), [a, b], 'mock');
+    // Outlook refuses before anything is sent, and releasing the holds fails (Wix briefly down).
+    fakeGraph({ createStatus: 403 });
+    const failingRemove = { ...store.memoryFaxTable, remove: async () => Promise.reject(new Error('Wix 503')) };
+    store.setFaxTableForTesting(failingRemove);
+    expect(await sendErr(service.sendFaxBundle(ctx(), first.id, 'submission-0001', 'mock'))).toMatchObject({ status: 502, message: expect.stringContaining('Nothing was sent') });
+    store.setFaxTableForTesting(null);
+    expect(bundleRow(first.id).status).toBe('ready');
+    expect(claims().map((r) => r.bundleId)).toEqual([first.id, first.id]);
+    // A new bundle with those cases sends; the stale holds are cleared, one fax goes.
+    const second = await service.previewFaxBundle(ctx(), [b, a], 'mock');
+    const graph = fakeGraph();
+    await expect(service.sendFaxBundle(ctx(), second.id, 'submission-0002', 'mock')).resolves.toMatchObject({ bundle: { state: 'submitted' } });
+    expect(graph.sends()).toHaveLength(1);
+    expect(claims().every((r) => r.bundleId === second.id)).toBe(true);
+  });
+
+  it('a genuine hold (a bundle submitted, delivered or needing review) is never cleared', async () => {
+    const [a, b] = await casesWithApplications(2);
+    const first = await service.previewFaxBundle(ctx(), [a], 'mock');
+    fakeGraph({ sendStatus: 503 });
+    await sendErr(service.sendFaxBundle(ctx(), first.id, 'submission-0001', 'mock'));
+    expect(bundleRow(first.id).status).toBe('needs_review');
+    // Built before the hold existed (a stale preview), then sent: refused, nothing sent.
+    store.memoryFaxTable.reset();
+    const preview = await service.previewFaxBundle(ctx(), [a, b], 'mock');
+    await store.memoryFaxTable.insert('faxBundles', first.id, { ...(await store.getFaxBundle(ORG, first.id, 'mock')), beaconFaxBundleId: first.id, organizationId: ORG, status: 'needs_review', revision: 9, history: [], items: [], caseIds: [a], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    await store.claimCaseForFaxBundle(ORG, a, first.id, 'mock');
+    const graph = fakeGraph();
+    expect(await sendErr(service.sendFaxBundle(ctx(), preview.id, 'submission-0002', 'mock'))).toMatchObject({ status: 409, message: expect.stringContaining('may have been faxed') });
+    expect(graph.calls).toHaveLength(0);
+    expect((await store.getFaxCaseClaim(ORG, a, 'mock'))?.bundleId).toBe(first.id);
+    expect(await store.getFaxCaseClaim(ORG, b, 'mock')).toBeNull();
+  });
+
   it('an application saved again after the preview stops the send — preview again; nothing sent', async () => {
     const [a] = await casesWithApplications(1);
     const preview = await service.previewFaxBundle(ctx(), [a], 'mock');
@@ -499,11 +536,18 @@ describe('recording delivery', () => {
     return { ids, preview };
   }
 
-  it('only an Administrator or Manager may record it', async () => {
+  it('only members with fax.confirm may record it: Arranger, Accounting, Read Only and Dispatch cannot (the service checks, not just the route)', async () => {
     const { preview } = await sentBundle();
-    expect(await sendErr(service.recordFaxBundleOutcome(ctx('arranger'), preview.id, { decision: 'delivered' }, 'mock'))).toMatchObject({ status: 403 });
-    expect(await sendErr(service.recordFaxBundleOutcome(ctx('funeralDirector'), preview.id, { decision: 'delivered' }, 'mock'))).toMatchObject({ status: 403 });
+    for (const role of ['arranger', 'accounting', 'readOnly', 'dispatch', 'no-such-role']) {
+      expect(await sendErr(service.recordFaxBundleOutcome(ctx(role), preview.id, { decision: 'delivered' }, 'mock')), role).toMatchObject({ status: 403 });
+    }
+    expect(await sendErr(service.recordFaxBundleOutcome({ ...ctx(), actorIdentityId: null as unknown as string }, preview.id, { decision: 'delivered' }, 'mock'))).toMatchObject({ status: 403 });
     expect(bundleRow(preview.id).status).toBe('submitted');
+  });
+
+  it.each(['administrator', 'manager', 'funeralDirector', 'officeStaff'])('%s may record the result', async (role) => {
+    const { preview } = await sentBundle(1);
+    await expect(service.recordFaxBundleOutcome(ctx(role), preview.id, { decision: 'delivered' }, 'mock')).resolves.toMatchObject({ bundle: { state: 'delivered' } });
   });
 
   it('delivered: completes "Sent day before ashes arrive" with the actual date — not the target day — and the cases can never be faxed again', async () => {

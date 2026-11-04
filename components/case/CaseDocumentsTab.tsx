@@ -501,7 +501,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             <CaseFaxStatus
               organizationId={organizationId}
               caseId={caseId}
-              canRecordOutcome={myPermissionsQuery.data?.roleKey === 'administrator' || myPermissionsQuery.data?.roleKey === 'manager'}
+              canRecordOutcome={permissions?.includes('fax.confirm') ?? false}
             />
           )}
           <div className="sx-docs-toolbar">

@@ -646,3 +646,34 @@ describe('CasesPage — search reaches the archive (2026-10)', () => {
     expect(await screen.findByText('No cases found, including archived ones.')).toBeInTheDocument();
   });
 });
+
+describe('CasesPage — Fax DC Applications (2026-11)', () => {
+  function withPermissions(permissions: string[]) {
+    const original = globalThis.fetch;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/rbac/my-permissions')) return new Response(JSON.stringify({ identityId: 'mock-user', roleKey: 'arranger', permissions }), { status: 200 });
+      return original(input, init);
+    });
+  }
+
+  it('shows the button to members with fax.send', async () => {
+    withPermissions(['case.read', 'fax.send']);
+    renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+    expect(await screen.findByRole('button', { name: 'Fax DC Applications' })).toBeInTheDocument();
+  });
+
+  it('hides it from members without fax.send (the server refuses them too)', async () => {
+    withPermissions(['case.read', 'crematory.send']);
+    renderPageForOrg(DEFAULT_ORGANIZATION_ID);
+    await screen.findByRole('button', { name: 'Send to Crematory' });
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    expect(screen.queryByRole('button', { name: 'Fax DC Applications' })).toBeNull();
+  });
+
+  it('never appears for an organization without fax bundles', async () => {
+    withPermissions(['case.read', 'fax.send']);
+    renderPageForOrg(SECOND_MOCK_ORGANIZATION_ID);
+    expect(await screen.findByText('All Cases')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Fax DC Applications' })).toBeNull();
+  });
+});

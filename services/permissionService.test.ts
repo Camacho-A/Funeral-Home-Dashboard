@@ -77,7 +77,7 @@ describe('permissionService', () => {
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       expect(permissions.has('organization.manage')).toBe(true);
       expect(permissions.has('case.delete')).toBe(true);
-      expect(permissions.size).toBe(70); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage; Send to Crematory (2026-10): + crematory.send
+      expect(permissions.size).toBe(72); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage; Send to Crematory (2026-10): + crematory.send; fax bundles (2026-11): + fax.send/fax.confirm
     });
 
     it('resolves readOnly to only read/view permissions', async () => {
@@ -226,12 +226,12 @@ describe('permissionService', () => {
     it("resolves Administrator's full real permission set across two pages (50 + the rest) — the exact shape of the live incident, including organization.manage, which was silently dropped by the unpaginated read", async () => {
       const page1 = PERMISSION_KEYS.slice(0, 50);
       const page2 = PERMISSION_KEYS.slice(50);
-      expect(page2.length).toBe(20); // 70 permissions since crematory.send (2026-10)
+      expect(page2.length).toBe(22); // 72 permissions since fax.send/fax.confirm (2026-11)
       stubWixRbacFetch({ roleKey: 'administrator', grantPages: [page1, page2] });
 
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'wix');
 
-      expect(permissions.size).toBe(70);
+      expect(permissions.size).toBe(72);
       expect(permissions.has('organization.manage')).toBe(true);
       for (const key of PERMISSION_KEYS) expect(permissions.has(key)).toBe(true);
     });

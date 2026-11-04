@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'crypto';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
-import { mockAccountingUser, mockDefaultUser, mockFuneralDirectorUser, mockManagerUser, mockMultiOrgUser, mockOfficeStaffUser, mockReadOnlyUser } from '@/services/__mocks__/authFixtures';
+import { mockAccountingUser, mockArrangerUser, mockDefaultUser, mockDispatchUser, mockFuneralDirectorUser, mockManagerUser, mockMultiOrgUser, mockOfficeStaffUser, mockReadOnlyUser } from '@/services/__mocks__/authFixtures';
 import type { CaseDocument } from '@/types/caseDocument';
 
 /**
@@ -105,31 +105,49 @@ describe('fax bundle routes', () => {
     expect((await getList(SECOND_MOCK_ORGANIZATION_ID)).status).toBe(404);
   });
 
-  it.each([
-    ['Accounting', mockAccountingUser],
-    ['Read Only', mockReadOnlyUser],
-  ])('%s cannot list, preview or send (no Send Crematory Packages permission)', async (_label, user) => {
+  // The approved fax matrix (2026-11): fax.send — prepare, preview, send; fax.confirm — record the result.
+  const MATRIX: Array<[string, typeof mockDefaultUser, { send: boolean; confirm: boolean }]> = [
+    ['Administrator', mockDefaultUser, { send: true, confirm: true }],
+    ['Manager', mockManagerUser, { send: true, confirm: true }],
+    ['Funeral Director', mockFuneralDirectorUser, { send: true, confirm: true }],
+    ['Office Staff', mockOfficeStaffUser, { send: true, confirm: true }],
+    ['Arranger', mockArrangerUser, { send: true, confirm: false }],
+    ['Accounting', mockAccountingUser, { send: false, confirm: false }],
+    ['Read Only', mockReadOnlyUser, { send: false, confirm: false }],
+    ['Dispatch', mockDispatchUser, { send: false, confirm: false }],
+  ];
+
+  it.each(MATRIX)('%s: prepare, preview and send — per the fax matrix', async (_label, user, allowed) => {
     as(user);
-    expect((await getList()).status).toBe(403);
-    expect((await preview([CASE])).status).toBe(403);
-    expect((await send('fxb-00000000000000000000000000000000')).status).toBe(403);
+    expect((await getList()).status).toBe(allowed.send ? 200 : 403);
+    const created = await preview([CASE]);
+    expect(created.status).toBe(allowed.send ? 201 : 403);
+    if (!allowed.send) {
+      expect((await send('fxb-00000000000000000000000000000000')).status).toBe(403);
+      return;
+    }
+    const { bundle } = (await created.json()) as { bundle: { id: string } };
+    expect((await pdfRoute.GET(new Request(`http://localhost/api/fax-bundles/${bundle.id}/pdf?organizationId=${ORG}`), params(bundle.id))).status).toBe(200);
+    expect((await send(bundle.id)).status).toBe(200);
   });
 
-  it.each([
-    ['Funeral Director', mockFuneralDirectorUser],
-    ['Office Staff', mockOfficeStaffUser],
-    ['Manager', mockManagerUser],
-  ])('%s holds Send Crematory Packages by default, so may list and preview', async (_label, user) => {
+  it.each(MATRIX)('%s: record delivered / failed — per the fax matrix', async (_label, user, allowed) => {
+    as(mockDefaultUser);
+    const { bundle } = (await (await preview([CASE])).json()) as { bundle: { id: string } };
+    expect((await send(bundle.id)).status).toBe(200);
     as(user);
-    expect((await getList()).status).toBe(200);
-    expect((await preview([CASE])).status).toBe(201);
+    const response = await outcome(bundle.id, { decision: 'delivered', nusoReference: 'NS-1' });
+    expect(response.status).toBe(allowed.confirm ? 200 : 403);
+    as(mockDefaultUser);
+    const view = await bundleRoute.GET(new Request(`http://localhost/api/fax-bundles/${bundle.id}?organizationId=${ORG}`), params(bundle.id));
+    expect(((await view.json()) as { bundle: { state: string } }).bundle.state).toBe(allowed.confirm ? 'delivered' : 'submitted');
   });
 
   it('refuses a cross-site POST', async () => {
     expect((await preview([CASE], ORG, { ...HEADERS, origin: 'https://elsewhere.example' })).status).toBe(403);
   });
 
-  it('an Administrator previews, reads the exact PDF (private, never cached), sends; only an Administrator or Manager records delivery', async () => {
+  it('an Administrator previews, reads the exact PDF (private, never cached), sends; only a member with fax.confirm records delivery', async () => {
     const created = await preview([CASE]);
     expect(created.status).toBe(201);
     const { bundle } = (await created.json()) as { bundle: { id: string; reference: string; applicationCount: number } };
@@ -142,10 +160,8 @@ describe('fax bundle routes', () => {
     expect(pdf.headers.get('x-content-type-options')).toBe('nosniff');
 
     expect((await send(bundle.id)).status).toBe(200);
-    for (const user of [mockFuneralDirectorUser, mockOfficeStaffUser]) {
-      as(user);
-      expect((await outcome(bundle.id, { decision: 'delivered' })).status).toBe(403);
-    }
+    as(mockArrangerUser);
+    expect((await outcome(bundle.id, { decision: 'delivered' })).status).toBe(403);
     as(mockManagerUser);
     const recorded = await outcome(bundle.id, { decision: 'delivered', nusoReference: 'NS-1' });
     expect(recorded.status).toBe(200);

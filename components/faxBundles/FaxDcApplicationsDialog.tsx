@@ -258,7 +258,7 @@ export function FaxDcApplicationsDialog({
         {bundle && step === 'sent' && (
           <div className="sx-form-banner sx-form-banner-info" role="status">
             <p className={styles.sent}>
-              <strong>Submitted to NuSo</strong> — bundle {bundle.reference}, {plural(bundle.applicationCount, 'application')}, to {bundle.destinationName} (fax {bundle.destinationFax}). This is not yet confirmed delivery: an Administrator or Manager records it from a case&rsquo;s Documents tab once NuSo reports the result.
+              <strong>Submitted to NuSo</strong> — bundle {bundle.reference}, {plural(bundle.applicationCount, 'application')}, to {bundle.destinationName} (fax {bundle.destinationFax}). This is not yet confirmed delivery: it is recorded from a case&rsquo;s Documents tab once NuSo reports the result.
             </p>
           </div>
         )}

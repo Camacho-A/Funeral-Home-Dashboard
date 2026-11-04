@@ -105,6 +105,12 @@ export const mockDispatchUser: AuthenticatedUser = {
   displayName: 'Dispatch Test User',
   source: 'mock',
 };
+export const mockArrangerUser: AuthenticatedUser = {
+  id: 'mock-user-arranger',
+  email: 'arranger@managedcremations.test',
+  displayName: 'Arranger Test User',
+  source: 'mock',
+};
 
 export const mockMembershipFixtures: OrganizationMembership[] = mockCollection('mockMembershipFixtures', (): OrganizationMembership[] => [
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockDefaultUser.id, role: 'administrator', isActive: true },
@@ -123,6 +129,7 @@ export const mockMembershipFixtures: OrganizationMembership[] = mockCollection('
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockAccountingUser.id, role: 'accounting' as OrganizationRole, isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockReadOnlyUser.id, role: 'readOnly', isActive: true },
   { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockDispatchUser.id, role: 'dispatch' as OrganizationRole, isActive: true },
+  { organizationId: DEFAULT_ORGANIZATION_ID, userId: mockArrangerUser.id, role: 'arranger' as OrganizationRole, isActive: true },
 ]);
 
 /**

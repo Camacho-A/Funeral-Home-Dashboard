@@ -24,6 +24,7 @@ import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDia
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { FaxDcApplicationsDialog } from '@/components/faxBundles/FaxDcApplicationsDialog';
 import { deathCertificateFaxSettings } from '@/domain/faxBundles/faxSettings';
+import { useMyPermissions } from '@/hooks/useRbac';
 
 /**
  * Manors intake-stage combination (2026-10). Accepts any USER-FACING stage
@@ -74,6 +75,9 @@ function CasesPageContent() {
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
   const [sendToCrematoryOpen, setSendToCrematoryOpen] = useState(false);
   const [faxOpen, setFaxOpen] = useState(false);
+  // Shown only to members who may fax (fax.send); the server enforces it either way.
+  const myPermissions = useMyPermissions(organizationId);
+  const canFax = myPermissions.data?.permissions.includes('fax.send') === true;
   const advanceStage = useAdvanceCaseStage();
 
   /**
@@ -169,7 +173,7 @@ function CasesPageContent() {
             </button>
           )}
           {/* Manatee DC application fax bundles (2026-11): one or more saved applications, one fax. */}
-          {!archived && deathCertificateFaxSettings(organizationId) && (
+          {!archived && canFax && deathCertificateFaxSettings(organizationId) && (
             <button type="button" className={`sx-btn sx-btn-secondary sx-btn-sm ${styles.faxAction}`} onClick={() => setFaxOpen(true)}>
               Fax DC Applications
             </button>

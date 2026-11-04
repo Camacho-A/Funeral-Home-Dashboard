@@ -10,7 +10,7 @@ import styles from './CaseFaxStatus.module.css';
  * Manatee County DC application fax bundles (2026-11) — one line on the
  * case's Documents tab: which bundle this case's application went out in
  * (its place in it) and where that fax stands. Earlier bundles are behind
- * "History". An Administrator or Manager records what NuSo reported.
+ * "History". Members with fax.confirm record what NuSo reported.
  */
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : null);
