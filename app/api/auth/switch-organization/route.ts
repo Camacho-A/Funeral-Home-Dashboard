@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { MFA_ENROLLMENT_REQUIRED_RESPONSE } from '@/lib/auth/requireAuthorizedOrganization';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
 
   const access = await requireIdentitySession();
   if (!access.authorized) return access.response;
-  const { identitySession, dataAdapterMode } = access;
+  const { identity, identitySession, dataAdapterMode } = access;
 
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;
@@ -40,8 +41,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
 
-  const result = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const result = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!result.granted) {
+    if (result.reason === 'mfa_enrollment_required') return MFA_ENROLLMENT_REQUIRED_RESPONSE();
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }
 

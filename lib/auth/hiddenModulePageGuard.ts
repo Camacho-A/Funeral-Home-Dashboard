@@ -27,6 +27,9 @@ export async function guardHiddenModulePage(key: HideableModuleKey): Promise<voi
     const membership = await resolveMembershipAuthorizationContext(
       resolved.identitySession,
       dataAdapterMode,
+      undefined,
+      undefined,
+      { identity: resolved.identity },
     );
     if (membership.granted) organizationId = membership.context.organizationId;
   } else {

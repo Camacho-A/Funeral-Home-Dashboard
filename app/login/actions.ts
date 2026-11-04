@@ -200,8 +200,10 @@ async function handleIdentityLogin(
   );
   // Phase 40 org require-MFA enforcement: a member of a require-MFA org who
   // isn't enrolled is routed to enrollment (never hard-locked out).
+  // MFA enrollment gate (2026-11): until they enroll, every organization that
+  // requires MFA refuses this session (resolveMembershipAuthorizationContext).
   if (await identityMustEnrollMfa(identity, dataAdapterMode)) {
-    redirect('/settings/security?notice=mfa_setup_required');
+    redirect(`/mfa-setup?next=${nextParam}`);
   }
   redirect(next);
 }

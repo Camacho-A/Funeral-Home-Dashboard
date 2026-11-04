@@ -86,6 +86,9 @@ async function seed(
   options: {
     lastSeenAtOffsetMs?: number;
     memberships?: Array<{ organizationId: string; role: string; status?: string }>;
+    /** Enrolled by default, so round-trip counts never include the MFA
+        enrollment gate's policy read (measured on its own below). */
+    mfaEnabled?: boolean;
   } = {},
 ) {
   const { buildWixIdentitySessionData } = await import('../wixIdentitySessionMapper');
@@ -126,7 +129,7 @@ async function seed(
         status: 'active',
         emailVerified: true,
         passwordVersion: 1,
-        mfaEnabled: false,
+        mfaEnabled: options.mfaEnabled ?? true,
         lastLoginAt: null,
         createdAt: iso(-1000),
         updatedAt: iso(-1000),
@@ -219,6 +222,7 @@ beforeEach(async () => {
   process.env.WIX_SITE_ID = 'fake-site';
   process.env.DEPLOYMENT_ORGANIZATION_IDS = MANORS;
   await seed();
+  (await import('../../services/mfaPolicyService')).clearOrganizationMfaPolicyCache();
   newRequest();
 });
 
@@ -228,6 +232,16 @@ const permissions = () => import('../../services/permissionService');
 describe('staff authentication — Wix round-trips', () => {
   it('authorizes a typical API request in 1 sequential round-trip (3 parallel reads) when no session write is due', async () => {
     const { requireAuthorizedOrganization } = await auth();
+    await seed({ mfaEnabled: false });
+    newRequest();
+    // MFA enrollment gate (2026-11): a not-yet-enrolled identity's first
+    // request also reads its organization's MFA policy (one more round-trip)…
+    expect((await requireAuthorizedOrganization(MANORS)).authorized).toBe(true);
+    expect(wix.calls.filter((c) => c.collection === 'organizations')).toHaveLength(1);
+    expect(wix.waves).toBe(2);
+
+    // …which is then cached briefly, so a typical request is back to one.
+    newRequest();
     const result = await requireAuthorizedOrganization(MANORS);
     report('requireAuthorizedOrganization');
 

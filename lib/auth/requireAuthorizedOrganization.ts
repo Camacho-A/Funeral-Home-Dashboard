@@ -74,6 +74,15 @@ const UNAUTHENTICATED_RESPONSE = () =>
 const FORBIDDEN_RESPONSE = () =>
   NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
 
+/** MFA enrollment gate (2026-11): the caller is a member, but this
+    organization requires MFA and they have not enrolled. Only the caller's
+    own state is disclosed — never another organization's. */
+export const MFA_ENROLLMENT_REQUIRED_RESPONSE = () =>
+  NextResponse.json(
+    { error: 'Set up two-factor authentication to continue.', code: 'mfa_enrollment_required', setupPath: '/mfa-setup' },
+    { status: 403 },
+  );
+
 export async function requireAuthorizedOrganization(
   requestedOrganizationId: string,
 ): Promise<RouteAuthorizationResult> {
@@ -99,9 +108,9 @@ export async function requireAuthorizedOrganization(
     if (!resolved.valid) {
       return { authorized: false, response: UNAUTHENTICATED_RESPONSE() };
     }
-    const result = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, requestedOrganizationId, prefetched);
+    const result = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, requestedOrganizationId, prefetched, { identity: resolved.identity });
     if (!result.granted) {
-      return { authorized: false, response: FORBIDDEN_RESPONSE() };
+      return { authorized: false, response: result.reason === 'mfa_enrollment_required' ? MFA_ENROLLMENT_REQUIRED_RESPONSE() : FORBIDDEN_RESPONSE() };
     }
 
     // Session-timeout fix (2026-09): see the identical comment in

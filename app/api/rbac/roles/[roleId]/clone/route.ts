@@ -35,7 +35,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ rol
     return NextResponse.json({ error: 'name is required.' }, { status: 400 });
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }

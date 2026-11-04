@@ -27,3 +27,43 @@ export async function identityMustEnrollMfa(identity: Identity, dataAdapterMode:
   }
   return false;
 }
+
+/**
+ * MFA enrollment gate (2026-11). Whether this organization requires its
+ * staff to use MFA, read from the organization's own server-side record.
+ * Cached briefly per organization (it is read on every org-scoped request of
+ * a not-yet-enrolled identity); turning the policy on takes effect within
+ * ORGANIZATION_MFA_POLICY_TTL_MS. A failed read throws — the caller's request
+ * fails rather than being let through.
+ */
+export const ORGANIZATION_MFA_POLICY_TTL_MS = 30_000;
+const policyCache = new Map<string, { requireMfa: boolean; readAt: number }>();
+
+export async function organizationRequiresMfa(organizationId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const key = `${dataAdapterMode}:${organizationId}`;
+  const cached = policyCache.get(key);
+  if (dataAdapterMode !== 'mock' && cached && Date.now() - cached.readAt < ORGANIZATION_MFA_POLICY_TTL_MS) return cached.requireMfa;
+  const requireMfa = (await getOrganization(organizationId, dataAdapterMode))?.requireMfa === true;
+  policyCache.set(key, { requireMfa, readAt: Date.now() });
+  return requireMfa;
+}
+
+/** Forgets cached policies — after a policy change in this process, and in tests. */
+export function clearOrganizationMfaPolicyCache(): void {
+  policyCache.clear();
+}
+
+/**
+ * True when this identity may not act in this organization until it enrolls
+ * in MFA: the organization requires MFA and the identity has not enrolled.
+ * Per organization — an organization that does not require MFA is never
+ * affected by another one that does.
+ */
+export async function mfaEnrollmentRequiredFor(
+  identity: Pick<Identity, 'mfaEnabled'>,
+  organizationId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<boolean> {
+  if (identity.mfaEnabled) return false;
+  return organizationRequiresMfa(organizationId, dataAdapterMode);
+}
