@@ -11,7 +11,8 @@ const { answersBySubmission, submissions } = vi.hoisted(() => ({
   answersBySubmission: new Map<string, Record<string, { answer: unknown }>>(),
   submissions: [] as ExternalFormSubmission[],
 }));
-vi.mock('@/lib/jotform/jotformClient', () => ({
+vi.mock('@/lib/jotform/jotformClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/jotform/jotformClient')>()),
   fetchSubmissionAnswers: vi.fn(async (id: string) => {
     const answers = answersBySubmission.get(id);
     if (!answers) throw new Error('Jotform said no for 000-12-3456');
@@ -167,3 +168,20 @@ describe('one-time fill for existing cases', () => {
     await expect(svc.backfillCaseSsns({ ...ctx(), organizationId: SECOND_MOCK_ORGANIZATION_ID }, { dryRun: true }, 'mock')).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe('JotForm credential isolation (2026-11)', () => {
+  it("reads with the organization's own key reference, and never another organization's submission", async () => {
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    vi.mocked(fetchSubmissionAnswers).mockClear();
+    answersBySubmission.set('arr-iso', { '11': { answer: '000-12-3456' } });
+    await svc.captureCaseSsnFromSubmission(ctx(), CASE_ID, submission('arr-iso', ARRANGEMENT_FORMS_EXTERNAL_FORM_ID), 'mock');
+    expect(vi.mocked(fetchSubmissionAnswers)).toHaveBeenCalledWith('arr-iso', { apiKeyReference: 'JOTFORM_API_KEY' });
+
+    vi.mocked(fetchSubmissionAnswers).mockClear();
+    const foreign = { ...submission('arr-foreign', ARRANGEMENT_FORMS_EXTERNAL_FORM_ID), organizationId: SECOND_MOCK_ORGANIZATION_ID } as ExternalFormSubmission;
+    answersBySubmission.set('arr-foreign', { '11': { answer: '000-98-7654' } });
+    expect(await svc.captureCaseSsnFromSubmission(ctx(), 'case-fictional-other', foreign, 'mock')).not.toBe('captured');
+    expect(vi.mocked(fetchSubmissionAnswers)).not.toHaveBeenCalled();
+  });
+});
+

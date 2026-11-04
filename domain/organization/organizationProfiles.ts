@@ -302,6 +302,12 @@ export type OrganizationFeaturePreferences = {
       are an organization's own legal forms (Manors' carry its signature
       and seal), so no other home ever receives them by default. */
   officialDocuments: readonly OfficialDocumentKind[];
+  /** JotForm reads (2026-11): whether a form row of this organization with
+      no `apiKeyReference` of its own reads with the original SOLIS key
+      (`JOTFORM_API_KEY`). Platform default: off — every other home must
+      name its own key on each form row, and nothing ever falls back to
+      that key. Manors: on — its form rows predate per-form keys. */
+  jotformLegacyDefaultApiKey: boolean;
   /** Stage lists come from the organization's own workflow templates
       (2026-11): the Dashboard, Cases filter, counts, Reports, activity and
       portal stage names, and bulk "advance" bounded by each case's own
@@ -424,6 +430,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   orderLinePriceLock: true,
   standingRoleOverrides: [],
   officialDocuments: [],
+  jotformLegacyDefaultApiKey: false,
   stagesFromWorkflowTemplates: true,
   enforceHiddenModulesServerSide: false,
   workflowApprovalRequired: false,
@@ -507,6 +514,8 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     stagesFromWorkflowTemplates: false,
     // Its own Envelope and Certificate of Cremation templates.
     officialDocuments: ['envelope', 'certificate_of_cremation'],
+    // Its JotForm rows read with the original key, exactly as today.
+    jotformLegacyDefaultApiKey: true,
     manateeDeathCertificateApplication: true,
     caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the

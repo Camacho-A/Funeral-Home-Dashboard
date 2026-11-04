@@ -8,6 +8,7 @@ import type { ActivityContext } from './activityService';
 import { loadCaseOnServer } from './serverCaseLoader';
 import { generateBillingDocument } from './documentService';
 import { listCaseSubmissionsNewestFirst } from './externalForms/caseSubmissions';
+import { jotformReadOptionsFor } from './externalForms/jotformReadCredentials';
 import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
@@ -124,7 +125,10 @@ async function formFactsFor(organizationId: string, caseId: string, mode: DataAd
   const results = await Promise.all(
     readable.map(async (submission) => {
       try {
-        const { answers } = await fetchSubmissionAnswers(submission.externalSubmissionId);
+        // The organization's own JotForm key — none configured reads nothing.
+        const credentials = await jotformReadOptionsFor(organizationId, submission, mode);
+        if (!credentials) return null;
+        const { answers } = await fetchSubmissionAnswers(submission.externalSubmissionId, credentials);
         const questions = FORM_QUESTIONS[submission.externalFormId];
         return { source: questions.label, facts: factsFromAnswers(answers, questions) };
       } catch {

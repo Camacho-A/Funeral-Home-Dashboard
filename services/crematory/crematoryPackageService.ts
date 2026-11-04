@@ -45,6 +45,7 @@ import {
   type UntypedCaseDocument,
 } from '@/domain/crematory/crematoryPackage';
 import { listCaseSubmissionsNewestFirst } from '../externalForms/caseSubmissions';
+import { jotformReadOptionsFor } from '../externalForms/jotformReadCredentials';
 import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
 import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNokDerivation';
 import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
@@ -123,11 +124,14 @@ export type PackageNameSuggestion = { name: PackageName; source: 'form' | 'case_
 /** Structured names read from Jotform, once per submission per server. */
 const jotformNameCache = new Map<string, Promise<Partial<Record<string, string>> | null>>();
 
-async function structuredNameFromJotform(submission: ExternalFormSubmission): Promise<Partial<Record<string, string>> | null> {
-  if (submission.provider !== 'jotform' || !submission.externalSubmissionId || !process.env.JOTFORM_API_KEY) return null;
+async function structuredNameFromJotform(organizationId: string, submission: ExternalFormSubmission, mode: DataAdapterMode): Promise<Partial<Record<string, string>> | null> {
+  if (submission.provider !== 'jotform' || !submission.externalSubmissionId) return null;
+  // The organization's own JotForm key — none configured reads nothing.
+  const credentials = await jotformReadOptionsFor(organizationId, submission, mode);
+  if (!credentials) return null;
   let pending = jotformNameCache.get(submission.id);
   if (!pending) {
-    pending = fetchSubmissionAnswers(submission.externalSubmissionId)
+    pending = fetchSubmissionAnswers(submission.externalSubmissionId, credentials)
       .then(({ answers }) => extractMappedFieldsForForm(submission, answers) as Partial<Record<string, string>>)
       .catch(() => null);
     jotformNameCache.set(submission.id, pending);
@@ -152,7 +156,7 @@ async function structuredNamesFor(organizationId: string, case_: Case, mode: Dat
     } catch {
       stored = null;
     }
-    const name = toName(stored) ?? toName(await structuredNameFromJotform(submission));
+    const name = toName(stored) ?? toName(await structuredNameFromJotform(organizationId, submission, mode));
     if (name) names.push(name);
   }
   return names;

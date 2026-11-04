@@ -136,6 +136,10 @@ describe('documents, integrations and roles', () => {
     expect(getRegisteredOrganizationProfile(THIRD).features.sendToCrematory).toBeNull();
   });
 
+  it('JotForm: only Manors may read with the original key; every other home needs its own', () => {
+    expect([MANORS, GUS, THIRD].map((org) => getRegisteredOrganizationProfile(org).features.jotformLegacyDefaultApiKey)).toEqual([true, false, false]);
+  });
+
   it('role overrides are per home: Manors none, Gus its Administrator-only catalog, the third home none', () => {
     expect(getRegisteredOrganizationProfile(MANORS).features.standingRoleOverrides).toEqual([]);
     expect(getRegisteredOrganizationProfile(GUS).features.standingRoleOverrides).toHaveLength(1);

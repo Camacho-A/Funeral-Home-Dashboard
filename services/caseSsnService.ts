@@ -5,6 +5,7 @@ import { recordCaseSsnEvent } from './activityService';
 import { ACTIVITY_EVENT_TYPES } from '@/types/activityEvent';
 import { loadCaseRow, updateCaseWithRetry, writeMockCase } from './caseWriteService';
 import { listCaseSubmissionsNewestFirst } from './externalForms/caseSubmissions';
+import { jotformReadOptionsFor } from './externalForms/jotformReadCredentials';
 import { fetchSubmissionAnswers } from '@/lib/jotform/jotformClient';
 import { decryptSsn, encryptSsn, isSsnEncryptionConfigured } from '@/lib/identity/ssnEncryption';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
@@ -149,11 +150,18 @@ export async function readCaseSsn(organizationId: string, caseId: string, mode: 
 
 export type CaptureOutcome = 'captured' | 'already_on_file' | 'none_found' | 'not_applicable';
 
-async function ssnFromSubmission(submission: ExternalFormSubmission): Promise<{ ssn: string; source: Exclude<CaseSsnSource, 'admin_correction'> } | null> {
+async function ssnFromSubmission(
+  organizationId: string,
+  submission: ExternalFormSubmission,
+  mode: DataAdapterMode,
+): Promise<{ ssn: string; source: Exclude<CaseSsnSource, 'admin_correction'> } | null> {
   const question = SSN_QUESTION[submission.externalFormId];
   if (!question || submission.provider !== 'jotform' || !submission.externalSubmissionId) return null;
   try {
-    const { answers } = await fetchSubmissionAnswers(submission.externalSubmissionId);
+    // The organization's own JotForm key — none configured reads nothing.
+    const credentials = await jotformReadOptionsFor(organizationId, submission, mode);
+    if (!credentials) return null;
+    const { answers } = await fetchSubmissionAnswers(submission.externalSubmissionId, credentials);
     const answer = answers[question.qid]?.answer;
     const ssn = normalizeSsn(typeof answer === 'string' ? answer : null);
     return ssn ? { ssn, source: question.source } : null;
@@ -186,7 +194,7 @@ export async function captureCaseSsnFromSubmission(
   try {
     if (!caseSsnEnabled(ctx.organizationId) || !isSsnEncryptionConfigured() || !SSN_QUESTION[submission.externalFormId]) return 'not_applicable';
     if (await readStored(ctx.organizationId, caseId, mode)) return 'already_on_file';
-    const found = await ssnFromSubmission(submission);
+    const found = await ssnFromSubmission(ctx.organizationId, submission, mode);
     return found ? await store(ctx, caseId, found, mode) : 'none_found';
   } catch {
     console.error('Capturing the Social Security number from the form failed.');
@@ -199,7 +207,7 @@ async function findSsnInForms(organizationId: string, caseId: string, mode: Data
   const submissions = (await listCaseSubmissionsNewestFirst(organizationId, caseId, mode)).filter((s) => SSN_QUESTION[s.externalFormId]);
   const ordered = SOURCE_PRIORITY.flatMap((source) => submissions.filter((s) => SSN_QUESTION[s.externalFormId].source === source));
   for (const submission of ordered) {
-    const found = await ssnFromSubmission(submission);
+    const found = await ssnFromSubmission(organizationId, submission, mode);
     if (found) return found;
   }
   return null;
