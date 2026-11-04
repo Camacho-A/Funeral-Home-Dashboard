@@ -1,9 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { TextField } from '@/components/ui/TextField';
 import { Button } from '@/components/ui/Button';
 import { useSaveWorkflow } from '@/hooks/useOnboarding';
+import { PLATFORM_WORKFLOW_TEMPLATES } from '@/domain/onboarding/workflowCloneSources';
 import type { OnboardingSession } from '@/types/onboarding';
 import styles from './OnboardingStepForm.module.css';
 
@@ -22,7 +22,7 @@ export function WorkflowStep({
   onSaved: (session: OnboardingSession) => void;
 }) {
   const [mode, setMode] = useState<Mode>('starter');
-  const [sourceTemplateId, setSourceTemplateId] = useState('');
+  const [sourceTemplateId, setSourceTemplateId] = useState(PLATFORM_WORKFLOW_TEMPLATES[0].id);
   const saveWorkflow = useSaveWorkflow();
 
   function handleSubmit() {
@@ -47,12 +47,15 @@ export function WorkflowStep({
           Clone an existing approved template
         </label>
         {mode === 'clone_existing' && (
-          <TextField
-            value={sourceTemplateId}
-            onChange={(e) => setSourceTemplateId(e.target.value)}
-            placeholder="Source template id"
-            aria-label="Source template id"
-          />
+          // Only SOLIS platform templates are offered — never another
+          // funeral home's workflow (2026-11).
+          <select className="sx-input" value={sourceTemplateId} onChange={(e) => setSourceTemplateId(e.target.value)} aria-label="Approved template">
+            {PLATFORM_WORKFLOW_TEMPLATES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
         )}
         <label className={styles.optionRow}>
           <input type="radio" name="workflowMode" checked={mode === 'minimal'} onChange={() => setMode('minimal')} />

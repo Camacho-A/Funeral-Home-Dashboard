@@ -76,6 +76,7 @@ import {
   type LaunchChecklistItem,
 } from '../domain/onboarding/launchReadiness';
 import { STARTER_WORKFLOW, MINIMAL_WORKFLOW, type StarterWorkflowContent } from '../domain/onboarding/starterWorkflow';
+import { platformWorkflowTemplate, workflowStructureForClone, WorkflowCloneSourceNotFoundError } from '../domain/onboarding/workflowCloneSources';
 import { buildServiceWorkflowTemplateDefinitions } from '../domain/workflow/serviceWorkflows';
 import { isWorkflowByServiceType } from '../domain/workflow/selectWorkflowTemplate';
 import { resolveStarterServiceCatalog, type StarterServiceCatalogEntry } from '../domain/onboarding/starterServiceCatalog';
@@ -936,16 +937,27 @@ export async function getOrganizationWorkflow(
   return buildWorkflowTemplate(summary, versions);
 }
 
+/**
+ * The content `clone_existing` copies (2026-11, multi-tenant safety): a
+ * platform template, or a template `organizationId` itself owns — never
+ * another organization's, which is refused exactly like a missing one (see
+ * domain/onboarding/workflowCloneSources.ts). Only the allowlisted
+ * structure is copied.
+ */
 async function fetchSourceTemplateContent(
+  organizationId: string,
   sourceTemplateId: string,
   dataAdapterMode: DataAdapterMode,
-): Promise<StarterWorkflowContent | null> {
+): Promise<{ content: StarterWorkflowContent; source: 'platform' | 'own_organization' } | null> {
+  const platform = platformWorkflowTemplate(sourceTemplateId);
+  if (platform) return { content: workflowStructureForClone(platform.content), source: 'platform' };
+
   const source =
     dataAdapterMode === 'mock'
-      ? workflowTemplateFixtures.find((t) => t.id === sourceTemplateId) ?? null
+      ? workflowTemplateFixtures.find((t) => t.id === sourceTemplateId && t.organizationId === organizationId) ?? null
       : await (async () => {
           const response = await queryWixDataItems<WixWorkflowTemplateItem>('workflowTemplates', {
-            filter: { beaconTemplateId: sourceTemplateId },
+            filter: { beaconTemplateId: sourceTemplateId, organizationId },
             paging: { limit: 1 },
           });
           const summary = mapWixWorkflowTemplateItem(response.dataItems[0]?.data);
@@ -960,15 +972,11 @@ async function fetchSourceTemplateContent(
           return buildWorkflowTemplate(summary, versions);
         })();
 
-  if (!source || source.versions.length === 0) return null;
-  // Safe onboarding (2026-10): never read another deployment's tenant data
-  // as a clone source (e.g. a Gus deployment cloning Manors' workflow).
-  if (source.organizationId && !isOrganizationAllowedInDeployment(source.organizationId)) return null;
+  // Re-checked after the read, whatever the query did: only the caller's own
+  // organization's template is ever a tenant source.
+  if (!source || source.organizationId !== organizationId || source.versions.length === 0) return null;
   const latest = source.versions[source.versions.length - 1];
-  // Deep clone — "Never share a mutable workflow instance between
-  // organizations" means byte-for-byte independent data, not merely a new
-  // template row wrapping the *same* stages/intake object graph.
-  return structuredClone({ caseTypes: latest.caseTypes, stages: latest.stages, intake: latest.intake });
+  return { content: workflowStructureForClone({ caseTypes: latest.caseTypes, stages: latest.stages, intake: latest.intake }), source: 'own_organization' };
 }
 
 export type ProvisionWorkflowMode = 'starter' | 'clone_existing' | 'minimal' | 'service_workflows';
@@ -979,8 +987,9 @@ export type ProvisionWorkflowMode = 'starter' | 'clone_existing' | 'minimal' | '
  * row with, any other organization's template ("Never share a mutable
  * workflow instance between organizations"). `'starter'`/`'minimal'` come
  * from plain in-code content (`domain/onboarding/starterWorkflow.ts`);
- * `'clone_existing'` copies another existing template's latest version's
- * `stages`/`intake`/`caseTypes` by value.
+ * `'clone_existing'` copies the structure of a platform template or of the
+ * organization's own template by value (never another organization's —
+ * see fetchSourceTemplateContent).
  *
  * Idempotent: an organization provisions at most one initial workflow
  * during onboarding — a retry finds the existing one and returns it
@@ -988,7 +997,7 @@ export type ProvisionWorkflowMode = 'starter' | 'clone_existing' | 'minimal' | '
  */
 export async function provisionWorkflow(
   organizationId: string,
-  params: { mode: ProvisionWorkflowMode; sourceTemplateId?: string; name?: string },
+  params: { mode: ProvisionWorkflowMode; sourceTemplateId?: string; name?: string; actorUserId?: string },
   idFactory: () => string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ template: WorkflowTemplate; isNew: boolean; templates?: WorkflowTemplate[] }> {
@@ -1000,13 +1009,15 @@ export async function provisionWorkflow(
   if (existing) return { template: existing, isNew: false };
 
   let content: StarterWorkflowContent;
+  let cloneSource: 'platform' | 'own_organization' | null = null;
   if (params.mode === 'minimal') {
     content = MINIMAL_WORKFLOW;
   } else if (params.mode === 'clone_existing') {
     if (!params.sourceTemplateId) throw new Error('sourceTemplateId is required for clone_existing mode.');
-    const cloned = await fetchSourceTemplateContent(params.sourceTemplateId, dataAdapterMode);
-    if (!cloned) throw new Error(`Source template "${params.sourceTemplateId}" was not found or has no versions.`);
-    content = cloned;
+    const cloned = await fetchSourceTemplateContent(organizationId, params.sourceTemplateId, dataAdapterMode);
+    if (!cloned) throw new WorkflowCloneSourceNotFoundError(params.sourceTemplateId);
+    content = cloned.content;
+    cloneSource = cloned.source;
   } else {
     content = STARTER_WORKFLOW;
   }
@@ -1022,8 +1033,23 @@ export async function provisionWorkflow(
     versions: [{ version: 1, caseTypes: content.caseTypes, stages: content.stages, intake: content.intake, createdAt: now }],
   };
 
+  const auditProvisioned = async () => {
+    if (!params.actorUserId) return;
+    await recordOnboardingAudit(
+      {
+        organizationId,
+        actorUserId: params.actorUserId,
+        action: 'workflow_provisioned',
+        metadata: { templateSource: params.mode, ...(cloneSource ? { cloneSource, sourceTemplateId: params.sourceTemplateId! } : {}) },
+      },
+      idFactory,
+      dataAdapterMode,
+    );
+  };
+
   if (dataAdapterMode === 'mock') {
     workflowTemplateFixtures.push(template);
+    await auditProvisioned();
     return { template, isNew: true };
   }
 
@@ -1045,6 +1071,7 @@ export async function provisionWorkflow(
     `${templateId}-v1`,
   );
 
+  await auditProvisioned();
   return { template, isNew: true };
 }
 

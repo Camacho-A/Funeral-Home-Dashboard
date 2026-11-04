@@ -90,18 +90,21 @@ describe('PATCH /api/onboarding/workflow', () => {
     expect(body.onboardingSession.completedSteps).toContain('workflow_setup');
   });
 
-  it('clones an existing approved template by value', async () => {
+  it('clones an approved platform template by value', async () => {
     const { session } = await seedSession();
-    const response = await patchRequest({ mode: 'clone_existing', sourceTemplateId: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, onboardingSessionId: session.id });
+    const response = await patchRequest({ mode: 'clone_existing', sourceTemplateId: 'platform-standard-cremation', onboardingSessionId: session.id });
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.workflowTemplate.id).not.toBe(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID);
+    expect(body.workflowTemplate.id).not.toBe('platform-standard-cremation');
     expect(body.workflowTemplate.organizationId).toBe(session.organizationId);
   });
 
-  it('returns 422 for a nonexistent sourceTemplateId', async () => {
+  it("returns the same 404 for a nonexistent template and for another organization's template", async () => {
     const { session } = await seedSession();
-    const response = await patchRequest({ mode: 'clone_existing', sourceTemplateId: 'no-such-template', onboardingSessionId: session.id });
-    expect(response.status).toBe(422);
+    const missing = await patchRequest({ mode: 'clone_existing', sourceTemplateId: 'no-such-template', onboardingSessionId: session.id });
+    const foreign = await patchRequest({ mode: 'clone_existing', sourceTemplateId: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, onboardingSessionId: session.id });
+    expect([missing.status, foreign.status]).toEqual([404, 404]);
+    const [m, f] = [(await missing.json()).error as string, (await foreign.json()).error as string];
+    expect(f.replace(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, 'X')).toBe(m.replace('no-such-template', 'X'));
   });
 });

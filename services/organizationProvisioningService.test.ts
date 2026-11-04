@@ -283,29 +283,40 @@ describe('provisionWorkflow', () => {
     expect(template.versions[0].stages).toHaveLength(1);
   });
 
-  it('clones an existing template\'s latest version by value, never by reference', async () => {
+  it('clones a platform template by value, never by reference', async () => {
     const { provisionWorkflow } = await import('./organizationProvisioningService');
+    const { platformWorkflowTemplate } = await import('../domain/onboarding/workflowCloneSources');
     const orgId = idFactory();
-    const { template } = await provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID }, idFactory, 'mock');
+    const { template } = await provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: 'platform-standard-cremation' }, idFactory, 'mock');
 
-    const source = workflowTemplateFixtures.find((t) => t.id === STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID)!;
-    const sourceLatest = source.versions[source.versions.length - 1];
-
-    expect(template.id).not.toBe(source.id); // a genuinely new template, never the same row
+    const source = platformWorkflowTemplate('platform-standard-cremation')!.content;
     expect(template.organizationId).toBe(orgId);
-    expect(template.versions[0].stages).toEqual(sourceLatest.stages); // same content...
-    expect(template.versions[0].stages).not.toBe(sourceLatest.stages); // ...but not the same array reference
+    expect(template.versions[0].stages.map((s) => s.label)).toEqual(source.stages.map((s) => s.label));
+    expect(template.versions[0].stages).not.toBe(source.stages);
+    template.versions[0].stages[0].label = 'Mutated Label';
+    expect(source.stages[0].label).not.toBe('Mutated Label');
   });
 
-  it('never shares a mutable workflow instance between organizations — editing the clone never touches the source', async () => {
+  it("refuses another organization's template exactly like a missing one — nothing is created", async () => {
     const { provisionWorkflow } = await import('./organizationProvisioningService');
+    const { WorkflowCloneSourceNotFoundError } = await import('../domain/onboarding/workflowCloneSources');
     const orgId = idFactory();
-    const { template } = await provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID }, idFactory, 'mock');
+    const foreign = provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID }, idFactory, 'mock');
+    await expect(foreign).rejects.toBeInstanceOf(WorkflowCloneSourceNotFoundError);
+    const missing = await provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: 'no-such-template' }, idFactory, 'mock').catch((e: Error) => e);
+    const foreignError = await provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID }, idFactory, 'mock').catch((e: Error) => e);
+    expect((foreignError as Error).message.replace(STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID, 'X')).toBe((missing as Error).message.replace('no-such-template', 'X'));
+    expect(workflowTemplateFixtures.filter((t) => t.organizationId === orgId)).toHaveLength(0);
+  });
 
-    template.versions[0].stages[0].label = 'Mutated Label';
-
-    const source = workflowTemplateFixtures.find((t) => t.id === STANDARD_CREMATION_WORKFLOW_TEMPLATE_ID)!;
-    expect(source.versions[source.versions.length - 1].stages[0].label).not.toBe('Mutated Label');
+  it('records who provisioned the workflow and from which source', async () => {
+    const { provisionWorkflow } = await import('./organizationProvisioningService');
+    const { onboardingAuditFixtures } = await import('./__mocks__/onboardingFixtures');
+    const orgId = idFactory();
+    await provisionWorkflow(orgId, { mode: 'clone_existing', sourceTemplateId: 'platform-minimal', actorUserId: 'identity-fictional-admin' }, idFactory, 'mock');
+    expect(onboardingAuditFixtures.filter((e) => e.organizationId === orgId)).toEqual([
+      expect.objectContaining({ action: 'workflow_provisioned', actorUserId: 'identity-fictional-admin', metadata: { templateSource: 'clone_existing', cloneSource: 'platform', sourceTemplateId: 'platform-minimal' } }),
+    ]);
   });
 
   it('is idempotent — a second call for the same organization returns the existing workflow, never a duplicate', async () => {

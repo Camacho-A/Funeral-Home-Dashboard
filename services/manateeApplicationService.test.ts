@@ -28,7 +28,8 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
     deleteFile: async () => undefined,
   },
 }));
-vi.mock('@/lib/jotform/jotformClient', () => ({
+vi.mock('@/lib/jotform/jotformClient', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/jotform/jotformClient')>()),
   fetchSubmissionAnswers: vi.fn(async (id: string) => {
     const answers = answersBySubmission.get(id);
     if (!answers) throw new Error('Jotform said no for 000-12-3456');

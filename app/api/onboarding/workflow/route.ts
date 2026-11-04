@@ -4,6 +4,7 @@ import { getDataAdapterMode } from '@/lib/env';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { parseJsonBody, resolveOnboardingSessionAccess } from '@/lib/onboarding/routeHelpers';
 import { provisionWorkflow, markStepCompleted, type ProvisionWorkflowMode } from '@/services/organizationProvisioningService';
+import { WorkflowCloneSourceNotFoundError } from '@/domain/onboarding/workflowCloneSources';
 
 // 'service_workflows' (2026-11): the cremation service templates of an
 // organization that chooses workflows by service — see provisionWorkflow.
@@ -13,7 +14,8 @@ const VALID_MODES: ProvisionWorkflowMode[] = ['starter', 'clone_existing', 'mini
  * Phase 20 (Organization Onboarding & Tenant Provisioning). Step 4 —
  * Workflow Setup. Materializes a brand-new, organization-owned
  * WorkflowTemplate — never a reference to any other organization's
- * template (see provisionWorkflow's own comment). Idempotent: retrying
+ * template (see provisionWorkflow's own comment). `clone_existing` copies
+ * only a platform template or the organization's own (2026-11). Idempotent: retrying
  * returns the org's already-provisioned workflow unchanged.
  */
 export async function PATCH(request: Request) {
@@ -26,7 +28,7 @@ export async function PATCH(request: Request) {
 
   const resolved = await resolveOnboardingSessionAccess(b.onboardingSessionId);
   if (!resolved.ok) return resolved.response;
-  const { onboardingSession } = resolved.data;
+  const { onboardingSession, session } = resolved.data;
 
   if (typeof b.mode !== 'string' || !(VALID_MODES as string[]).includes(b.mode)) {
     return NextResponse.json({ error: `mode must be one of: ${VALID_MODES.join(', ')}.` }, { status: 400 });
@@ -45,11 +47,14 @@ export async function PATCH(request: Request) {
         mode: b.mode as ProvisionWorkflowMode,
         sourceTemplateId: typeof b.sourceTemplateId === 'string' ? b.sourceTemplateId : undefined,
         name: typeof b.name === 'string' ? b.name : undefined,
+        actorUserId: session.user.id,
       },
       () => crypto.randomUUID(),
       dataAdapterMode,
     ));
   } catch (error) {
+    // Another organization's template answers exactly like a missing one.
+    if (error instanceof WorkflowCloneSourceNotFoundError) return NextResponse.json({ error: error.message }, { status: 404 });
     const message = error instanceof Error ? error.message : 'Failed to provision workflow.';
     return NextResponse.json({ error: message }, { status: 422 });
   }
