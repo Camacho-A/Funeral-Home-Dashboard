@@ -42,7 +42,7 @@ beforeEach(() => {
 describe('FaxDcApplicationsDialog', () => {
   it('shows the destination, each saved application with its target day, and why an application cannot be selected', async () => {
     renderDialog();
-    expect(await screen.findByText('Manatee County Vital Statistics · Fax 941-554-5490')).toBeTruthy();
+    expect((await screen.findByText(/Manatee County Vital Statistics/)).textContent).toBe('Manatee County Vital Statistics · Fax 941-554-5490');
     expect(screen.getAllByText(/send by Nov 9/)).toHaveLength(4);
     const unavailable = screen.getByLabelText(/Delta Testcase/) as HTMLInputElement;
     expect(unavailable.disabled).toBe(true);
@@ -89,7 +89,7 @@ describe('FaxDcApplicationsDialog', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Preview bundle (2)' }));
     expect((await screen.findByTestId('pdf')).textContent).toBe('/api/fax-bundles/fxb-1/pdf?organizationId=managed-cremations');
     expect(screen.getByText(/DC-7Q4K9M · 2 applications · 2 pages/)).toBeTruthy();
-    expect(screen.getByText('Manatee County Vital Statistics · Fax 941-554-5490')).toBeTruthy();
+    expect(screen.getByText(/Manatee County Vital Statistics/).textContent).toBe('Manatee County Vital Statistics · Fax 941-554-5490');
     expect(screen.getByText('office@funeralhome.example (Outlook → NuSo)')).toBeTruthy();
     // No confirmation box to tick, nothing to type.
     expect(screen.queryByRole('checkbox')).toBeNull();

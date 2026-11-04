@@ -5,6 +5,12 @@
   min-width: 0;
 }
 
+/* A steady height while choosing, so the dialog never moves under the
+   pointer as applications are ticked. */
+.selecting {
+  min-height: min(68vh, 600px);
+}
+
 .muted {
   margin: 0;
   color: var(--sx-text-2);
@@ -34,7 +40,7 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  max-height: min(46vh, 420px);
+  max-height: min(40vh, 360px);
   overflow-y: auto;
 }
 
@@ -123,6 +129,8 @@
   margin: 0;
   padding: 0;
   list-style: none;
+  max-height: 168px;
+  overflow-y: auto;
 }
 
 .orderItem {
@@ -190,4 +198,13 @@
   .preview {
     min-height: 280px;
   }
+}
+
+.sent {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.nowrap {
+  white-space: nowrap;
 }

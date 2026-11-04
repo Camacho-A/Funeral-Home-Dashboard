@@ -108,7 +108,7 @@ export function FaxDcApplicationsDialog({
   }
 
   const title = 'Fax DC Applications';
-  const destination = eligibility.data ? `${eligibility.data.destinationName} · Fax ${eligibility.data.destinationFax}` : null;
+
 
   return (
     <Modal open onClose={onClose} title={title} size="lg">
@@ -118,7 +118,7 @@ export function FaxDcApplicationsDialog({
           ×
         </button>
       </div>
-      <div className={`sx-modal-body ${styles.body}`}>
+      <div className={`sx-modal-body ${styles.body} ${step === 'select' ? styles.selecting : ''}`}>
         {eligibility.isPending && <p className={styles.muted}>Loading saved applications…</p>}
         {eligibility.error && (
           <div className="sx-form-banner sx-form-banner-error" role="alert">
@@ -139,7 +139,10 @@ export function FaxDcApplicationsDialog({
         {eligibility.data && step === 'select' && (
           <>
             <p className={styles.destination}>
-              To <strong>{destination}</strong>
+              To{' '}
+              <strong>
+                {eligibility.data.destinationName} · <span className={styles.nowrap}>Fax {eligibility.data.destinationFax}</span>
+              </strong>
             </p>
             {cases.length === 0 ? (
               <p className={styles.muted}>No saved Manatee County applications are waiting to be faxed.</p>
@@ -226,7 +229,7 @@ export function FaxDcApplicationsDialog({
               <div>
                 <dt>To</dt>
                 <dd>
-                  {bundle.destinationName} · Fax {bundle.destinationFax}
+                  {bundle.destinationName} · <span className={styles.nowrap}>Fax {bundle.destinationFax}</span>
                 </dd>
               </div>
               <div>
@@ -254,7 +257,9 @@ export function FaxDcApplicationsDialog({
 
         {bundle && step === 'sent' && (
           <div className="sx-form-banner sx-form-banner-info" role="status">
-            <strong>Submitted to NuSo</strong> — bundle {bundle.reference}, {plural(bundle.applicationCount, 'application')}, to {bundle.destinationName} (fax {bundle.destinationFax}). This is not yet confirmed delivery: an Administrator or Manager records it from a case&rsquo;s Documents tab once NuSo reports the result.
+            <p className={styles.sent}>
+              <strong>Submitted to NuSo</strong> — bundle {bundle.reference}, {plural(bundle.applicationCount, 'application')}, to {bundle.destinationName} (fax {bundle.destinationFax}). This is not yet confirmed delivery: an Administrator or Manager records it from a case&rsquo;s Documents tab once NuSo reports the result.
+            </p>
           </div>
         )}
       </div>
