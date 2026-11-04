@@ -27,7 +27,12 @@ export async function buildManateeTemplateFixture(options: { price?: string } = 
     field.addToPage(page, { x: 320, y: (y -= 17), width: 150, height: 15, font });
     return field;
   };
-  ['1 OF', 'of', 'First Name', 'Middle', 'Last', 'Suffix1', 'Alias', 'Surname'].forEach((n) => text(n));
+  // "Request ___ of ___": at the real form's exact rectangles (fax bundles number them there).
+  page.drawText('Request', { x: 436, y: 668, size: 10, font });
+  page.drawText('of', { x: 502, y: 668, size: 10, font });
+  form.createTextField('1 OF').addToPage(page, { x: 473.28, y: 665.7964, width: 25.44, height: 13.6072, font, borderWidth: 0 });
+  form.createTextField('of').addToPage(page, { x: 513, y: 665.7964, width: 27.6, height: 13.6072, font, borderWidth: 0 });
+  ['First Name', 'Middle', 'Last', 'Suffix1', 'Alias', 'Surname'].forEach((n) => text(n));
   list('Suffix2', ['   ', 'F', 'M']);
   list('Month', ['   ', ...Array.from({ length: 12 }, (_, i) => String(i + 1))]);
   list('Day', ['   ', ...Array.from({ length: 31 }, (_, i) => String(i + 1))]);

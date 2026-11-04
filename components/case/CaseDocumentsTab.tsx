@@ -42,6 +42,8 @@ import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
 import { CaseFormsSection } from './CaseFormsSection';
 import { CrematoryPackageStatus } from './CrematoryPackageStatus';
+import { CaseFaxStatus } from '@/components/faxBundles/CaseFaxStatus';
+import { deathCertificateFaxSettings } from '@/domain/faxBundles/faxSettings';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { Modal } from '@/components/ui/Modal';
 import { DocumentPreview } from '@/components/documents/DocumentPreview';
@@ -495,6 +497,13 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       {subTab === 'documents' && (
         <>
           {sendToCrematoryConfig(organizationId) && <CrematoryPackageStatus organizationId={organizationId} caseId={caseId} />}
+          {deathCertificateFaxSettings(organizationId) && (
+            <CaseFaxStatus
+              organizationId={organizationId}
+              caseId={caseId}
+              canRecordOutcome={myPermissionsQuery.data?.roleKey === 'administrator' || myPermissionsQuery.data?.roleKey === 'manager'}
+            />
+          )}
           <div className="sx-docs-toolbar">
             {/* Toolbar (2026-10): one primary action, every "create a
                 document" action in one menu, and the bulk actions together

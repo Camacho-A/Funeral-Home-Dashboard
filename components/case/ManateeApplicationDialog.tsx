@@ -341,40 +341,6 @@ export function ManateeApplicationDialog({ organizationId, caseId, onClose }: { 
               )}
             </section>
 
-            <section className={styles.section}>
-              <h3 className={styles.sectionTitle}>Request number (optional)</h3>
-              <div className={styles.requestRow}>
-                <label className="sx-label" htmlFor="manatee-requestNumber">
-                  Request
-                </label>
-                <input
-                  id="manatee-requestNumber"
-                  className={`sx-input ${styles.qty}`}
-                  inputMode="numeric"
-                  maxLength={2}
-                  value={values.requestNumber}
-                  aria-invalid={issueFor('requestNumber') ? true : undefined}
-                  onChange={(e) => set('requestNumber', e.target.value.replace(/\D/g, ''))}
-                />
-                <label className="sx-label" htmlFor="manatee-requestOf">
-                  of
-                </label>
-                <input
-                  id="manatee-requestOf"
-                  className={`sx-input ${styles.qty}`}
-                  inputMode="numeric"
-                  maxLength={2}
-                  value={values.requestOf}
-                  aria-invalid={issueFor('requestNumber') ? true : undefined}
-                  onChange={(e) => set('requestOf', e.target.value.replace(/\D/g, ''))}
-                />
-              </div>
-              {issueFor('requestNumber') ? (
-                <span className={styles.issue}>{issueFor('requestNumber')}</span>
-              ) : (
-                <span className="sx-help">Left blank on the form unless you enter both numbers.</span>
-              )}
-            </section>
 
             {issues.length > 0 && (
               <div className="sx-form-banner sx-form-banner-error" role="status">

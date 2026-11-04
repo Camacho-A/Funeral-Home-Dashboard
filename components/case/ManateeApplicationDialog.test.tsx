@@ -127,16 +127,12 @@ describe('ManateeApplicationDialog', () => {
     await waitFor(() => expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false));
   });
 
-  it('Request ___ of ___ is optional, and needs both numbers once started', async () => {
+  it('has no manual Request ___ of ___ numbering — fax bundles number applications themselves', async () => {
     client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, withCause: 1 } }));
     renderDialog();
     await screen.findByDisplayValue('Mary Ann');
-    expect(screen.getByText('Left blank on the form unless you enter both numbers.')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Request'), { target: { value: '1' } });
-    expect(screen.getByText(/enter both numbers/)).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('of'), { target: { value: '2' } });
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByLabelText('Request')).toBeNull();
+    expect(screen.queryByText(/Request number/)).toBeNull();
   });
 
   it('a locked SSN is shown as its last four, locked — with nothing to type and no "not known"', async () => {

@@ -1,3 +1,4 @@
+import type { DeathCertificateFaxSettings } from '../faxBundles/faxSettings';
 import type { Organization } from '../../types/organization';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { HideableModuleKey } from './moduleVisibility';
@@ -237,6 +238,11 @@ export type OrganizationFeaturePreferences = {
       locked on the case (domain/cases/caseSsn.ts). */
   caseSsn: boolean;
   sendToCrematory: { emailOrganizationName: string; authorizationWorkflowStage: number } | null;
+  /** Manatee County DC application fax bundles (2026-11): where saved
+      applications are faxed, through the connected mailbox and NuSo's
+      email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
+      offered. */
+  deathCertificateFax: DeathCertificateFaxSettings | null;
 };
 
 /** Features whose value can also come from an Organization record field —
@@ -323,6 +329,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   dymoCaseLabel: false,
   arrangementPageExtracts: false,
   sendToCrematory: null,
+  deathCertificateFax: null,
   manateeDeathCertificateApplication: false,
   caseSsn: false,
 });
@@ -394,6 +401,17 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     dymoCaseLabel: true,
     arrangementPageExtracts: true,
     sendToCrematory: { emailOrganizationName: 'Manors Cremation', authorizationWorkflowStage: 2 },
+    // Manatee County Vital Statistics' fax (also printed on form DH 1961).
+    // Sending stays off until the NuSo sender, account requirements and a
+    // controlled test delivery are verified (docs/MANATEE_FAX_BUNDLES.md).
+    deathCertificateFax: {
+      destinationName: 'Manatee County Vital Statistics',
+      faxNumber: '9415545490',
+      gatewayDomain: 'fax.nuso.io',
+      emailOrganizationName: 'Manors Cremation',
+      maxAttachmentBytes: 10 * 1024 * 1024,
+      sendingEnabled: false,
+    },
     manateeDeathCertificateApplication: true,
     caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the

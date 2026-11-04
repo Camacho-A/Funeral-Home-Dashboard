@@ -1229,6 +1229,41 @@ export function recordCrematorySendAcknowledgment(
   );
 }
 
+/**
+ * Manatee County DC application fax bundles (2026-11). `caseId` null: the
+ * bundle-level event (every case listed in its record); otherwise that
+ * case's own entry, naming the bundle and its position in it.
+ */
+export function recordFaxBundleEvent(
+  ctx: ActivityContext,
+  caseId: string | null,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_PREVIEWED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_SUBMITTED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_SEND_FAILED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_NEEDS_REVIEW
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_DELIVERED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_NOT_DELIVERED,
+  details: { bundleId: string; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType,
+      resourceType: 'faxBundle',
+      resourceId: details.bundleId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: details.severity ?? 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

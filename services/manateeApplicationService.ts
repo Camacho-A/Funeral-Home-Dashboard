@@ -37,6 +37,9 @@ import {
 export type { ManateeApplicationInput, ManateeDraft } from '@/domain/documents/manateeDeathCertificateApplication';
 import { buildManateeApplicationPdf, loadManateeApplicationTemplate, ManateeTemplateError } from './manateeApplicationTemplate';
 import { captureCaseSsnFromForms, readCaseSsn } from './caseSsnService';
+import { completeChecklistItemsAutomatically } from './automaticChecklistCompletion';
+import { reconcileCaseWorkflow } from './workflowReconciliationService';
+import { MANATEE_APPLICATION_SAVED_EVENT, dcApplicationFilledOutItem } from '@/domain/faxBundles/faxChecklist';
 
 /**
  * Manatee County — Death Certificate Application (2026-10): the draft
@@ -262,7 +265,9 @@ async function resolveValues(case_: Case, input: ManateeApplicationInput, mode: 
 }
 
 async function renderFor(case_: Case, input: ManateeApplicationInput, mode: DataAdapterMode): Promise<Uint8Array> {
-  const values = await resolveValues(case_, input, mode);
+  // "Request ___ of ___" is left blank (2026-11): a fax bundle numbers each
+  // application in its own copy (services/faxBundles/faxBundlePdf.ts).
+  const values = await resolveValues(case_, { ...input, requestNumber: '', requestOf: '' }, mode);
   const template = await loadManateeApplicationTemplate();
   if (template.status !== 'loaded') {
     throw new ManateeApplicationError('The Manatee County form is not set up yet. Ask an administrator to add it.', 503);
@@ -293,7 +298,7 @@ export async function saveManateeApplication(
 ): Promise<CaseDocument> {
   const case_ = await loadCaseFor(organizationId, caseId, mode);
   const bytes = await renderFor(case_, input, mode);
-  return generateBillingDocument(
+  const document = await generateBillingDocument(
     {
       caseId,
       documentTypeKey: DOCUMENT_TYPES.VITAL_RECORDS_MANATEE_DEATH_CERTIFICATE_APPLICATION.key,
@@ -305,4 +310,29 @@ export async function saveManateeApplication(
     ctx,
     mode,
   );
+  if (document.status === 'active') await completeFilledOutChecklist(ctx, caseId, document.id, mode);
+  return document;
+}
+
+/**
+ * "DC application filled out" (2026-11): a saved application passed every
+ * check (manateeIssues) before it was rendered, so saving it completes the
+ * item — found by position and exact label in the case's own workflow,
+ * never over a staff tick, never on an archived case. Best-effort: the
+ * document is already saved.
+ */
+async function completeFilledOutChecklist(ctx: ActivityContext, caseId: string, documentId: string, mode: DataAdapterMode): Promise<void> {
+  try {
+    const { outcome } = await completeChecklistItemsAutomatically(
+      ctx.organizationId,
+      caseId,
+      { source: 'document_generated', eventType: MANATEE_APPLICATION_SAVED_EVENT, eventId: documentId },
+      (case_) => dcApplicationFilledOutItem(case_),
+      mode,
+      { actor: ctx.actorIdentityId ? { identityId: ctx.actorIdentityId, roleKey: ctx.actorRoleKey } : null, correlationId: ctx.correlationId },
+    );
+    if (outcome === 'completed') await reconcileCaseWorkflow(ctx.organizationId, caseId, mode);
+  } catch (error) {
+    console.error('The Manatee application was saved, but its checklist item could not be completed:', error instanceof Error ? error.message : error);
+  }
 }

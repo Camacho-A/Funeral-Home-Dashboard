@@ -257,6 +257,17 @@ export const ACTIVITY_EVENT_TYPES = {
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',
   CASE_SSN_CORRECTED: 'case.ssn_corrected',
+  /** Manatee County DC application fax bundles (2026-11). One bundle = one
+      PDF = one email = one fax; each event names the bundle (resourceId)
+      and, on a case, that case's place in it. SUBMITTED means Outlook
+      accepted the email for NuSo — never that the fax was delivered; only
+      DELIVERED (recorded by an Administrator or Manager) says that. */
+  FAX_BUNDLE_PREVIEWED: 'fax_bundle.previewed',
+  FAX_BUNDLE_SUBMITTED: 'fax_bundle.submitted',
+  FAX_BUNDLE_SEND_FAILED: 'fax_bundle.send_failed',
+  FAX_BUNDLE_NEEDS_REVIEW: 'fax_bundle.needs_review',
+  FAX_BUNDLE_DELIVERED: 'fax_bundle.delivered',
+  FAX_BUNDLE_NOT_DELIVERED: 'fax_bundle.not_delivered',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */

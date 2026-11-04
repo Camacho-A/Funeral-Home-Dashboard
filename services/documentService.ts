@@ -972,6 +972,34 @@ export async function downloadFile(
     `document.downloaded` event. Same lookup and availability rule as
     `downloadFile`: another case's or organization's document is never
     found. */
+/**
+ * Organization-level private files that belong to no single case (2026-11:
+ * fax bundle PDFs and delivery confirmations, under
+ * `{organizationId}/fax-bundles/`). Same private storage and the same
+ * provider as case documents; the key must sit under the organization's own
+ * fax-bundles prefix — never another organization's, never a case's.
+ */
+const ORGANIZATION_FILE_AREAS = ['fax-bundles'] as const;
+function assertOrganizationFileKey(organizationId: string, key: string): void {
+  const ok = ORGANIZATION_FILE_AREAS.some((area) => key.startsWith(`${organizationId}/${area}/`)) && !key.includes('..') && /^[A-Za-z0-9._\/-]+$/.test(key);
+  if (!ok) throw new DocumentServiceError('Invalid organization file location.');
+}
+
+export async function storeOrganizationFile(organizationId: string, key: string, contents: Uint8Array, contentType: string): Promise<{ storageKey: string }> {
+  assertOrganizationFileKey(organizationId, key);
+  return documentStorageProvider.uploadFile(key, Buffer.from(contents), contentType);
+}
+
+export async function readOrganizationFile(organizationId: string, key: string): Promise<Uint8Array> {
+  assertOrganizationFileKey(organizationId, key);
+  return new Uint8Array((await documentStorageProvider.downloadFile(key)).buffer);
+}
+
+export async function deleteOrganizationFile(organizationId: string, key: string): Promise<void> {
+  assertOrganizationFileKey(organizationId, key);
+  await documentStorageProvider.deleteFile(key);
+}
+
 export async function readStoredCaseDocument(
   organizationId: string,
   caseId: string,

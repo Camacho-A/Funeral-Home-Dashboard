@@ -22,6 +22,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import styles from './page.module.css';
 import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
+import { FaxDcApplicationsDialog } from '@/components/faxBundles/FaxDcApplicationsDialog';
+import { deathCertificateFaxSettings } from '@/domain/faxBundles/faxSettings';
 
 /**
  * Manors intake-stage combination (2026-10). Accepts any USER-FACING stage
@@ -71,6 +73,7 @@ function CasesPageContent() {
   const { query, setQuery, debouncedQuery, submitQuery } = useCaseSearch();
   const [selectedCaseIds, setSelectedCaseIds] = useState<Record<string, boolean>>({});
   const [sendToCrematoryOpen, setSendToCrematoryOpen] = useState(false);
+  const [faxOpen, setFaxOpen] = useState(false);
   const advanceStage = useAdvanceCaseStage();
 
   /**
@@ -165,9 +168,23 @@ function CasesPageContent() {
               Send to Crematory
             </button>
           )}
+          {/* Manatee DC application fax bundles (2026-11): one or more saved applications, one fax. */}
+          {!archived && deathCertificateFaxSettings(organizationId) && (
+            <button type="button" className={`sx-btn sx-btn-secondary sx-btn-sm ${styles.faxAction}`} onClick={() => setFaxOpen(true)}>
+              Fax DC Applications
+            </button>
+          )}
         </div>
         <div className={styles.subheading}>{subheading}</div>
       </header>
+
+      {faxOpen && (
+        <FaxDcApplicationsDialog
+          organizationId={organizationId}
+          onClose={() => setFaxOpen(false)}
+          preselectedCaseIds={Object.keys(selectedCaseIds).filter((id) => selectedCaseIds[id])}
+        />
+      )}
 
       {sendToCrematoryOpen && (
         <SendToCrematoryDialog
