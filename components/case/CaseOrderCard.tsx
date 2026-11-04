@@ -11,7 +11,7 @@ import { EditServicesModal } from '@/components/case/EditServicesModal';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseOrder } from '@/hooks/useCaseOrder';
-import { useCasePayments, useRecordManualPayment } from '@/hooks/useCasePayments';
+import { useCaseBalance, useCasePayments, useRecordManualPayment } from '@/hooks/useCasePayments';
 import { formatCentsAsCurrency, formatTimestamp } from '@/utils/format';
 import { printTextLog } from '@/utils/print';
 import {
@@ -51,6 +51,8 @@ import { MANUAL_PAYMENT_METHODS, MANUAL_PAYMENT_METHOD_LABEL, looksLikeCardNumbe
  *   - `payment.read` — the case's TOTAL, balance due, and payment history
  *     specifically (narrower — not every case-working role gets this).
  *   - `payment.collect` — Record Payment.
+ *   - `payment.refund` — only changes the overpayment warning's wording
+ *     (how to resolve it); nothing is refunded or credited from here.
  * Renders nothing at all without `caseOrder.read`. Every query is disabled
  * without its own gate, so no data is fetched for a caller who can't see
  * it — but the real enforcement is server-side (the underlying routes
@@ -72,9 +74,13 @@ export function CaseOrderCard({
   const canEditCaseOrder = permissions.includes('caseOrder.update');
   const canReadPayment = permissions.includes('payment.read');
   const canRecordPayment = permissions.includes('payment.collect');
+  const canRefundPayment = permissions.includes('payment.refund');
 
   const { data, isPending } = useCaseOrder(caseId, canReadCaseOrder);
   const { data: payments = [] } = useCasePayments(caseId, canReadPayment);
+  const { data: balance = null } = useCaseBalance(caseId, canReadPayment);
+  // Payments beyond the order total (2026-11): shown, never refunded or credited automatically.
+  const overpaymentCents = balance?.overpaymentCents ?? 0;
   const recordManualPayment = useRecordManualPayment(caseId);
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [editOpen, setEditOpen] = useState(false);
@@ -143,8 +149,8 @@ export function CaseOrderCard({
       <div className={styles.header}>
         <div className={styles.title}>Case Order</div>
         {order && canReadPayment && (
-          <Badge variant={caseOrderBalanceStatusVariant(order.balanceDue)}>
-            {caseOrderBalanceStatusLabel(order.balanceDue)}
+          <Badge variant={overpaymentCents > 0 ? 'warning' : caseOrderBalanceStatusVariant(order.balanceDue)}>
+            {overpaymentCents > 0 ? 'Overpaid' : caseOrderBalanceStatusLabel(order.balanceDue)}
           </Badge>
         )}
       </div>
@@ -191,6 +197,24 @@ export function CaseOrderCard({
                 <span>Balance due</span>
                 <span>{formatCentsAsCurrency(order.balanceDue, 'usd')}</span>
               </div>
+              {overpaymentCents > 0 && balance && (
+                <div className={styles.balanceRow}>
+                  <span>Credit (overpayment)</span>
+                  <span>{formatCentsAsCurrency(overpaymentCents, 'usd')}</span>
+                </div>
+              )}
+            </div>
+          )}
+          {canReadPayment && overpaymentCents > 0 && balance && (
+            <div className={styles.overpayment} role="alert">
+              <strong>
+                Payments exceed the order total by {formatCentsAsCurrency(overpaymentCents, 'usd')} — credit/overpayment to resolve.
+              </strong>{' '}
+              {formatCentsAsCurrency(balance.paidCents, 'usd')} paid against a {formatCentsAsCurrency(balance.orderTotalCents, 'usd')} order. Nothing has been
+              refunded or credited.{' '}
+              {canRefundPayment
+                ? 'Resolve it with the family — refund the excess from a payment, or keep it as a credit and note how it was settled.'
+                : 'Ask an administrator or accounting to resolve it with the family.'}
             </div>
           )}
 
