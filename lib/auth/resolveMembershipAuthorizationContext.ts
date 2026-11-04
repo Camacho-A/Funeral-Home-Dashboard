@@ -2,9 +2,12 @@ import type { IdentitySession } from '../../types/identitySession';
 import type { AuthorizationContext } from '../../types/authorization';
 import type { Membership } from '../../types/membership';
 import type { DataAdapterMode } from '../env';
+import type { Identity } from '../../types/identity';
 import { listMembershipsForIdentity, isActiveMembership } from '../../services/membershipService';
 import { setSessionOrganization } from '../../services/sessionService';
 import { isOrganizationAllowedInDeployment } from './deploymentOrganizations';
+import { getIdentityById } from '../../services/identityService';
+import { organizationRequiresMfa } from '../../services/mfaPolicyService';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). The
@@ -38,7 +41,7 @@ export type MembershipAuthorizeResult =
   | { granted: true; context: AuthorizationContext }
   | {
       granted: false;
-      reason: 'no_active_membership' | 'organization_mismatch' | 'selection_required' | 'organization_not_allowed';
+      reason: 'no_active_membership' | 'organization_mismatch' | 'selection_required' | 'organization_not_allowed' | 'mfa_enrollment_required';
     };
 
 /** Memberships a caller started reading in parallel with session
@@ -58,7 +61,38 @@ export function prefetchMembershipsForSession(identityId: string, dataAdapterMod
   return { identityId, memberships };
 }
 
+/**
+ * MFA enrollment gate (2026-11). Every grant this function makes is for one
+ * organization; when that organization requires MFA and the identity has not
+ * enrolled, the grant is refused with `mfa_enrollment_required` instead —
+ * never a silent switch to another organization. Read from server-side data
+ * only (the identity row and the organization's record), so no route that
+ * authorizes through here — requireAuthorizedOrganization and every
+ * identity-session route — can skip it. Callers that already loaded the
+ * identity pass it as `identity`; otherwise it is read here, and only when
+ * the organization requires MFA. The policy is read only AFTER membership is
+ * granted (never for an organization the caller merely asked about), and
+ * never for an enrolled identity. A failed policy read throws (fails closed).
+ */
 export async function resolveMembershipAuthorizationContext(
+  identitySession: IdentitySession,
+  dataAdapterMode: DataAdapterMode,
+  requestedOrganizationId?: string,
+  prefetched?: PrefetchedMemberships,
+  gate: { identity?: Pick<Identity, 'id' | 'mfaEnabled'> } = {},
+): Promise<MembershipAuthorizeResult> {
+  const result = await resolveMembershipGrant(identitySession, dataAdapterMode, requestedOrganizationId, prefetched);
+  if (!result.granted) return result;
+  const known = gate.identity && gate.identity.id === identitySession.identityId ? gate.identity : null;
+  if (known?.mfaEnabled) return result;
+  const organizationId = result.context.organizationId;
+  if (!(await organizationRequiresMfa(organizationId, dataAdapterMode))) return result;
+  const identity = known ?? (await getIdentityById(identitySession.identityId, dataAdapterMode));
+  if (!identity?.mfaEnabled) return { granted: false, reason: 'mfa_enrollment_required' };
+  return result;
+}
+
+async function resolveMembershipGrant(
   identitySession: IdentitySession,
   dataAdapterMode: DataAdapterMode,
   requestedOrganizationId?: string,

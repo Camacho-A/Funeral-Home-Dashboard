@@ -20,6 +20,13 @@ const jar = vi.hoisted(() => ({
   phase: 'action' as 'action' | 'render',
   mutationsDuringRender: 0,
   redirects: [] as string[],
+  /** Organizations whose MFA policy is on, for the enrollment-gate test. */
+  requireMfa: new Set<string>(),
+}));
+
+vi.mock('@/services/mfaPolicyService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/mfaPolicyService')>()),
+  organizationRequiresMfa: async (organizationId: string) => jar.requireMfa.has(organizationId),
 }));
 
 vi.mock('next/headers', () => ({
@@ -68,6 +75,7 @@ beforeEach(() => {
   jar.phase = 'action';
   jar.mutationsDuringRender = 0;
   jar.redirects.length = 0;
+  jar.requireMfa.clear();
 });
 
 afterEach(() => {
@@ -195,5 +203,16 @@ describe('PortalLayout — stale or disallowed sessions never mutate cookies dur
 
     expect(result.redirect).toBeNull();
     expect(organizationIdOf(result.element!)).toBe('managed-cremations');
+  });
+
+  it('MFA enrollment gate (2026-11): a member of an organization that requires MFA who has not enrolled is sent to /mfa-setup, never shown the portal', async () => {
+    const { GUS_ADMIN_EMAIL, GUS_DEMO_PASSWORD, GUS_ORGANIZATION_ID } = await import('@/services/__mocks__/gusFixtures');
+    await signInAs(GUS_ADMIN_EMAIL, GUS_DEMO_PASSWORD);
+    jar.requireMfa.add(GUS_ORGANIZATION_ID);
+
+    const result = await renderLayoutFresh();
+
+    expect(result.redirect).toBe('/mfa-setup');
+    expect(result.element).toBeNull();
   });
 });

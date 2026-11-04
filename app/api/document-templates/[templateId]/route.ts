@@ -34,7 +34,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ te
     return NextResponse.json({ error: 'body is required.' }, { status: 400 });
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, b.organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, b.organizationId, undefined, { identity });
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }

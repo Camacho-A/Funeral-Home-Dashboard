@@ -54,7 +54,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'status must be one of "active", "disabled", or "removed".' }, { status: 400 });
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }

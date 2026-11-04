@@ -69,8 +69,10 @@ export default async function PortalLayout({ children }: { children: React.React
       redirect(clearSessionPath(resolved.reason));
     }
 
-    const membershipResult = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, undefined, prefetched);
+    const membershipResult = await resolveMembershipAuthorizationContext(resolved.identitySession, dataAdapterMode, undefined, prefetched, { identity: resolved.identity });
     if (!membershipResult.granted) {
+      // MFA enrollment gate (2026-11): enrollment happens outside the portal.
+      if (membershipResult.reason === 'mfa_enrollment_required') redirect('/mfa-setup');
       redirect(`/login?error=${membershipResult.reason}`);
     }
 

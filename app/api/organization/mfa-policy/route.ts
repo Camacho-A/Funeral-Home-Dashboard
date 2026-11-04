@@ -3,6 +3,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { canManageOrganization } from '@/services/authorizationPolicyService';
 import { getOrganization, updateOrganization } from '@/services/organizationProvisioningService';
+import { clearOrganizationMfaPolicyCache } from '@/services/mfaPolicyService';
 import { getDataAdapterMode } from '@/lib/env';
 
 /**
@@ -45,5 +46,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
   }
   const updated = await updateOrganization(auth.context.organizationId, { requireMfa: b.requireMfa }, mode);
+  clearOrganizationMfaPolicyCache();
   return NextResponse.json({ requireMfa: updated?.requireMfa === true });
 }

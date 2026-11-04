@@ -172,6 +172,20 @@ describe('loginAction — AUTH_ADAPTER=identity', () => {
     expect(redirectCalls[0]).toBe('/dashboard');
   });
 
+  it('MFA enrollment gate (2026-11): a member of an organization that requires MFA who has not enrolled is sent to /mfa-setup, keeping where they were going', async () => {
+    const { mockOrganizationFixtures } = await import('@/services/__mocks__/authFixtures');
+    const org = mockOrganizationFixtures.find((o) => o.id === 'managed-cremations') as unknown as { requireMfa?: boolean };
+    org.requireMfa = true;
+    try {
+      const form = formData(mockDefaultUser.email, MANORS_ADMIN_DEMO_PASSWORD);
+      form.set('next', '/cases');
+      await expect(loginAction(form)).rejects.toThrow('REDIRECT:');
+      expect(redirectCalls[0]).toBe('/mfa-setup?next=%2Fcases');
+    } finally {
+      delete org.requireMfa;
+    }
+  });
+
   it('rotates the session on every login — two successive logins from the same account get two distinct, independently-valid session ids', async () => {
     await expect(loginAction(formData(mockDefaultUser.email, MANORS_ADMIN_DEMO_PASSWORD))).rejects.toThrow('REDIRECT:');
     const [, firstSessionId] = createSession.mock.calls[0];

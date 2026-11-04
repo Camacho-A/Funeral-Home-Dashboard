@@ -39,7 +39,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ro
     return NextResponse.json({ error: 'removePermissions must be an array of valid permission keys.' }, { status: 400 });
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }
@@ -101,7 +101,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ r
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }

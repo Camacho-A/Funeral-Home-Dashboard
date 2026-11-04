@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'organizationId is required.' }, { status: 400 });
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!authz.granted) {
     return NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 });
   }

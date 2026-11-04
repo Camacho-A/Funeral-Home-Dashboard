@@ -40,6 +40,9 @@ describe('Phase 40 MFA structural boundaries', () => {
       'app/api/auth/mfa/recovery-codes/route.ts',
       'lib/mfaClient.ts',
       'components/settings/MfaPanel.tsx',
+      'components/auth/MfaEnrollmentSetup.tsx',
+      'app/mfa-setup/page.tsx',
+      'services/mfaPolicyService.ts',
     ]) {
       expect(read(f)).not.toMatch(forbidden);
     }

@@ -43,7 +43,7 @@ export async function GET() {
 
   const access = await requireIdentitySession();
   if (!access.authorized) return access.response;
-  const authz = await resolveMembershipAuthorizationContext(access.identitySession, access.dataAdapterMode);
+  const authz = await resolveMembershipAuthorizationContext(access.identitySession, access.dataAdapterMode, undefined, undefined, { identity: access.identity });
   const { context } = authz.granted ? authz : { context: null };
   if (
     !context ||

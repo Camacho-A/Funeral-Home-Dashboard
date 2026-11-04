@@ -67,7 +67,10 @@ export async function fixtureResolveIdentitySession(session: AuthSession): Promi
     status: 'active',
     emailVerified: true,
     passwordVersion: 0,
-    mfaEnabled: false,
+    // Enrolled, so these authorization-shape tests never reach the MFA
+    // enrollment gate's organization read (2026-11); the gate has its own
+    // tests (lib/auth/mfaEnrollmentGate.test.ts).
+    mfaEnabled: true,
     lastLoginAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,

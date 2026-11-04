@@ -39,7 +39,7 @@ async function authorizeAndResolveTarget(
     return { ok: false, response: NextResponse.json({ error: 'targetIdentityId is required.' }, { status: 400 }) };
   }
 
-  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId);
+  const authz = await resolveMembershipAuthorizationContext(identitySession, dataAdapterMode, organizationId, undefined, { identity });
   if (!authz.granted) {
     return { ok: false, response: NextResponse.json({ error: 'Not authorized for this organization.' }, { status: 403 }) };
   }
