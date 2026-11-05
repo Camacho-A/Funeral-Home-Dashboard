@@ -678,6 +678,66 @@
   overflow-wrap: anywhere;
 }
 
+/* Phone choices for the destination: hidden until the phone breakpoint. */
+.destinationChoices {
+  display: none;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.destinationChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.destinationChoice + .destinationChoice {
+  margin-top: 6px;
+}
+
+.destinationChoiceOn {
+  border-color: var(--sx-navy);
+  background: var(--sx-selected);
+}
+
+.destinationChoice .checkbox {
+  margin-top: 2px;
+}
+
+.destinationChoiceText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.destinationChoiceName {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 19px;
+  overflow-wrap: anywhere;
+}
+
+.defaultTag {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--sx-navy);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
 /* ---------- Tablet and phone ---------- */
 /* Below 860px the dialog is full screen (Modal). One column; the body
    scrolls, and the PDF viewer keeps a fixed, readable height with its
@@ -750,6 +810,21 @@
 }
 
 @media (max-width: 560px) {
+  /* Destination: full-width choices replace the menu (and its spelled-out copy). */
+  .destinationPicker > label,
+  .destinationPicker .destinationSelect,
+  .destinationPicker .destinationValue {
+    display: none;
+  }
+
+  .destinationChoices {
+    display: block;
+  }
+
+  .destinationChoices > legend {
+    margin-bottom: 8px;
+  }
+
   /* Only the current step is named; the others are numbers. */
   .stepItem:not(.stepCurrent) .stepLabel {
     position: absolute;

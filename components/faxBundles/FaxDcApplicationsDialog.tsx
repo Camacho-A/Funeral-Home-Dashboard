@@ -245,6 +245,31 @@ export function FaxDcApplicationsDialog({
                   <strong>{destination.name}</strong> <span className={styles.faxNumber}>Fax {destination.faxNumberDisplay}</span>
                   {!destination.isDefault && <span className={styles.notDefault}>Not the default destination</span>}
                 </span>
+                {/* Phones (2026-11): a menu cuts long names off, so each destination is a full-width choice instead. Only one of the two controls is ever displayed. */}
+                <fieldset className={styles.destinationChoices} disabled={busy !== null}>
+                  <legend className={styles.destinationLabel}>Faxing to</legend>
+                  {destinations.map((d) => (
+                    <label key={d.id} className={`${styles.destinationChoice} ${d.id === destination.id ? styles.destinationChoiceOn : ''}`}>
+                      <input
+                        type="radio"
+                        className={styles.checkbox}
+                        name={`${destinationSelectId}-choice`}
+                        value={d.id}
+                        checked={d.id === destination.id}
+                        onChange={() => {
+                          setPickedDestinationId(d.id);
+                          setError(null);
+                          setProblems({});
+                        }}
+                      />
+                      <span className={styles.destinationChoiceText}>
+                        <span className={styles.destinationChoiceName}>{d.name}</span>
+                        <span className={styles.faxNumber}>Fax {d.faxNumberDisplay}</span>
+                      </span>
+                      {d.isDefault && <span className={styles.defaultTag}>Default</span>}
+                    </label>
+                  ))}
+                </fieldset>
               </div>
             ) : (
               <Destination name={destination?.name ?? data.destinationName} fax={destination?.faxNumberDisplay ?? data.destinationFax} />

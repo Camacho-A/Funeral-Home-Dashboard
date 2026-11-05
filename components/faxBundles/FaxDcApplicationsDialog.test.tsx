@@ -287,9 +287,32 @@ describe('FaxDcApplicationsDialog — three steps', () => {
     expect(confirmBox().closest('label')!.textContent).toMatch(/to Sarasota County Records at 941-555-0177/);
   });
 
+  it('phones get full-width destination choices (whole name, number, Default tag) that drive the same selection as the menu', async () => {
+    client.fetchFaxEligibility.mockResolvedValue(
+      eligibility({
+        destinations: [
+          { id: 'fxd-manatee', name: 'Manatee County Vital Statistics', faxNumberDisplay: '941-554-5490', isDefault: true },
+          { id: 'fxd-long', name: 'Charlotte County Office of Vital Records and Statistics (fictional)', faxNumberDisplay: '941-555-0199', isDefault: false },
+        ],
+      }),
+    );
+    client.previewFaxBundle.mockResolvedValue(bundle(['case-1'], { destinationId: 'fxd-long' }));
+    renderDialog(['case-1']);
+    const group = within((await screen.findByRole('group', { name: 'Faxing to' })) as HTMLElement);
+    const [manatee, long] = group.getAllByRole('radio') as HTMLInputElement[];
+    expect(manatee.checked).toBe(true);
+    expect(manatee.closest('label')!.textContent).toBe('Manatee County Vital StatisticsFax 941-554-5490Default');
+    fireEvent.click(long);
+    expect((screen.getByLabelText('Faxing to') as HTMLSelectElement).value).toBe('fxd-long');
+    expect(long.closest('label')!.textContent).toContain('Charlotte County Office of Vital Records and Statistics (fictional)');
+    await review(1);
+    expect(client.previewFaxBundle).toHaveBeenLastCalledWith('managed-cremations', ['case-1'], 'fxd-long');
+  });
+
   it('one destination: no menu, just the destination', async () => {
     renderDialog();
     expect(await screen.findByText('Manatee County Vital Statistics')).toBeTruthy();
     expect(screen.queryByLabelText('Faxing to')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Faxing to' })).toBeNull();
   });
 });

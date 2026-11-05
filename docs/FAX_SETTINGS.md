@@ -157,7 +157,19 @@ exactly as before.
 | Settings | absent → stored | first save creates it from the built-in values; every change revision + 1 |
 | Default | built-in → a stored destination | moved by one conditioned write; built-in is stored first, never dropped |
 
-## Wix migration (NOT done — needs approval)
+## Wix migration — APPLIED to the live site 2026-11-05 (verified)
+
+Applied with approval while Production stayed at `1ec6f68` (no Fax Settings
+code deployed): both collections created exactly as below (NATIVE,
+ADMIN×4, no required fields, indexes `ACTIVE`, both empty), and the four
+`faxBundles` fields added with Create Data Collection Field (the 40
+existing fields, permissions and 3 indexes unchanged). Before/after
+fingerprints: `faxBundles` (2 rows, both previews), `faxBundleCases`,
+`cases`, `caseDocuments`, organizations, roles, permissions, memberships,
+role audit entries and `activityEvents` unchanged; both stored bundle PDFs
+still match their checksums. No destination or settings row was written,
+so Manors resolves to its built-in destination.
+
 
 Create both collections in ONE request each, with every index (indexes cannot
 be added later; cap 3 regular + 1 unique). Permissions read/insert/update/
@@ -207,8 +219,9 @@ Safety net if the code is deployed first: reads of a collection that does
 not exist (Wix HTTP 404 `WDE0025`, confirmed read-only on the live site
 2026-11-05) are treated as "nothing stored", so previews keep using the
 built-in values; saving in Fax Settings fails until the collections exist.
-Whether Wix stores the four new `faxBundles` fields without a schema change
-is not verified — add them first.
+The four `faxBundles` fields are now in the schema; that a preview made by
+the new code round-trips them is verified only after deploy, with the first
+approved Production preview.
 
 Rollback: redeploy the previous build; the collections can stay (unused).
 A bundle prepared under the new build carries extra fields the old build
