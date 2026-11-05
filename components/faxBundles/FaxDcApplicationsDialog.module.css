@@ -182,11 +182,26 @@
   list-style: none;
 }
 
+/* Preview navigation (2026-11). This box used to shrink: the dialog body is
+   a flex column, so a 70vh viewer was squeezed to the 360px minimum and
+   `overflow: hidden` cut off its page controls, leaving only page 1 of the
+   bundle reachable. It now keeps its full height (the body scrolls instead)
+   and clips only its rounded corners (`clip` is not a scroll box, so the
+   viewer's sticky toolbar still sticks to the dialog body). */
 .preview {
-  min-height: 360px;
+  flex: none;
   border: 1px solid var(--sx-border-soft);
   border-radius: 8px;
   overflow: hidden;
+  overflow: clip;
+  /* The dialog body's own top padding, so the toolbar pins to its edge. */
+  --pdf-toolbar-sticky-top: -20px;
+}
+
+/* Tall enough to read a page, short enough that the whole viewer — its
+   controls and the page — fits in the dialog once scrolled to. */
+.viewer {
+  height: clamp(320px, calc(100vh - 300px), 820px);
 }
 
 @media (max-width: 560px) {
@@ -195,8 +210,8 @@
     gap: 0;
   }
 
-  .preview {
-    min-height: 280px;
+  .viewer {
+    height: clamp(300px, calc(100dvh - 280px), 720px);
   }
 }
 

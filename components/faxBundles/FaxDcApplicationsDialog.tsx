@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '@/components/ui/Modal';
-import { DocumentPreview } from '@/components/documents/DocumentPreview';
+import { PdfViewer } from '@/components/documents/PdfViewer';
 import {
   FaxRequestError,
   faxBundlePdfUrl,
@@ -251,7 +251,14 @@ export function FaxDcApplicationsDialog({
               </div>
             </dl>
             <div className={styles.preview}>
-              <DocumentPreview url={faxBundlePdfUrl(organizationId, bundle.id)} fileName={`${bundle.reference}.pdf`} mimeType="application/pdf" />
+              {/* The stored bundle PDF itself — the exact file Send Fax attaches. Every page is reachable from the controls above it. */}
+              <PdfViewer
+                url={faxBundlePdfUrl(organizationId, bundle.id)}
+                fileName={`${bundle.reference}.pdf`}
+                variant="review"
+                className={styles.viewer}
+                sections={bundle.items.map((i) => ({ label: `Request ${i.position} of ${bundle.applicationCount} — ${i.decedentDisplayName} (${i.caseNumber})`, pageCount: i.pageCount }))}
+              />
             </div>
           </>
         )}

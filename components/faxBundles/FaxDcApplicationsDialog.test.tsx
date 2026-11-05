@@ -6,7 +6,7 @@ import type { FaxBundleView, FaxEligibility } from '@/lib/faxBundlesClient';
 /** Fictional cases. The dialog never builds or sends anything itself — the server does. */
 const client = vi.hoisted(() => ({ fetchFaxEligibility: vi.fn(), previewFaxBundle: vi.fn(), sendFaxBundle: vi.fn() }));
 vi.mock('@/lib/faxBundlesClient', async (importOriginal) => ({ ...(await importOriginal<typeof import('@/lib/faxBundlesClient')>()), ...client }));
-vi.mock('@/components/documents/DocumentPreview', () => ({ DocumentPreview: ({ url }: { url: string }) => <div data-testid="pdf">{url}</div> }));
+vi.mock('@/components/documents/PdfViewer', () => ({ PdfViewer: ({ url, sections }: { url: string; sections?: Array<{ label: string; pageCount: number }> }) => <div data-testid="pdf" data-sections={JSON.stringify(sections ?? null)}>{url}</div> }));
 const { FaxDcApplicationsDialog } = await import('./FaxDcApplicationsDialog');
 const { FaxRequestError } = await import('@/lib/faxBundlesClient');
 
@@ -23,7 +23,7 @@ const bundle = (ids: string[], overrides: Partial<FaxBundleView> = {}): FaxBundl
   destinationName: 'Manatee County Vital Statistics', destinationFax: '941-554-5490', destinationAddress: '9415545490@fax.nuso.io',
   subject: 'Manors Cremation - DC Application Bundle DC-7Q4K9M', senderAddress: 'office@funeralhome.example', createdAt: '2026-11-04T12:00:00.000Z',
   submittedAt: null, deliveredAt: null, confirmedAt: null, nusoReference: null, failureMessage: null, sendingEnabled: true,
-  items: ids.map((id, i) => ({ position: i + 1, caseId: id, caseNumber: `B2026-90${id.slice(-1)}`, decedentDisplayName: `Case ${id}`, documentVersion: 1, numbering: 'filled_blank' as const })),
+  items: ids.map((id, i) => ({ position: i + 1, caseId: id, caseNumber: `B2026-90${id.slice(-1)}`, decedentDisplayName: `Case ${id}`, documentVersion: 1, numbering: 'filled_blank' as const, pageCount: 1 })),
   ...overrides,
 });
 
@@ -104,6 +104,19 @@ describe('FaxDcApplicationsDialog', () => {
     expect(await screen.findByText('Submitted to NuSo')).toBeTruthy();
     expect(screen.getByText(/not yet confirmed delivery/)).toBeTruthy();
     expect(client.sendFaxBundle).toHaveBeenCalledTimes(1);
+  });
+
+  it('the viewer is told which pages are which request, so every application in the bundle can be paged to', async () => {
+    const view = bundle(['case-1', 'case-2', 'case-3']);
+    view.items[1].pageCount = 2;
+    client.previewFaxBundle.mockResolvedValue({ ...view, pageCount: 4 });
+    renderDialog(['case-1', 'case-2', 'case-3']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Preview bundle (3)' }));
+    expect(JSON.parse((await screen.findByTestId('pdf')).getAttribute('data-sections')!)).toEqual([
+      { label: 'Request 1 of 3 — Case case-1 (B2026-901)', pageCount: 1 },
+      { label: 'Request 2 of 3 — Case case-2 (B2026-902)', pageCount: 2 },
+      { label: 'Request 3 of 3 — Case case-3 (B2026-903)', pageCount: 1 },
+    ]);
   });
 
   it('while sending is not turned on, bundles can be previewed but Send Fax is unavailable', async () => {

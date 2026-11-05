@@ -169,7 +169,7 @@ export type FaxBundleView = {
   nusoReference: string | null;
   failureMessage: string | null;
   sendingEnabled: boolean;
-  items: Array<{ position: number; caseId: string; caseNumber: string; decedentDisplayName: string; documentVersion: number | null; numbering: FaxBundleItem['numbering'] }>;
+  items: Array<{ position: number; caseId: string; caseNumber: string; decedentDisplayName: string; documentVersion: number | null; numbering: FaxBundleItem['numbering']; pageCount: number }>;
 };
 
 async function viewOf(bundle: FaxBundle, mode: DataAdapterMode): Promise<FaxBundleView> {
@@ -208,6 +208,7 @@ async function viewOf(bundle: FaxBundle, mode: DataAdapterMode): Promise<FaxBund
       decedentDisplayName: names[i] ? displayName(names[i]!) : 'Case unavailable',
       documentVersion: item.documentVersion,
       numbering: item.numbering,
+      pageCount: item.pageCount,
     })),
   };
 }

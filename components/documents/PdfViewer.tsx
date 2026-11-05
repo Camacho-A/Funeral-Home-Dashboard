@@ -23,6 +23,12 @@ import styles from './PdfViewer.module.css';
  * bundled, so no CDN is contacted either.
  */
 
+/**
+ * A run of consecutive pages that belong together — in a fax bundle, one
+ * application ("Request 2 of 3"). Labels only: the PDF itself is untouched.
+ */
+export type PdfViewerSection = { label: string; pageCount: number };
+
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'ready'; doc: PDFDocumentProxy }
@@ -34,6 +40,9 @@ export function PdfViewer({
   fileName,
   onLoaded,
   onFailed,
+  variant = 'compact',
+  sections,
+  className,
 }: {
   url?: string;
   /** The PDF's bytes, already fetched (2026-10, the permit preview) — used instead of `url`. */
@@ -43,6 +52,18 @@ export function PdfViewer({
   onLoaded?: () => void;
   /** Called when it cannot be shown. */
   onFailed?: (message: string) => void;
+  /**
+   * 'review' (2026-11, the fax bundle preview): the page controls sit ABOVE
+   * the page and are always shown, labelled "Previous page" / "Next page",
+   * with a Fit width / Whole page switch — every page must be checked
+   * before a send, so the controls may never be pushed out of view by the
+   * page they control. 'compact' is the original viewer, unchanged.
+   */
+  variant?: 'compact' | 'review';
+  /** Review only: what each run of pages is. Ignored unless the counts add up to the PDF's own page count. */
+  sections?: readonly PdfViewerSection[];
+  /** Sizes the viewer (its height) for the place it is shown. */
+  className?: string;
 }) {
   const onLoadedRef = useRef(onLoaded);
   const onFailedRef = useRef(onFailed);
@@ -52,10 +73,13 @@ export function PdfViewer({
   });
   const reportedLoaded = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<RenderTask | null>(null);
 
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [pageNumber, setPageNumber] = useState(1);
+  /** Review only: fit the page's width (read it), or the whole page (see all of it). */
+  const [fit, setFit] = useState<'width' | 'page'>('width');
   /** Bumped on resize so the current page re-renders at the new width. */
   const [resizeToken, setResizeToken] = useState(0);
 
@@ -145,7 +169,12 @@ export function PdfViewer({
       // Measured from the unpadded frame, so the page is sized to the
       // space it actually has rather than overflowing by the padding.
       const available = canvas!.parentElement?.clientWidth;
-      const scale = available && available > 0 ? available / unscaled.width : 1;
+      let scale = available && available > 0 ? available / unscaled.width : 1;
+      if (fit === 'page') {
+        // The scroll box's height less its 12px + 12px padding.
+        const height = (scrollRef.current?.clientHeight ?? 0) - 24;
+        if (height > 0) scale = Math.min(scale, height / unscaled.height);
+      }
       const viewport = page.getViewport({ scale });
       const ratio = window.devicePixelRatio || 1;
 
@@ -182,7 +211,12 @@ export function PdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [state, pageNumber, resizeToken]);
+  }, [state, pageNumber, resizeToken, fit]);
+
+  // A new page starts at its top, not wherever the last one was scrolled to.
+  useEffect(() => {
+    scrollRef.current?.scrollTo?.({ top: 0 });
+  }, [pageNumber]);
 
   const goTo = useCallback(
     (next: number) => {
@@ -211,9 +245,63 @@ export function PdfViewer({
 
   const pageCount = state.doc.numPages;
 
+  if (variant === 'review') {
+    const starts = sectionStarts(sections, pageCount);
+    const current = starts ? starts.reduce((found, start, i) => (start <= pageNumber ? i : found), -1) : -1;
+    const section = starts && current >= 0 ? sections![current] : null;
+    return (
+      <div className={`${styles.viewer} ${className ?? ''}`}>
+        <div className={styles.toolbar} role="toolbar" aria-label="PDF pages">
+          <div className={styles.toolbarPager}>
+            <button type="button" className={styles.pagerButton} onClick={() => goTo(pageNumber - 1)} disabled={pageNumber <= 1}>
+              ‹ Previous page
+            </button>
+            <span className={styles.pagerLabel} aria-live="polite">
+              Page {pageNumber} of {pageCount}
+            </span>
+            <button type="button" className={styles.pagerButton} onClick={() => goTo(pageNumber + 1)} disabled={pageNumber >= pageCount}>
+              Next page ›
+            </button>
+          </div>
+          <div className={styles.toolbarTools}>
+            {starts && sections!.length > 1 && (
+              <select className={styles.jump} aria-label="Go to" value={starts[current]} onChange={(e) => goTo(Number(e.target.value))}>
+                {sections!.map((s, i) => (
+                  <option key={i} value={starts[i]}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button type="button" className={styles.pagerButton} aria-pressed={fit === 'page'} onClick={() => setFit(fit === 'page' ? 'width' : 'page')}>
+              {fit === 'page' ? 'Fit width' : 'Whole page'}
+            </button>
+          </div>
+          {/* The Go to menu already names a one-page request; say more only when there is more to say. */}
+          {section && (sections!.length === 1 || section.pageCount > 1) && (
+            <p className={styles.sectionLabel}>
+              {section.label}
+              {section.pageCount > 1 ? ` · its page ${pageNumber - starts![current] + 1} of ${section.pageCount}` : ''}
+            </p>
+          )}
+        </div>
+        <div className={styles.canvasScroll} ref={scrollRef}>
+          <div className={styles.canvasFrame}>
+            <canvas
+              ref={canvasRef}
+              className={styles.canvas}
+              role="img"
+              aria-label={`${fileName}, page ${pageNumber} of ${pageCount}${section ? ` — ${section.label}` : ''}`}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={styles.viewer}>
-      <div className={styles.canvasScroll}>
+    <div className={`${styles.viewer} ${className ?? ''}`}>
+      <div className={styles.canvasScroll} ref={scrollRef}>
         <div className={styles.canvasFrame}>
           <canvas
             ref={canvasRef}
@@ -238,4 +326,17 @@ export function PdfViewer({
       )}
     </div>
   );
+}
+
+/** The first page (1-based) of each section, or null when the sections do not account for exactly every page. */
+function sectionStarts(sections: readonly PdfViewerSection[] | undefined, pageCount: number): number[] | null {
+  if (!sections || sections.length === 0) return null;
+  if (sections.some((s) => !Number.isInteger(s.pageCount) || s.pageCount < 1)) return null;
+  const starts: number[] = [];
+  let next = 1;
+  for (const s of sections) {
+    starts.push(next);
+    next += s.pageCount;
+  }
+  return next - 1 === pageCount ? starts : null;
 }
