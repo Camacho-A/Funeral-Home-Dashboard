@@ -41,3 +41,36 @@
 .metricSlot {
   min-width: 0;
 }
+
+/* UI refresh (2026-11): each chart or table is a titled card. */
+.metricsGrid.metricsGrid {
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 16px;
+  max-width: 1120px;
+}
+
+.metricCard {
+  padding: 18px 20px 20px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.metricTitle {
+  margin: 0 0 14px;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+@media (max-width: 560px) {
+  .metricsGrid.metricsGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .metricCard {
+    padding: 14px 14px 16px;
+  }
+}

@@ -54,6 +54,265 @@
   color: var(--sx-text-2);
 }
 
+/* ---------- Shared building blocks on refreshed pages ---------- */
+/* Section labels between cards: small caps-style, like the Settings hub.
+   Inside a card they keep their normal look (reset further below). */
+.sx-refresh .sx-section-title {
+  border-bottom: none;
+  padding: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-refresh .sx-section-title .sx-section-meta {
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: 400;
+}
+
+/* Figures: one card each. */
+.sx-refresh .sx-kpis {
+  gap: 14px;
+  border: none;
+  margin: 0 0 24px;
+}
+
+.sx-refresh .sx-kpi,
+.sx-refresh .sx-kpi:first-child {
+  padding: 16px 20px 18px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-kpi + .sx-kpi {
+  border-left: 1px solid var(--sx-card-border);
+}
+
+.sx-refresh a.sx-kpi:hover {
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+.sx-refresh .sx-kpi-label {
+  font-size: 13px;
+}
+
+.sx-refresh .sx-kpi-value {
+  font-size: 26px;
+  line-height: 32px;
+  letter-spacing: -0.02em;
+}
+
+/* Tables: inside a card, with a quiet header row. */
+.sx-refresh .sx-table-wrap {
+  padding: 4px 12px 6px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-table-wrap .sx-table th {
+  background: transparent;
+}
+
+.sx-refresh .sx-table-wrap .sx-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* A featured link (e.g. Reports → All Case Data). */
+.sx-refresh .sx-feature {
+  background: var(--sx-card);
+  border-color: var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-feature:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+/* A directory (e.g. the Reports list): a grid of cards. */
+.sx-refresh .sx-dir {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  margin: 0 0 32px;
+}
+
+.sx-refresh .sx-dir-row {
+  margin: 0;
+  padding: 14px 16px;
+  min-height: 64px;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: 12px;
+  box-shadow: var(--sx-card-shadow);
+  transition: box-shadow var(--sx-ease), border-color var(--sx-ease);
+}
+
+.sx-refresh .sx-dir-row:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+.sx-refresh .sx-dir-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--sx-navy-tint);
+}
+
+.sx-refresh .sx-dir-name {
+  font-weight: 600;
+}
+
+.sx-refresh .sx-dir-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+.sx-refresh .sx-feature .sx-dir-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--sx-navy);
+  color: #fff;
+}
+
+/* Tasks: the composer and each group as cards. */
+.sx-refresh .sx-tasks {
+  max-width: 1080px;
+}
+
+.sx-refresh .sx-composer {
+  border-color: var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  margin: 0 0 20px;
+}
+
+.sx-refresh .sx-task-group {
+  padding: 16px 16px 8px;
+  margin: 0 0 16px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-task-group .sx-task-row {
+  margin: 0;
+  padding: 6px 10px;
+}
+
+.sx-refresh .sx-task-group .sx-task-row:last-child {
+  border-bottom: none;
+}
+
+/* Segmented controls and sub-navigation sit on the canvas. */
+.sx-refresh .sx-seg {
+  background: oklch(0.945 0.006 255);
+}
+
+.sx-refresh .sx-subnav {
+  border-bottom-color: var(--sx-card-border);
+}
+
+/* A link or action inside a section label keeps its normal case. */
+.sx-refresh .sx-section-title a,
+.sx-refresh .sx-section-title button {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Empty states on the canvas: a soft card, so a section never looks blank. */
+.sx-refresh .sx-empty {
+  padding: 22px 20px;
+  border: 1px dashed var(--sx-border-input);
+  border-radius: var(--sx-card-radius);
+  background: oklch(0.985 0.002 255);
+  text-align: center;
+}
+
+.sx-refresh :is(.sx-settings-card, .sx-card, .sx-task-group, .sx-table-wrap, .sx-modal) .sx-empty {
+  padding: 12px 0;
+  border: none;
+  background: transparent;
+  text-align: inherit;
+}
+
+/* A table placed straight on the canvas (no .sx-table-wrap) is its own card. */
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  overflow: hidden;
+}
+
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) th:first-child,
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) td:first-child {
+  padding-left: 16px;
+}
+
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) th:last-child,
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) td:last-child {
+  padding-right: 16px;
+}
+
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Inside a card, a section title is a heading again, not a label. */
+.sx-refresh .sx-settings-card .sx-section-title,
+.sx-refresh .sx-card .sx-section-title,
+.sx-refresh .sx-task-group .sx-section-title {
+  padding: 0 0 10px;
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--sx-text);
+}
+
+.sx-refresh .sx-settings-card .sx-section-title {
+  border-bottom: 1px solid var(--sx-border);
+}
+
+@media (max-width: 560px) {
+  .sx-refresh .sx-dir {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sx-refresh .sx-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .sx-refresh .sx-kpi,
+  .sx-refresh .sx-kpi:first-child {
+    padding: 12px 14px 14px;
+  }
+
+  .sx-refresh .sx-kpi-value {
+    font-size: 21px;
+    line-height: 28px;
+  }
+}
+
 /* ---------- Settings ---------- */
 /* Hub: title + description once; areas as a grid of cards with an icon. */
 .sx-refresh .sx-settings-hub .sx-dir {

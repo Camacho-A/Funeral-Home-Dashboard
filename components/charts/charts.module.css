@@ -124,3 +124,63 @@
   font-variant-numeric: tabular-nums;
   font-weight: var(--font-weight-bold, 700);
 }
+
+/* UI refresh (2026-11): bar rows — label | track | value. */
+.barRows {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.barRowLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sx-text, #111827);
+}
+
+.barTrack {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--sx-subtle, #f3f4f6);
+  overflow: hidden;
+}
+
+.barTrack .barSvg {
+  display: block;
+  width: 100%;
+  height: 10px;
+  min-height: 0;
+}
+
+.barTrack .bar {
+  fill: var(--sx-navy, #1f3c5b);
+}
+
+.barRowValue {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--sx-text-2, #374151);
+}
+
+@media (max-width: 560px) {
+  .barRow {
+    grid-template-columns: minmax(0, 1fr) 56px;
+    row-gap: 4px;
+  }
+
+  .barRowLabel {
+    grid-column: 1 / -1;
+    white-space: normal;
+  }
+}

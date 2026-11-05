@@ -256,7 +256,8 @@ export default function ReportViewerPage({ params }: { params: Promise<{ reportK
                 .map((metric) => {
                   const metricDef = getMetricDefinition(metric.metricKey);
                   return (
-                    <div key={metric.metricKey} className={styles.metricSlot}>
+                    <div key={metric.metricKey} className={`${styles.metricSlot} ${styles.metricCard}`}>
+                      <h2 className={styles.metricTitle}>{metric.displayName}</h2>
                       {renderMetricValue(metric.metricKey, metric.value, metricDef?.dataType ?? 'count', metricDef?.unit ?? '', metric.displayName)}
                     </div>
                   );
