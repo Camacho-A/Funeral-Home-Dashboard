@@ -86,7 +86,8 @@ describe('fax test transmission routes', () => {
     expect(memoryFaxTable.rows('faxTestTransmissions')).toHaveLength(0);
   });
 
-  it('with Manors\' real (empty) allowlist the feature is off: listed as off, every send refused', async () => {
+  it('with an empty allowlist the feature is off: listed as off, every send refused', async () => {
+    recipients.value = { faxNumbers: [], emailAddresses: [] };
     const overview = (await (await get()).json()).overview;
     expect(overview).toMatchObject({ enabled: false, recipients: [], sendingEnabled: false });
     const refused = await post(dryRun('submission-0003'));

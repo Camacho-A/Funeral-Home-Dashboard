@@ -10,7 +10,8 @@ import { normalizeFaxNumber } from './faxConfiguration';
  * recipient the organization controls, to learn what NuSo and Exchange do
  * to it (cover page? text pages? disclaimer?) — without turning sending on.
  *
- * Three steps, each unlocked only by the previous one passing:
+ * Three steps — the dry run is optional; the two-page test needs the
+ * one-page test to have passed:
  *   0  email dry run   1-page PDF to an approved EMAIL address
  *   1  one-page fax    1-page PDF to an approved fax number
  *   2  two-page fax    2-page PDF to an approved fax number

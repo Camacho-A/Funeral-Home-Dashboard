@@ -46,7 +46,7 @@ import {
  * Safeguards, in order, for each transmission:
  *   - an Administrator (organization.manage) who may also fax (fax.send);
  *   - the recipient is on the allowlist (the browser names it by key only);
- *   - the step is unlocked (0 → 1 → 2, each only after the previous passed);
+ *   - the step is unlocked (2 only after 1 passed; the dry run, 0, is optional);
  *   - the request repeats the recipient and page count it was confirmed for;
  *   - the submission id is unique and recorded (a repeat sends nothing);
  *   - one open test per organization (an atomic lock row): nothing else is
@@ -113,7 +113,8 @@ function stepStates(recipients: FaxTestRecipient[], transmissions: FaxTestTransm
     const hasRecipient = recipients.some((r) => r.kind === spec.kind);
     let reason: string | null = null;
     if (!hasRecipient) reason = spec.kind === 'fax' ? 'No approved test fax number is configured.' : 'No approved dry-run email address is configured.';
-    else if (step > 0 && !passed((step - 1) as FaxTestStep)) reason = `Step ${step - 1} must pass first.`;
+    // The email dry run is optional (2026-11-05): step 1 needs no step 0. The two-page test still needs the one-page test to pass.
+    else if (step === 2 && !passed(1)) reason = 'Step 1 must pass first.';
     return { step, label: spec.label, kind: spec.kind, pages: spec.pages, available: reason === null, passed: passed(step), reason };
   });
 }

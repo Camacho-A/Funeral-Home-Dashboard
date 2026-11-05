@@ -12,19 +12,19 @@ Settings → Fax Settings → **Test Transmissions** (Administrators who may fax
 ## Status
 
 - Built 2026-11-05 on `feat/fax-settings-ui`. **Not deployed.**
-- **Off:** Manors' allowlist is empty (`testRecipients` in
-  `domain/organization/organizationProfiles.ts`). Nothing can be sent until
-  approved recipients are added there by a reviewed deploy.
-- Needs one new Wix collection (below) before it can record — and therefore
-  send — anything.
+- **On for one number (2026-11-05):** Manors' allowlist holds ONE approved
+  test fax number, 646-370-3249 (`testRecipients` in
+  `domain/organization/organizationProfiles.ts`), and no dry-run email.
+  Real bundle sending stays off. Empty the list again after testing.
+- The Wix collection `faxTestTransmissions` exists (created 2026-11-05).
 
-## Steps (each needs separate approval, and the previous step to pass)
+## Steps (each started by an administrator; the dry run is optional)
 
 | Step | Sends | To | Passes when |
 |---|---|---|---|
 | 0 | `SOLIS-FAX-TEST-1-PAGE.pdf` | an approved **email** address (external, so Exchange's outbound rules apply) | every inspection check holds: from the connected mailbox; subject as shown; empty plain-text body (no signature, disclaimer, footer); exactly one attachment, the PDF; its SHA-256 matches |
-| 1 | `SOLIS-FAX-TEST-1-PAGE.pdf` | an approved **fax number** (`{number}@fax.nuso.io`) | exactly **1** page received |
-| 2 | `SOLIS-FAX-TEST-2-PAGES.pdf` | an approved fax number | exactly **2** pages received |
+| 1 | `SOLIS-FAX-TEST-1-PAGE.pdf` | an approved **fax number** (`{number}@fax.nuso.io`) — no step 0 needed | exactly **1** page received |
+| 2 | `SOLIS-FAX-TEST-2-PAGES.pdf` | an approved fax number — only after step 1 passed | exactly **2** pages received |
 
 The PDFs are built on the server (`services/faxTests/faxTestPdf.ts`): US
 Letter, "SOLIS FAX TEST / PAGE n OF N", a large n/N mark, "NOT a death

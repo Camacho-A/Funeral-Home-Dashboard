@@ -13,6 +13,7 @@ import { PDFDocument } from 'pdf-lib';
  */
 const OTHER = 'zz-other-fax-home';
 const recipients = vi.hoisted(() => ({ value: { faxNumbers: ['305-555-0101'], emailAddresses: ['dry-run@example.test'] } as { faxNumbers: string[]; emailAddresses: string[] } | null }));
+// (null = Manors' real profile; see the test of the approved number below.)
 vi.mock('@/domain/faxBundles/faxSettings', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/domain/faxBundles/faxSettings')>();
   return {
@@ -111,8 +112,8 @@ async function passStep1() {
 }
 
 describe('off unless recipients are approved in code', () => {
-  it('Manors\' real profile has an empty allowlist: the feature is off and sends nothing', async () => {
-    recipients.value = null;
+  it('an empty allowlist turns the feature off: it sends nothing', async () => {
+    recipients.value = { faxNumbers: [], emailAddresses: [] };
     const graph = fakeGraph();
     const overview = await service.getFaxTestOverview(ctx(), 'mock');
     expect(overview).toMatchObject({ enabled: false, recipients: [], sendingEnabled: false });
@@ -121,6 +122,14 @@ describe('off unless recipients are approved in code', () => {
     expect(e).toMatchObject({ status: 409, message: expect.stringMatching(/Test transmissions are off.*Nothing was sent/) });
     expect(graph.calls).toHaveLength(0);
     expect(testRows()).toHaveLength(0);
+  });
+
+  it('Manors\' real profile approves exactly one test fax number — 646-370-3249, never Manatee County — and no dry-run address', async () => {
+    recipients.value = null;
+    const overview = await service.getFaxTestOverview(ctx(), 'mock');
+    expect(overview.recipients).toEqual([{ key: 'fax:6463703249', kind: 'fax', display: '646-370-3249' }]);
+    expect(overview.recipients.some((r) => r.key === 'fax:9415545490')).toBe(false);
+    expect(overview.sendingEnabled).toBe(false);
   });
 
   it('invalid allowlist entries are skipped, never "fixed" into a recipient; a gateway address is not a dry-run address', async () => {
@@ -176,14 +185,26 @@ describe('only approved recipients, only after confirmation, only in order', () 
     expect(testRows()).toHaveLength(0);
   });
 
-  it('step 1 only after the dry run passed; step 2 only after the one-page fax passed', async () => {
+  it('the dry run is optional: step 1 can go first; step 2 only after the one-page fax passed', async () => {
     const graph = fakeGraph();
-    expect((await err(service.sendFaxTest(ctx(), request(1), 'mock')))?.message).toMatch(/Step 0 must pass first/);
     expect((await err(service.sendFaxTest(ctx(), request(2), 'mock')))?.message).toMatch(/Step 1 must pass first/);
     expect(graph.calls).toHaveLength(0);
-    await passStep1();
+    expect((await service.getFaxTestOverview(ctx(), 'mock')).steps.map((s) => [s.step, s.available])).toEqual([[0, true], [1, true], [2, false]]);
+    const { transmission } = await service.sendFaxTest(ctx(), request(1), 'mock');
+    expect(graph.sends()).toHaveLength(1);
+    await service.recordFaxTestOutcome(ctx(), transmission.id, { status: 'delivered', expectedRevision: transmission.revision, pagesReceived: 1 }, 'mock');
     const overview = await service.getFaxTestOverview(ctx(), 'mock');
-    expect(overview.steps.map((s) => [s.step, s.passed, s.available])).toEqual([[0, true, true], [1, true, true], [2, false, true]]);
+    expect(overview.steps.map((s) => [s.step, s.passed, s.available])).toEqual([[0, false, true], [1, true, true], [2, false, true]]);
+  });
+
+  it('with only a fax number approved (no dry-run address), the dry run is unavailable and the one-page fax is available', async () => {
+    recipients.value = { faxNumbers: ['305-555-0101'], emailAddresses: [] };
+    const overview = await service.getFaxTestOverview(ctx(), 'mock');
+    expect(overview.steps.map((s) => [s.step, s.available, s.reason])).toEqual([
+      [0, false, 'No approved dry-run email address is configured.'],
+      [1, true, null],
+      [2, false, 'Step 1 must pass first.'],
+    ]);
   });
 
   it('a delivery with the wrong page count does not pass, and does not unlock the next step', async () => {
@@ -306,7 +327,7 @@ describe('recorded before Outlook; audited; Outlook submission ≠ NuSo acceptan
     expect((await err(service.recordFaxTestOutcome(ctx(), transmission.id, { status: 'delivered', expectedRevision: transmission.revision, checks: { fromConnectedMailbox: true } }, 'mock')))?.message).toMatch(/every dry-run check/);
     const recorded = await service.recordFaxTestOutcome(ctx(), transmission.id, { status: 'delivered', expectedRevision: transmission.revision, checks: { fromConnectedMailbox: true, subjectAsExpected: true, emptyPlainTextBody: false, exactlyOnePdf: true, checksumMatches: true }, note: 'A disclaimer footer was added' }, 'mock');
     expect(recorded).toMatchObject({ passed: false, checks: { emptyPlainTextBody: false } });
-    expect((await err(service.sendFaxTest(ctx(), request(1), 'mock')))?.message).toMatch(/Step 0 must pass first/);
+    expect((await service.getFaxTestOverview(ctx(), 'mock')).steps[0].passed).toBe(false);
   });
 });
 

@@ -411,10 +411,10 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
       emailOrganizationName: 'Manors Cremation',
       maxAttachmentBytes: 10 * 1024 * 1024,
       sendingEnabled: false,
-      // Test transmissions: OFF. Recipients are added here only once the
-      // business has approved them (a fax number Manors controls; an email
-      // address for the dry run), and removed again after testing.
-      testRecipients: { faxNumbers: [], emailAddresses: [] },
+      // Test transmissions: ON for ONE fax number the business approved for
+      // testing (2026-11-05) — never Manatee County's. No dry-run email.
+      // Remove it again after testing (empty list = off).
+      testRecipients: { faxNumbers: ['646-370-3249'], emailAddresses: [] },
     },
     manateeDeathCertificateApplication: true,
     caseSsn: true,
