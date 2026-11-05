@@ -235,3 +235,11 @@
   object-fit: contain;
   flex-shrink: 0;
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): a white sidebar beside
+   the grey canvas, so the content cards and the navigation read as two
+   clear surfaces. Applies on every page. */
+.sidebar.sidebar {
+  background: #fff;
+  border-right-color: var(--sx-card-border);
+}

@@ -14,3 +14,19 @@
   color: var(--color-text-muted-cool);
   margin-top: var(--space-2);
 }
+
+/* UI refresh (2026-11). */
+.wrapper.wrapper {
+  margin-bottom: 22px;
+}
+
+.wrapper.wrapper .title {
+  font-size: var(--sx-title-xl);
+  line-height: 34px;
+  letter-spacing: -0.02em;
+  color: var(--sx-text);
+}
+
+.wrapper.wrapper .subtitle {
+  color: var(--sx-text-2);
+}

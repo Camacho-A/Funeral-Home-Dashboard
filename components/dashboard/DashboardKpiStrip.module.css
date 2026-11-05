@@ -131,3 +131,79 @@ a.cell:focus-visible {
     padding-left: var(--space-7);
   }
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): each figure is its own
+   card on the canvas — big number, quiet label — instead of cells divided
+   by hairlines. `.strip.strip > .cell` outranks the per-position rules
+   above (including the phone layout), so they all collapse to one look.
+   The phone still shows four tiles (the fourth cell stays hidden). */
+.strip.strip {
+  gap: 14px;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.strip.strip > .cell {
+  padding: 18px 20px 20px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+  transition: box-shadow var(--sx-ease), border-color var(--sx-ease);
+}
+
+.strip.strip > a.cell:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+.strip.strip > a.cell:focus-visible {
+  outline: none;
+  box-shadow: var(--sx-focus), var(--sx-card-shadow);
+}
+
+.strip.strip .label {
+  font-size: 13px;
+  color: var(--sx-muted);
+}
+
+.strip.strip .value {
+  margin-top: 6px;
+  font-size: 28px;
+  line-height: 34px;
+  letter-spacing: -0.02em;
+  color: var(--sx-text);
+}
+
+.strip.strip .valueAttention {
+  color: var(--sx-red);
+}
+
+@media (max-width: 860px) and (min-width: 561px) {
+  .strip.cols5 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .strip.strip {
+    gap: 10px;
+  }
+
+  .strip.strip > .cell {
+    padding: 14px 16px 16px;
+  }
+
+  .strip.strip .value {
+    font-size: 22px;
+    line-height: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .strip.strip > .cell {
+    transition: none;
+  }
+}

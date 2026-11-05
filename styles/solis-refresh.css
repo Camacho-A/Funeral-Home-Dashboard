@@ -1,0 +1,211 @@
+/*
+ * SOLIS UI refresh (2026-11) — the design language of the Fax DC
+ * Applications dialog, applied to the whole app area by area: a soft grey
+ * canvas, white rounded cards with a hairline border and a whisper of
+ * shadow, a clear title → section → detail hierarchy, status chips, and
+ * one primary action. Presentation only — no behaviour lives here.
+ *
+ * Rollout: a page opts in through the `sx-refresh` class on the shell's
+ * content area (components/layout/AppShell.tsx decides which routes have
+ * been refreshed so far). Pages not yet refreshed keep their white
+ * canvas, so nothing looks half-finished mid-rollout. The sidebar and top
+ * bar are refreshed everywhere.
+ *
+ * Imported last from styles/globals.css.
+ */
+
+:root {
+  --sx-canvas: oklch(0.972 0.004 255);
+  --sx-card: #fff;
+  --sx-card-border: oklch(0.915 0.005 255);
+  --sx-card-radius: 14px;
+  --sx-card-shadow: 0 1px 2px oklch(0.2 0.02 255 / 0.04), 0 1px 3px oklch(0.2 0.02 255 / 0.04);
+  --sx-card-shadow-hover: 0 2px 4px oklch(0.2 0.02 255 / 0.05), 0 8px 24px oklch(0.2 0.02 255 / 0.07);
+  --sx-card-pad: 20px;
+  --sx-title-xl: 26px;
+  --sx-title-lg: 18px;
+  --sx-title-md: 15px;
+}
+
+/* ---------- Canvas ---------- */
+.sx-refresh {
+  background: var(--sx-canvas) !important;
+}
+
+/* ---------- Card ---------- */
+.sx-card {
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  padding: var(--sx-card-pad);
+  min-width: 0;
+}
+
+/* ---------- Page header (refreshed pages) ---------- */
+.sx-refresh .sx-page-title {
+  font-size: var(--sx-title-xl);
+  line-height: 34px;
+  letter-spacing: -0.02em;
+}
+
+.sx-refresh .sx-page-desc {
+  font-size: 14px;
+  color: var(--sx-text-2);
+}
+
+/* ---------- Settings ---------- */
+/* Hub: title + description once; areas as a grid of cards with an icon. */
+.sx-refresh .sx-settings-hub .sx-dir {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  column-gap: 14px;
+  margin: 0 0 32px;
+}
+
+.sx-refresh .sx-settings-hub .sx-section-title {
+  border-bottom: none;
+  padding: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) !important;
+  align-items: start;
+  column-gap: 14px;
+  min-height: 0;
+  margin: 0;
+  padding: 16px 16px 18px;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  transition: box-shadow var(--sx-ease), border-color var(--sx-ease), transform var(--sx-ease);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-row:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-row:focus-visible {
+  box-shadow: var(--sx-focus), var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-arrow {
+  display: none;
+}
+
+.sx-settings-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-name {
+  font-size: 14.5px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-desc {
+  margin-top: 3px;
+  white-space: normal;
+  overflow: visible;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--sx-muted);
+}
+
+/* The hub is wide enough for three cards a row. */
+.sx-refresh .sx-settings-hub .sx-settings-main {
+  max-width: 1200px;
+}
+
+/* A Settings page: one white card on the canvas, with the breadcrumb above it. */
+.sx-refresh .sx-settings:not(.sx-settings-hub) .sx-settings-main {
+  max-width: 960px;
+}
+
+.sx-refresh .sx-settings-card {
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  padding: 28px 32px 32px;
+  min-width: 0;
+}
+
+.sx-refresh .sx-settings-card > div > h1:first-child,
+.sx-refresh .sx-settings-card > h1:first-child {
+  margin: 0 0 20px;
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--sx-text);
+}
+
+/* The page already has its title (the h1); a panel that repeats it as its
+   own heading keeps only its description. */
+.sx-refresh .sx-settings-card h1 ~ * .sx-settings-head .sx-settings-title {
+  display: none;
+}
+
+.sx-refresh .sx-settings-card h1 ~ * .sx-settings-head .sx-settings-desc {
+  margin-top: 0;
+}
+
+.sx-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--sx-muted);
+}
+
+.sx-crumbs a {
+  color: var(--sx-muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.sx-crumbs a:hover {
+  color: var(--sx-text);
+}
+
+@media (max-width: 860px) {
+  .sx-refresh .sx-settings-card {
+    padding: 20px 18px 24px;
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .sx-refresh .sx-settings-hub .sx-dir {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sx-refresh .sx-settings-hub .sx-dir-row {
+    transition: none;
+  }
+
+  .sx-refresh .sx-settings-hub .sx-dir-row:hover {
+    transform: none;
+  }
+}

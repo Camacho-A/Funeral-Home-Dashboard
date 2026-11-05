@@ -104,3 +104,16 @@
     margin-top: 0;
   }
 }
+
+/* UI refresh (2026-11): cards sit closer together on the canvas. */
+.kpiSection.kpiSection {
+  margin-bottom: 20px;
+}
+
+.mainGrid.mainGrid {
+  gap: 20px;
+}
+
+.activityArea.activityArea {
+  margin-top: 0;
+}
