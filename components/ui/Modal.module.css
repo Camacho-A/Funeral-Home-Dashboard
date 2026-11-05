@@ -85,3 +85,26 @@
     max-height: none;
   }
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): dialogs match the cards —
+   rounder, a softer navy-tinted backdrop with a light blur, and a deeper,
+   diffuse shadow so the dialog clearly floats above the page. Full-screen
+   phone dialogs (lg/xl below 860px) keep square corners. */
+.overlay.overlay {
+  background: oklch(0.22 0.03 255 / 0.38);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.panel.panel {
+  border-radius: 16px;
+  border: 1px solid oklch(0.9 0.006 255);
+  box-shadow: 0 24px 64px oklch(0.2 0.03 255 / 0.22), 0 2px 8px oklch(0.2 0.03 255 / 0.08);
+}
+
+@media (max-width: 860px) {
+  .panelLg.panelLg {
+    border-radius: 0;
+    border: none;
+  }
+}

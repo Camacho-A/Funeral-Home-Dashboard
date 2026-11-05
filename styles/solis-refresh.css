@@ -5,11 +5,10 @@
  * shadow, a clear title → section → detail hierarchy, status chips, and
  * one primary action. Presentation only — no behaviour lives here.
  *
- * Rollout: a page opts in through the `sx-refresh` class on the shell's
- * content area (components/layout/AppShell.tsx decides which routes have
- * been refreshed so far). Pages not yet refreshed keep their white
- * canvas, so nothing looks half-finished mid-rollout. The sidebar and top
- * bar are refreshed everywhere.
+ * Every portal page: the shell's content area carries `sx-refresh`
+ * (components/layout/AppShell.tsx). Rules here are scoped under it, so
+ * pages outside the portal shell (login, family portal, signing) are
+ * unchanged.
  *
  * Imported last from styles/globals.css.
  */
@@ -406,7 +405,7 @@
 
 /* A Settings page: one white card on the canvas, with the breadcrumb above it. */
 .sx-refresh .sx-settings:not(.sx-settings-hub) .sx-settings-main {
-  max-width: 960px;
+  max-width: 1120px;
 }
 
 .sx-refresh .sx-settings-card {

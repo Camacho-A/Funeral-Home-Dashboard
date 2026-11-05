@@ -2,7 +2,6 @@
 
 import { SandboxBanner } from '@/components/sandbox/SandboxBanner';
 import { useEffect, useState } from 'react';
-import { usePathname } from 'next/navigation';
 import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
@@ -42,7 +41,6 @@ export function AppShell({
   authAdapterMode?: AuthAdapterMode;
 }) {
   const [isNewCaseModalOpen, setNewCaseModalOpen] = useState(false);
-  const pathname = usePathname();
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Standard off-canvas-drawer behavior: Escape closes it, and the
@@ -71,7 +69,8 @@ export function AppShell({
           authAdapterMode={authAdapterMode}
           onMenuClick={() => setMobileNavOpen(true)}
         />
-        <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''} ${isRefreshed(pathname) ? 'sx-refresh' : ''}`}>
+        {/* UI refresh (2026-11, styles/solis-refresh.css): every page uses the canvas-and-cards design. */}
+        <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''} sx-refresh`}>
           <SandboxBanner />
           {children}
         </main>
@@ -79,14 +78,4 @@ export function AppShell({
       <NewCaseModal open={isNewCaseModalOpen} onClose={() => setNewCaseModalOpen(false)} />
     </div>
   );
-}
-
-/**
- * UI refresh (2026-11, styles/solis-refresh.css): the routes already moved
- * to the new canvas-and-cards design. Grows area by area until every page
- * is refreshed, then this check goes away.
- */
-const REFRESHED_ROUTES = ['/dashboard', '/settings', '/reports', '/accounting', '/tasks', '/cases', '/calendar', '/notifications'];
-function isRefreshed(pathname: string | null): boolean {
-  return !!pathname && REFRESHED_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }
