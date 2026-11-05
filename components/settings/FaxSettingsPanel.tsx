@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useOrganization } from '@/hooks/useOrganization';
+import { Modal } from '@/components/ui/Modal';
 import {
   addFaxDestination,
   archiveFaxDestination,
+  restoreFaxDestination,
   editFaxDestination,
   fetchFaxConfigurationHistory,
   fetchFaxSettings,
@@ -63,6 +65,8 @@ export function FaxSettingsPanel() {
   const [editing, setEditing] = useState<string | null>(null);
   const [form, setForm] = useState({ name: '', faxNumber: '', purpose: '', makeDefault: false });
   const [showArchived, setShowArchived] = useState(false);
+  /** The destination waiting for "Archive destination" to be confirmed. */
+  const [confirmArchive, setConfirmArchive] = useState<Destination | null>(null);
 
   async function run(key: string, action: () => Promise<FaxSettingsOverview>, success: string) {
     setBusy(key);
@@ -105,6 +109,7 @@ export function FaxSettingsPanel() {
   const coverAllowed = provider.coverPage === 'supported';
   const visible = data.destinations.filter((d) => showArchived || d.status === 'active');
   const archivedCount = data.destinations.filter((d) => d.status === 'archived').length;
+  const activeCount = data.destinations.filter((d) => d.status === 'active').length;
   const defaultRevision = data.settings.revision;
 
   function startEdit(d: Destination) {
@@ -162,10 +167,12 @@ export function FaxSettingsPanel() {
             </button>
           )}
         </h2>
-        <p className={styles.lead}>DC application bundles are faxed to the default destination. Destinations are never deleted — archive one you no longer use.</p>
+        <p className={styles.lead}>
+          The default is preselected when staff send a fax; they can choose any other active destination. Destinations are never deleted — archive one you no longer use, and restore it if you need it again.
+        </p>
         <ul className={styles.destinations}>
           {visible.map((d) => (
-            <li key={d.id} className={`${styles.destination} ${d.status === 'archived' ? styles.archived : ''}`}>
+            <li key={d.id} className={`${styles.destination} ${d.status === 'archived' ? styles.archived : ''} ${d.isDefault ? styles.isDefault : ''}`}>
               {editing === d.id ? (
                 <DestinationForm form={form} setForm={setForm} isNew={false} busy={busy === 'destination'} error={formError} onCancel={() => setEditing(null)} onSave={saveDestination} />
               ) : (
@@ -173,8 +180,13 @@ export function FaxSettingsPanel() {
                   <div className={styles.destinationText}>
                     <span className={styles.destinationName}>
                       {d.name}
-                      {d.isDefault && <span className={`sx-status sx-status-ok ${styles.badge}`}>Default</span>}
-                      {d.status === 'archived' && <span className={`sx-status ${styles.badge}`}>Archived</span>}
+                      {d.status === 'archived' ? (
+                        <span className={`${styles.chip} ${styles.chipArchived}`}>Archived</span>
+                      ) : d.isDefault ? (
+                        <span className={`${styles.chip} ${styles.chipDefault}`}>Default</span>
+                      ) : (
+                        <span className={`${styles.chip} ${styles.chipActive}`}>Active</span>
+                      )}
                     </span>
                     <span className={styles.nowrap}>Fax {d.faxNumberDisplay}</span>
                     <span className="sx-help">
@@ -192,11 +204,24 @@ export function FaxSettingsPanel() {
                           Make default
                         </button>
                       )}
-                      {!d.isDefault && !d.builtIn && (
-                        <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy !== null} onClick={() => run('archive', () => archiveFaxDestination(organizationId, d.id, d.revision ?? 0), `${d.name} archived.`)}>
-                          Archive
+                      {!d.isDefault && !d.builtIn && activeCount > 1 && (
+                        <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" disabled={busy !== null} onClick={() => setConfirmArchive(d)}>
+                          Archive…
                         </button>
                       )}
+                      {d.isDefault && <span className="sx-help">The default cannot be archived — make another destination the default first.</span>}
+                    </div>
+                  )}
+                  {d.status === 'archived' && (
+                    <div className={styles.actions}>
+                      <button
+                        type="button"
+                        className="sx-btn sx-btn-secondary sx-btn-sm"
+                        disabled={busy !== null}
+                        onClick={() => run('restore', () => restoreFaxDestination(organizationId, d.id, d.revision ?? 0), `${d.name} restored. It is active again but not the default.`)}
+                      >
+                        {busy === 'restore' ? 'Restoring…' : 'Restore'}
+                      </button>
                     </div>
                   )}
                 </>
@@ -375,6 +400,37 @@ export function FaxSettingsPanel() {
           </ol>
         )}
       </section>
+
+      {confirmArchive && (
+        <Modal open onClose={() => setConfirmArchive(null)} title={`Archive ${confirmArchive.name}?`}>
+          <div className={styles.confirm}>
+            <h2 className={styles.confirmTitle}>Archive {confirmArchive.name}?</h2>
+            <p className={styles.confirmNumber}>Fax {confirmArchive.faxNumberDisplay}</p>
+            <ul className={styles.confirmList}>
+              <li>Staff will no longer be able to choose it when sending a fax.</li>
+              <li>A bundle already prepared for it will not send — staff will be asked to preview again with another destination.</li>
+              <li>It stays in the history, and an administrator can restore it at any time.</li>
+            </ul>
+            <div className={styles.confirmActions}>
+              <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setConfirmArchive(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="sx-btn sx-btn-primary"
+                disabled={busy !== null}
+                onClick={async () => {
+                  const d = confirmArchive;
+                  setConfirmArchive(null);
+                  await run('archive', () => archiveFaxDestination(organizationId, d.id, d.revision ?? 0), `${d.name} archived. You can restore it from "Show archived".`);
+                }}
+              >
+                Archive destination
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

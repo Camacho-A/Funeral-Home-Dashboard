@@ -162,6 +162,46 @@
   min-width: 0;
 }
 
+/* Several destinations: label, menu, and the choice spelled out. */
+.destinationPicker {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.destinationSelect {
+  min-width: 0;
+  width: 100%;
+  max-width: 560px;
+}
+
+/* The choice spelled out under the menu, so it is never cut off. */
+.destinationPicker .destinationValue {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.destinationPicker .notDefault {
+  margin-left: 0;
+}
+
+.notDefault {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
 .destinationLabel {
   color: var(--sx-muted);
   font-size: 12px;
@@ -643,6 +683,14 @@
    scrolls, and the PDF viewer keeps a fixed, readable height with its
    controls pinned to the top of the body while it is in view. */
 @media (max-width: 860px) {
+  .destinationPicker {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .destinationPicker .destinationValue {
+    grid-column: 1;
+  }
+
   .steps {
     padding: 8px 16px;
     gap: 6px;

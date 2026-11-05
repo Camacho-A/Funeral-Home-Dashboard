@@ -13,7 +13,7 @@ combined PDF → send one fax) is unchanged.
 
 | Section | What |
 |---|---|
-| Fax Destinations | Add, edit (name, fax number, purpose), make default, archive. Many per organization; exactly one default. Never deleted. |
+| Fax Destinations | Add, edit (name, fax number, purpose), make default, archive (after a confirmation) and restore. Many per organization; exactly one default. Never deleted. Each row is labelled Default, Active or Archived. The default — and so the last usable destination — cannot be archived. |
 | Provider & Sending Mailbox | The provider (NuSo IPFax is the only one today). The sending mailbox is **shown**, not chosen: it is the organization's connected Outlook mailbox (Settings → Crematory) — no second sign-in flow, and no token ever reaches the browser. |
 | Email Subject & Message Templates | Subject template; an optional plain-text message. |
 | Cover Page Options | Only when the provider has a verified cover page option. |
@@ -83,9 +83,16 @@ stays the default (it is never silently replaced).
 - **Audit:** `services/activityService.ts` → `recordFaxConfigurationEvent`
   (category `administration`), event types `fax_settings.updated`,
   `fax_destination.created`, `fax_destination.updated`,
-  `fax_destination.archived`, `fax_destination.default_changed`;
+  `fax_destination.archived`, `fax_destination.restored`,
+  `fax_destination.default_changed`;
   previous/next hold only the changed fields. The history section reads these
   events — there is no other log.
+- **Who:** each event's `actorIdentityId` is the signed-in member's identity
+  (from the session, never the request); the history shows that identity's
+  current display name. With Wix data, only identity sessions are accepted
+  (`isNonIdentityAuthorizationPermitted` is false outside mock data), so a
+  name is always resolvable. Local mock sign-in (`AUTH_ADAPTER=mock`) has no
+  identity record, so its entries show "Unknown" — nothing is substituted.
 - **Boundary:** only `faxSettingsService.ts` imports the store and records
   these events; routes delegate (structural test in
   `faxSettingsService.test.ts`).
@@ -112,14 +119,27 @@ an enabled flag for it); `unsupported` is never offered. SOLIS never
 generates a cover page and never adds a signature. Changing a capability is a
 code change after a controlled test.
 
+### Choosing a destination per bundle (2026-11)
+
+Staff with `fax.send` choose from the organization's **active** destinations
+on its current provider (`GET /api/fax-bundles` → `destinations`: id, name,
+number, default flag — no addresses). The default is preselected. The choice
+goes with the preview (`POST /api/fax-bundles` `destinationId`); the server
+resolves it with `organizationId` in every read, so another organization's
+id, an archived destination or an unknown id is refused (404/409/400) and
+nothing is prepared. Omitted = the default. The dialog shows the chosen
+destination on all three steps; changing it after a preview always prepares
+a new bundle.
+
 ### Prepared bundles keep their snapshot
 
 At preview the bundle stores the destination (`destinationId`,
 `destinationName`, `destinationFaxNumber`, `destinationAddress`), the
 provider (`providerKey`, `gatewayDomain`), the rendered `subject` and
 `emailBody`, and `settingsRevision`. Send Fax emails exactly that snapshot —
-nothing from the browser is ever a recipient. Before sending, the current
-settings are resolved again: if the destination address or provider differs,
+nothing from the browser is ever a recipient. Before sending, the bundle's
+OWN destination (`destinationId`; null = the default, as before) is resolved
+again: if it was archived, or its address or the provider differs,
 or the subject/message would render differently, **nothing is sent** (409,
 "changed since the preview — preview again"). A settings change never alters
 or redirects a prepared bundle. A change that does not affect the email (a
@@ -199,7 +219,6 @@ exists for Administrators).
 
 ## Reserved, not built
 
-- Choosing a destination per bundle (today: the default).
 - Per-purpose defaults (e.g. one destination for amendments).
 - Other providers (an API provider would need credentials: they would be
   stored encrypted on the server — like the Outlook mailbox tokens — never in

@@ -47,8 +47,12 @@
   min-width: 0;
 }
 
+/* Muted, but not faded: its Restore button stays fully readable. */
 .archived {
-  opacity: 0.7;
+  border-style: dashed;
+  border-color: var(--sx-border-input);
+  background: var(--sx-subtle);
+  color: var(--sx-text-2);
 }
 
 .destinationText {
@@ -197,4 +201,78 @@
 
 .formError {
   margin: 0;
+}
+
+/* Destination status (2026-11): every row says what it is. */
+.isDefault {
+  border-color: var(--sx-navy);
+  background: var(--sx-selected);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.chipDefault {
+  background: var(--sx-navy);
+  color: #fff;
+}
+
+.chipActive {
+  background: var(--sx-green-bg);
+  color: var(--sx-green-text);
+}
+
+.chipArchived {
+  background: var(--sx-subtle);
+  color: var(--sx-muted);
+  border: 1px solid var(--sx-border-input);
+}
+
+/* Archive confirmation. */
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.confirmTitle {
+  margin: 0;
+  font-size: 17px;
+  line-height: 24px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.confirmNumber {
+  margin: 0;
+  font-size: 14px;
+  color: var(--sx-text-2);
+}
+
+.confirmList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 19px;
+  color: var(--sx-text-2);
+}
+
+.confirmActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
 }

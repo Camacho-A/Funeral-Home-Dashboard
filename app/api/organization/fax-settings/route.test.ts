@@ -15,6 +15,7 @@ const destinationsRoute = await import('./destinations/route');
 const destinationRoute = await import('./destinations/[destinationId]/route');
 const archiveRoute = await import('./destinations/[destinationId]/archive/route');
 const defaultRoute = await import('./destinations/[destinationId]/default/route');
+const restoreRoute = await import('./destinations/[destinationId]/restore/route');
 const historyRoute = await import('./history/route');
 const { memoryFaxTable } = await import('@/services/faxBundles/faxBundleStore');
 const { activityEventFixtures } = await import('@/services/__mocks__/activityEventFixtures');
@@ -30,6 +31,7 @@ const patchSettings = (settings: unknown, org = ORG, headers = HEADERS) => setti
 const addDestination = (destination: unknown, org = ORG) => destinationsRoute.POST(new Request('http://localhost/api/organization/fax-settings/destinations', body({ organizationId: org, destination })));
 const editDestination = (id: string, destination: unknown, org = ORG) => destinationRoute.PATCH(new Request(`http://localhost/x/${id}`, { ...body({ organizationId: org, destination }), method: 'PATCH' }), params(id));
 const archive = (id: string, expectedRevision: unknown, org = ORG) => archiveRoute.POST(new Request(`http://localhost/x/${id}/archive`, body({ organizationId: org, expectedRevision })), params(id));
+const restore = (id: string, expectedRevision: unknown, org = ORG) => restoreRoute.POST(new Request(`http://localhost/x/${id}/restore`, body({ organizationId: org, expectedRevision })), params(id));
 const makeDefault = (id: string, expectedSettingsRevision: unknown, org = ORG) => defaultRoute.POST(new Request(`http://localhost/x/${id}/default`, body({ organizationId: org, expectedSettingsRevision })), params(id));
 const getHistory = (org = ORG) => historyRoute.GET(new Request(`http://localhost/api/organization/fax-settings/history?organizationId=${org}`));
 
@@ -76,6 +78,7 @@ describe('Fax Settings routes', () => {
     expect((await addDestination({ name: 'A', faxNumber: '3055550100' })).status).toBe(403);
     expect((await editDestination('builtin', { name: 'B' })).status).toBe(403);
     expect((await archive('fxd-' + '0'.repeat(32), 0)).status).toBe(403);
+    expect((await restore('fxd-' + '0'.repeat(32), 0)).status).toBe(403);
     expect((await makeDefault('fxd-' + '0'.repeat(32), 0)).status).toBe(403);
     expect(memoryFaxTable.rows('faxSettings')).toHaveLength(0);
     expect(memoryFaxTable.rows('faxDestinations')).toHaveLength(0);
@@ -111,8 +114,12 @@ describe('Fax Settings routes', () => {
     const manatee = fresh.destinations.find((d: { name: string }) => d.name === 'Manatee County Vital Statistics');
     expect((await archive(manatee.id, manatee.revision)).status).toBe(200);
     expect((await archive('fxd-' + 'f'.repeat(32), 0)).status).toBe(404);
+    const archived = (await (await getSettings()).json()).overview.destinations.find((d: { id: string }) => d.id === manatee.id);
+    expect(archived.status).toBe('archived');
+    expect((await restore(manatee.id, archived.revision)).status).toBe(200);
+    expect((await restore('fxd-' + 'f'.repeat(32), 0)).status).toBe(404);
 
     const history = (await (await getHistory()).json()).history as Array<{ eventType: string }>;
-    expect(history.map((h) => h.eventType)).toEqual(expect.arrayContaining(['fax_settings.updated', 'fax_destination.created', 'fax_destination.updated', 'fax_destination.default_changed', 'fax_destination.archived']));
+    expect(history.map((h) => h.eventType)).toEqual(expect.arrayContaining(['fax_settings.updated', 'fax_destination.created', 'fax_destination.updated', 'fax_destination.default_changed', 'fax_destination.archived', 'fax_destination.restored']));
   });
 });

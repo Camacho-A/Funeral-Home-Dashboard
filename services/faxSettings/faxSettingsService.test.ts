@@ -273,6 +273,89 @@ describe('subject, message and cover page', () => {
   });
 });
 
+describe('archive and restore (2026-11)', () => {
+  it('an archived destination can be restored — active again, not the default, audited', async () => {
+    const overview = await service.createFaxDestination(ctx(), { name: 'Old agency', faxNumber: '3055550100' }, 'mock');
+    const old = overview.destinations.find((d) => d.name === 'Old agency')!;
+    const archived = (await service.archiveFaxDestination(ctx(), old.id, old.revision, 'mock')).destinations.find((d) => d.id === old.id)!;
+    const restored = await service.restoreFaxDestination(ctx(), old.id, archived.revision, 'mock');
+    expect(restored.destinations.find((d) => d.id === old.id)).toMatchObject({ status: 'active', isDefault: false });
+    expect(restored.destinations.filter((d) => d.isDefault).map((d) => d.name)).toEqual(['Manatee County Vital Statistics']);
+    expect(events().at(-1)).toMatchObject({ eventType: 'fax_destination.restored', description: 'Fax destination restored: Old agency (305-555-0100)', actorIdentityId: 'staff-dana' });
+    // A stale restore is refused; restoring an active one changes nothing.
+    expect((await err(service.restoreFaxDestination(ctx(), old.id, archived.revision, 'mock')))?.status).toBe(409);
+  });
+
+  it('a restore that would duplicate an active number is refused; non-administrators cannot restore', async () => {
+    let overview = await service.createFaxDestination(ctx(), { name: 'Old agency', faxNumber: '3055550100' }, 'mock');
+    const old = overview.destinations.find((d) => d.name === 'Old agency')!;
+    overview = await service.archiveFaxDestination(ctx(), old.id, old.revision, 'mock');
+    await service.createFaxDestination(ctx(), { name: 'New agency, same number', faxNumber: '305-555-0100' }, 'mock');
+    const archivedRevision = overview.destinations.find((d) => d.id === old.id)!.revision;
+    expect((await err(service.restoreFaxDestination(ctx(), old.id, archivedRevision, 'mock')))?.message).toMatch(/already an active destination/);
+    expect((await err(service.restoreFaxDestination(ctx('funeral_director'), old.id, archivedRevision, 'mock')))?.status).toBe(403);
+    expect((await err(service.restoreFaxDestination(ctx(), 'builtin', 0, 'mock')))?.status).toBe(404);
+  });
+
+  it('the last usable destination is never archived: the default stays active, always', async () => {
+    const overview = await service.createFaxDestination(ctx(), { name: 'Second', faxNumber: '3055550100' }, 'mock');
+    const [manatee, second] = overview.destinations;
+    // The default (and therefore the last one standing) cannot be archived.
+    expect((await err(service.archiveFaxDestination(ctx(), manatee.id, manatee.revision, 'mock')))?.message).toMatch(/default destination/);
+    // A non-default can, because the default remains.
+    const after = await service.archiveFaxDestination(ctx(), second.id, second.revision, 'mock');
+    expect(after.destinations.filter((d) => d.status === 'active').map((d) => d.name)).toEqual(['Manatee County Vital Statistics']);
+    expect((await service.resolveFaxConfiguration(ORG, 'mock')).destination.name).toBe('Manatee County Vital Statistics');
+  });
+});
+
+describe('choosing a destination per bundle (2026-11)', () => {
+  it('lists only this organization\'s active destinations on its provider, default first; with nothing stored, the built-in one', async () => {
+    expect(await service.listSendableFaxDestinations(ORG, 'mock')).toEqual([{ id: 'builtin', name: 'Manatee County Vital Statistics', faxNumberDisplay: '941-554-5490', isDefault: true }]);
+    let overview = await service.createFaxDestination(ctx(), { name: 'Sarasota County Records', faxNumber: '9415550177' }, 'mock');
+    overview = await service.createFaxDestination(ctx(), { name: 'Archived agency', faxNumber: '3055550100' }, 'mock');
+    const archived = overview.destinations.find((d) => d.name === 'Archived agency')!;
+    await service.archiveFaxDestination(ctx(), archived.id, archived.revision, 'mock');
+    await service.createFaxDestination(ctx('administrator', OTHER), { name: 'Other home only', faxNumber: '3055550199' }, 'mock');
+    const list = await service.listSendableFaxDestinations(ORG, 'mock');
+    expect(list.map((d) => [d.name, d.faxNumberDisplay, d.isDefault])).toEqual([
+      ['Manatee County Vital Statistics', '941-554-5490', true],
+      ['Sarasota County Records', '941-555-0177', false],
+    ]);
+    expect(list.every((d) => !('address' in d))).toBe(true);
+  });
+
+  it('resolves a chosen destination; another organization\'s, an archived or an unknown one is refused', async () => {
+    const overview = await service.createFaxDestination(ctx(), { name: 'Sarasota County Records', faxNumber: '9415550177' }, 'mock');
+    const sarasota = overview.destinations.find((d) => d.name === 'Sarasota County Records')!;
+    expect((await service.resolveFaxConfiguration(ORG, 'mock', sarasota.id)).destination).toMatchObject({ id: sarasota.id, name: 'Sarasota County Records', address: '9415550177@fax.nuso.io' });
+    // Omitted / null / 'builtin' = the default.
+    for (const choice of [undefined, null, 'builtin']) expect((await service.resolveFaxConfiguration(ORG, 'mock', choice)).destination.name).toBe('Manatee County Vital Statistics');
+    // The other organization cannot use Manors' destination, and vice versa.
+    expect((await err(service.resolveFaxConfiguration(OTHER, 'mock', sarasota.id)))?.status).toBe(404);
+    const theirs = (await service.createFaxDestination(ctx('administrator', OTHER), { name: 'Theirs', faxNumber: '3055550199' }, 'mock')).destinations.find((d) => d.name === 'Theirs')!;
+    expect((await err(service.resolveFaxConfiguration(ORG, 'mock', theirs.id)))?.status).toBe(404);
+    expect((await err(service.resolveFaxConfiguration(ORG, 'mock', 'fxd-00000000000000000000000000000000')))?.status).toBe(404);
+    await service.archiveFaxDestination(ctx(), sarasota.id, sarasota.revision, 'mock');
+    expect((await err(service.resolveFaxConfiguration(ORG, 'mock', sarasota.id)))?.message).toMatch(/archived/);
+  });
+});
+
+describe('audit identity (2026-11)', () => {
+  it('each change records the signed-in administrator\'s identity id; the history names them from the identity record — and says nothing it does not know', async () => {
+    const { MANORS_ADMIN_IDENTITY_ID, identityFixtures } = await import('../__mocks__/identityFixtures');
+    const name = identityFixtures.find((i) => i.id === MANORS_ADMIN_IDENTITY_ID)!.displayName;
+    await service.updateFaxSettings(ctx('administrator', ORG, MANORS_ADMIN_IDENTITY_ID), { expectedRevision: null, subjectTemplate: 'Signed in {reference}' }, 'mock');
+    expect(events().at(-1)).toMatchObject({ eventType: 'fax_settings.updated', actorIdentityId: MANORS_ADMIN_IDENTITY_ID });
+    let history = await service.listFaxConfigurationHistory(ORG, 'mock');
+    expect(history[0]).toMatchObject({ eventType: 'fax_settings.updated', actor: name });
+    // An actor id that is not an identity (local mock sign-in) is never given someone's name.
+    await service.createFaxDestination(ctx('administrator', ORG, 'mock-user-dana'), { name: 'Second', faxNumber: '3055550100' }, 'mock');
+    history = await service.listFaxConfigurationHistory(ORG, 'mock');
+    expect(history.filter((h) => h.eventType.startsWith('fax_destination.')).every((h) => h.actor === null)).toBe(true);
+  });
+});
+
 describe('Fax Settings orchestration boundary (structural)', () => {
   const SKIP_DIRS = new Set(['node_modules', '.next', '.git']);
   function walk(dir: string, results: string[] = []): string[] {

@@ -277,6 +277,7 @@ export const ACTIVITY_EVENT_TYPES = {
   FAX_DESTINATION_CREATED: 'fax_destination.created',
   FAX_DESTINATION_UPDATED: 'fax_destination.updated',
   FAX_DESTINATION_ARCHIVED: 'fax_destination.archived',
+  FAX_DESTINATION_RESTORED: 'fax_destination.restored',
   FAX_DESTINATION_DEFAULT_CHANGED: 'fax_destination.default_changed',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this

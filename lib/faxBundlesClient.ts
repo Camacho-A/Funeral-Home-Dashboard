@@ -3,7 +3,8 @@ import type { CaseFaxHistoryEntry, FaxBundleView, FaxEligibleCase, FaxSendResult
 /** Manatee County DC application fax bundles (2026-11): browser calls. */
 
 export type { CaseFaxHistoryEntry, FaxBundleView, FaxEligibleCase, FaxSendResult };
-export type FaxEligibility = { cases: FaxEligibleCase[]; destinationName: string; destinationFax: string; sendingEnabled: boolean; maxApplications: number };
+export type FaxDestinationChoice = { id: string; name: string; faxNumberDisplay: string; isDefault: boolean };
+export type FaxEligibility = { cases: FaxEligibleCase[]; destinationName: string; destinationFax: string; destinations?: FaxDestinationChoice[]; sendingEnabled: boolean; maxApplications: number };
 
 export class FaxRequestError extends Error {
   constructor(
@@ -30,8 +31,8 @@ export async function fetchFaxEligibility(organizationId: string): Promise<FaxEl
   return parse(await fetch(`/api/fax-bundles?${q(organizationId)}`, { cache: 'no-store' }));
 }
 
-export async function previewFaxBundle(organizationId: string, caseIds: string[]): Promise<FaxBundleView> {
-  const response = await fetch('/api/fax-bundles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId, caseIds }) });
+export async function previewFaxBundle(organizationId: string, caseIds: string[], destinationId?: string | null): Promise<FaxBundleView> {
+  const response = await fetch('/api/fax-bundles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId, caseIds, ...(destinationId ? { destinationId } : {}) }) });
   return (await parse<{ bundle: FaxBundleView }>(response)).bundle;
 }
 

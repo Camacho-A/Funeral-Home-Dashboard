@@ -746,6 +746,51 @@ describe('Fax Settings: a prepared bundle keeps what it was previewed with', () 
     expect(graph.calls).toHaveLength(0);
   });
 
+  it('staff choose another active destination: the bundle is prepared and sent to it, and keeps it even if the default changes later', async () => {
+    const fs = await settings();
+    const overview = await fs.createFaxDestination(ctx(), { name: 'Sarasota County Records', faxNumber: '941-555-0177' }, 'mock');
+    const sarasota = overview.destinations.find((d) => d.name === 'Sarasota County Records')!;
+    const ids = await casesWithApplications(2);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock', sarasota.id);
+    expect(preview).toMatchObject({ destinationId: sarasota.id, destinationName: 'Sarasota County Records', destinationFax: '941-555-0177', destinationAddress: '9415550177@fax.nuso.io' });
+    expect(bundleRow(preview.id)).toMatchObject({ destinationId: sarasota.id, destinationAddress: '9415550177@fax.nuso.io' });
+    // The organization's default moving elsewhere does not redirect or block this bundle: it was prepared for Sarasota.
+    const latest = await fs.getFaxSettingsOverview(ORG, 'mock');
+    await fs.setDefaultFaxDestination(ctx(), sarasota.id, latest.settings.revision, 'mock');
+    const graph = fakeGraph();
+    await service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock');
+    expect(graph.emails()).toHaveLength(1);
+    expect(graph.emails()[0].body).toMatchObject({ toRecipients: [{ emailAddress: { address: '9415550177@fax.nuso.io' } }] });
+  });
+
+  it('the chosen destination is archived (or its number changed) after the preview: nothing is sent, nothing held — preview again', async () => {
+    const fs = await settings();
+    let overview = await fs.createFaxDestination(ctx(), { name: 'Sarasota County Records', faxNumber: '941-555-0177' }, 'mock');
+    const sarasota = overview.destinations.find((d) => d.name === 'Sarasota County Records')!;
+    const ids = await casesWithApplications(1);
+    const first = await service.previewFaxBundle(ctx(), ids, 'mock', sarasota.id);
+    overview = await fs.updateFaxDestination(ctx(), sarasota.id, { expectedRevision: sarasota.revision, faxNumber: '941-555-0188' }, 'mock');
+    const graph = fakeGraph();
+    expect(await sendErr(service.sendFaxBundle(ctx(), first.id, 'submission-0001', 'mock'))).toMatchObject({ status: 409, message: expect.stringMatching(/changed since the preview.*Nothing was sent/) });
+    const second = await service.previewFaxBundle(ctx(), ids, 'mock', sarasota.id);
+    const current = overview.destinations.find((d) => d.id === sarasota.id)!;
+    await fs.archiveFaxDestination(ctx(), sarasota.id, current.revision, 'mock');
+    expect(await sendErr(service.sendFaxBundle(ctx(), second.id, 'submission-0002', 'mock'))).toMatchObject({ status: 409, message: expect.stringMatching(/archived.*Nothing was sent/) });
+    expect(graph.calls).toHaveLength(0);
+    expect(claims()).toHaveLength(0);
+    expect(bundleRow(second.id).status).toBe('ready');
+    // And an archived destination cannot be chosen for a new preview.
+    expect(await sendErr(service.previewFaxBundle(ctx(), ids, 'mock', sarasota.id))).toMatchObject({ status: 409 });
+  });
+
+  it('a destination id that is not this organization\'s, or not a destination id at all, prepares nothing', async () => {
+    const ids = await casesWithApplications(1);
+    const before = store.memoryFaxTable.rows('faxBundles').length;
+    expect(await sendErr(service.previewFaxBundle(ctx(), ids, 'mock', 'fxd-00000000000000000000000000000000'))).toMatchObject({ status: 404 });
+    for (const bad of [42, '', ['fxd-1'], { id: 'x' }, 'x'.repeat(65)]) expect(await sendErr(service.previewFaxBundle(ctx(), ids, 'mock', bad))).toMatchObject({ status: 400 });
+    expect(store.memoryFaxTable.rows('faxBundles')).toHaveLength(before);
+  });
+
   it('a bundle prepared before Fax Settings existed (no snapshot fields) still sends exactly as it was previewed', async () => {
     const ids = await casesWithApplications(1);
     const preview = await service.previewFaxBundle(ctx(), ids, 'mock');

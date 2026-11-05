@@ -174,6 +174,18 @@ describe('fax bundle routes', () => {
     expect(((await history.json()) as { history: Array<{ reference: string; state: string }> }).history).toEqual([expect.objectContaining({ reference: bundle.reference, state: 'delivered' })]);
   });
 
+  it('the list carries the organization\'s destinations (name and number only); a preview takes a chosen one, and refuses one that is not this organization\'s', async () => {
+    const listed = (await (await getList()).json()) as { destinations: Array<Record<string, unknown>> };
+    expect(listed.destinations).toEqual([{ id: 'builtin', name: 'Manatee County Vital Statistics', faxNumberDisplay: '941-554-5490', isDefault: true }]);
+    const withDestination = (destinationId: unknown) =>
+      list.POST(new Request('http://localhost/api/fax-bundles', { method: 'POST', headers: HEADERS, body: JSON.stringify({ organizationId: ORG, caseIds: [CASE], destinationId }) }));
+    expect((await withDestination('fxd-' + '0'.repeat(32))).status).toBe(404);
+    expect((await withDestination(42)).status).toBe(400);
+    const created = await withDestination('builtin');
+    expect(created.status).toBe(201);
+    expect(((await created.json()) as { bundle: { destinationId: string | null; destinationFax: string } }).bundle).toMatchObject({ destinationId: null, destinationFax: '941-554-5490' });
+  });
+
   it('a refused preview names each case and why', async () => {
     const response = await preview([CASE, 'no-such-case']);
     expect(response.status).toBe(422);

@@ -157,14 +157,26 @@ function settingsDefaults(organizationId: string, profile: DeathCertificateFaxSe
  * What a preview uses right now. Throws FaxSettingsServiceError (nothing is
  * prepared) when the configuration cannot be used — e.g. the chosen default
  * destination has been archived.
+ *
+ * `destinationId` (2026-11, destination per bundle): one of THIS
+ * organization's active destinations, chosen by staff. Omitted, null or
+ * 'builtin' = the organization's default. Another organization's id is
+ * simply not found — every read is filtered by organizationId.
  */
-export async function resolveFaxConfiguration(organizationId: string, mode: DataAdapterMode): Promise<EffectiveFaxConfiguration> {
+export async function resolveFaxConfiguration(organizationId: string, mode: DataAdapterMode, destinationId?: string | null): Promise<EffectiveFaxConfiguration> {
   const profile = profileOf(organizationId);
   const stored = await getFaxSettingsRecord(organizationId, mode);
   const provider = stored ? providerOf(stored.providerKey) : profileProvider(profile);
+  const chosen = destinationId && destinationId !== BUILT_IN_DESTINATION_ID ? destinationId : null;
 
   let destination: EffectiveFaxDestination;
-  if (stored?.defaultDestinationId) {
+  if (chosen) {
+    const record = await getFaxDestination(organizationId, chosen, mode);
+    if (!record) throw new FaxSettingsServiceError('That fax destination was not found for your organization.', 404);
+    if (record.status !== 'active') throw new FaxSettingsServiceError(`${record.name} has been archived and can no longer be faxed to. Choose another destination.`, 409);
+    if (record.providerKey !== provider.key) throw new FaxSettingsServiceError(`${record.name} uses a different provider than Fax Settings. Choose another destination.`, 409);
+    destination = { id: record.id, name: record.name, faxNumber: record.faxNumber, address: addressFor(record.faxNumber, providerOf(record.providerKey)), builtIn: false };
+  } else if (stored?.defaultDestinationId) {
     const record = await getFaxDestination(organizationId, stored.defaultDestinationId, mode);
     if (!record || record.status !== 'active') throw new FaxSettingsServiceError('The default fax destination is no longer available. An administrator must choose one in Settings → Fax Settings.', 409);
     destination = { id: record.id, name: record.name, faxNumber: record.faxNumber, address: addressFor(record.faxNumber, providerOf(record.providerKey)), builtIn: false };
@@ -197,6 +209,27 @@ export function renderBundleEmail(config: EffectiveFaxConfiguration, bundle: { r
     subject: renderFaxTemplate(config.subjectTemplate, values),
     body: config.bodyInUse ? renderFaxTemplate(config.bodyTemplate, values) : '',
   };
+}
+
+/** One destination staff may fax to — the Send Fax dialog's choices. Name and number only. */
+export type SendableFaxDestination = { id: string; name: string; faxNumberDisplay: string; isDefault: boolean };
+
+/**
+ * The organization's active destinations on its current provider, default
+ * first. With nothing stored, the built-in destination (id 'builtin').
+ * Only this organization's rows are ever read.
+ */
+export async function listSendableFaxDestinations(organizationId: string, mode: DataAdapterMode): Promise<SendableFaxDestination[]> {
+  const profile = profileOf(organizationId);
+  const [stored, records] = await Promise.all([getFaxSettingsRecord(organizationId, mode), listFaxDestinationRecords(organizationId, mode)]);
+  const provider = stored ? providerOf(stored.providerKey) : profileProvider(profile);
+  const defaultId = stored?.defaultDestinationId ?? null;
+  const sendable = records
+    .filter((d) => d.organizationId === organizationId && d.status === 'active' && d.providerKey === provider.key)
+    .sort((a, b) => Number(b.id === defaultId) - Number(a.id === defaultId) || a.name.localeCompare(b.name))
+    .map((d) => ({ id: d.id, name: d.name, faxNumberDisplay: formatFaxNumber(d.faxNumber), isDefault: d.id === defaultId }));
+  if (!defaultId) sendable.unshift({ id: BUILT_IN_DESTINATION_ID, name: profile.destinationName, faxNumberDisplay: formatFaxNumber(profile.faxNumber), isDefault: true });
+  return sendable;
 }
 
 // ---------------------------------------------------------------- overview
@@ -598,6 +631,11 @@ export async function archiveFaxDestination(ctx: ActivityContext, destinationId:
   if (destination.status === 'archived') return getFaxSettingsOverview(ctx.organizationId, mode);
   const settings = await getFaxSettingsRecord(ctx.organizationId, mode);
   if (settings?.defaultDestinationId === destination.id) throw new FaxSettingsServiceError('This is the default destination. Choose another default before archiving it.', 409);
+  // Never the last usable destination: an active default on the current
+  // provider must remain (with no stored default, the built-in one is it).
+  const remaining = (await listFaxDestinationRecords(ctx.organizationId, mode)).filter((d) => d.id !== destination.id && d.status === 'active');
+  const defaultRemains = settings?.defaultDestinationId ? remaining.some((d) => d.id === settings.defaultDestinationId && d.providerKey === settings.providerKey) : true;
+  if (!defaultRemains) throw new FaxSettingsServiceError('This is the last destination faxes can go to. Add another destination and make it the default before archiving this one.', 409);
   const now = new Date().toISOString();
   const saved = await updateFaxDestinationIf(destination, { status: 'archived', archivedAt: now, archivedBy: ctx.actorIdentityId, updatedAt: now, updatedBy: ctx.actorIdentityId }, mode);
   if (!saved) throw stale();
@@ -605,6 +643,28 @@ export async function archiveFaxDestination(ctx: ActivityContext, destinationId:
     ctx,
     ACTIVITY_EVENT_TYPES.FAX_DESTINATION_ARCHIVED,
     { resourceType: 'faxDestination', resourceId: saved.id, description: `Fax destination archived: ${saved.name} (${formatFaxNumber(saved.faxNumber)})`, previous: { status: 'active' }, next: { status: 'archived' } },
+    mode,
+  );
+  return getFaxSettingsOverview(ctx.organizationId, mode);
+}
+
+/** Restores an archived destination to the active list. It does not become the default. */
+export async function restoreFaxDestination(ctx: ActivityContext, destinationId: unknown, expectedRevision: unknown, mode: DataAdapterMode): Promise<FaxSettingsOverview> {
+  await authorize(ctx, mode);
+  if (destinationId === BUILT_IN_DESTINATION_ID) throw new FaxSettingsServiceError('Fax destination not found.', 404);
+  const destination = await requireDestination(ctx, destinationId, mode);
+  if (destination.revision !== expectedRevision) throw stale();
+  if (destination.status === 'active') return getFaxSettingsOverview(ctx.organizationId, mode);
+  if (await duplicateNumber(ctx.organizationId, destination.faxNumber, destination.id, mode)) {
+    throw new FaxSettingsServiceError(`${formatFaxNumber(destination.faxNumber)} is already an active destination. Archive or change that one first.`, 409);
+  }
+  const now = new Date().toISOString();
+  const saved = await updateFaxDestinationIf(destination, { status: 'active', archivedAt: null, archivedBy: null, updatedAt: now, updatedBy: ctx.actorIdentityId }, mode);
+  if (!saved) throw stale();
+  await recordFaxConfigurationEvent(
+    ctx,
+    ACTIVITY_EVENT_TYPES.FAX_DESTINATION_RESTORED,
+    { resourceType: 'faxDestination', resourceId: saved.id, description: `Fax destination restored: ${saved.name} (${formatFaxNumber(saved.faxNumber)})`, previous: { status: 'archived' }, next: { status: 'active' } },
     mode,
   );
   return getFaxSettingsOverview(ctx.organizationId, mode);

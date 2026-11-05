@@ -12,6 +12,7 @@ const client = vi.hoisted(() => ({
   addFaxDestination: vi.fn(),
   editFaxDestination: vi.fn(),
   archiveFaxDestination: vi.fn(),
+  restoreFaxDestination: vi.fn(),
   makeDefaultFaxDestination: vi.fn(),
 }));
 vi.mock('@/lib/faxSettingsClient', () => client);
@@ -151,7 +152,48 @@ describe('FaxSettingsPanel', () => {
     const row = (await screen.findByText('Sarasota County Records')).closest('li')!;
     fireEvent.click(within(row).getByRole('button', { name: 'Make default' }));
     await waitFor(() => expect(client.makeDefaultFaxDestination).toHaveBeenCalledWith('managed-cremations', 'fxd-b', 4));
-    fireEvent.click(within((await screen.findByText('Sarasota County Records')).closest('li')!).getByRole('button', { name: 'Archive' }));
+    // Archiving asks first: Cancel changes nothing; "Archive destination" archives.
+    fireEvent.click(within((await screen.findByText('Sarasota County Records')).closest('li')!).getByRole('button', { name: 'Archive…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Archive Sarasota County Records?' });
+    expect(within(dialog).getByText('Fax 941-555-0177')).toBeTruthy();
+    expect(within(dialog).getByText(/can restore it/)).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(client.archiveFaxDestination).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByText('Sarasota County Records').closest('li')!).getByRole('button', { name: 'Archive…' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Archive destination' }));
     await waitFor(() => expect(client.archiveFaxDestination).toHaveBeenCalledWith('managed-cremations', 'fxd-b', 7));
+  });
+
+  it('each destination says whether it is the default, active or archived; the default and the last active one offer no Archive; archived ones can be restored', async () => {
+    const three = overview({
+      settings: { ...overview().settings, exists: true, revision: 4 },
+      destinations: [
+        { id: 'fxd-a', name: 'Manatee County Vital Statistics', faxNumber: '9415545490', faxNumberDisplay: '941-554-5490', address: '9415545490@fax.nuso.io', purpose: '', status: 'active', isDefault: true, builtIn: false, revision: 2, updatedAt: null },
+        { id: 'fxd-b', name: 'Sarasota County Records', faxNumber: '9415550177', faxNumberDisplay: '941-555-0177', address: '9415550177@fax.nuso.io', purpose: '', status: 'active', isDefault: false, builtIn: false, revision: 7, updatedAt: null },
+        { id: 'fxd-c', name: 'Old agency', faxNumber: '3055550100', faxNumberDisplay: '305-555-0100', address: '3055550100@fax.nuso.io', purpose: '', status: 'archived', isDefault: false, builtIn: false, revision: 3, updatedAt: null },
+      ],
+    });
+    client.fetchFaxSettings.mockResolvedValue(three);
+    client.restoreFaxDestination.mockResolvedValue(three);
+    renderPanel();
+    const row = async (name: string) => (await screen.findByText(name)).closest('li')!;
+    expect(within(await row('Manatee County Vital Statistics')).getByText('Default')).toBeTruthy();
+    expect(within(await row('Manatee County Vital Statistics')).queryByRole('button', { name: 'Archive…' })).toBeNull();
+    expect(within(await row('Sarasota County Records')).getByText('Active')).toBeTruthy();
+    expect(screen.queryByText('Old agency')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show archived (1)' }));
+    const old = await row('Old agency');
+    expect(within(old).getByText('Archived')).toBeTruthy();
+    expect(within(old).queryByRole('button', { name: 'Edit' })).toBeNull();
+    fireEvent.click(within(old).getByRole('button', { name: 'Restore' }));
+    await waitFor(() => expect(client.restoreFaxDestination).toHaveBeenCalledWith('managed-cremations', 'fxd-c', 3));
+    expect(await screen.findByText(/Old agency restored/)).toBeTruthy();
+  });
+
+  it('with only one active destination there is nothing to archive', async () => {
+    renderPanel();
+    await screen.findByText('Manatee County Vital Statistics');
+    expect(screen.queryByRole('button', { name: 'Archive…' })).toBeNull();
   });
 });

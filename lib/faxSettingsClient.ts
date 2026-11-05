@@ -47,6 +47,10 @@ export async function archiveFaxDestination(organizationId: string, destinationI
   return (await parse<{ overview: FaxSettingsOverview }>(await fetch(`${BASE}/destinations/${encodeURIComponent(destinationId)}/archive`, json({ organizationId, expectedRevision })), 'The destination could not be archived.')).overview;
 }
 
+export async function restoreFaxDestination(organizationId: string, destinationId: string, expectedRevision: number): Promise<FaxSettingsOverview> {
+  return (await parse<{ overview: FaxSettingsOverview }>(await fetch(`${BASE}/destinations/${encodeURIComponent(destinationId)}/restore`, json({ organizationId, expectedRevision })), 'The destination could not be restored.')).overview;
+}
+
 export async function makeDefaultFaxDestination(organizationId: string, destinationId: string, expectedSettingsRevision: number | null): Promise<FaxSettingsOverview> {
   return (await parse<{ overview: FaxSettingsOverview }>(await fetch(`${BASE}/destinations/${encodeURIComponent(destinationId)}/default`, json({ organizationId, expectedSettingsRevision })), 'The default destination could not be changed.')).overview;
 }

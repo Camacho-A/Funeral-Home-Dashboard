@@ -20,7 +20,7 @@ const eligibility = (overrides: Partial<FaxEligibility> = {}): FaxEligibility =>
 });
 const bundle = (ids: string[], overrides: Partial<FaxBundleView> = {}): FaxBundleView => ({
   id: 'fxb-1', reference: 'DC-7Q4K9M', state: 'ready', stateLabel: 'Ready to Send', applicationCount: ids.length, pageCount: ids.length, sizeBytes: 220_000,
-  destinationName: 'Manatee County Vital Statistics', destinationFax: '941-554-5490', destinationAddress: '9415545490@fax.nuso.io',
+  destinationId: null, destinationName: 'Manatee County Vital Statistics', destinationFax: '941-554-5490', destinationAddress: '9415545490@fax.nuso.io',
   subject: 'Manors Cremation - DC Application Bundle DC-7Q4K9M', senderAddress: 'office@funeralhome.example', createdAt: '2026-11-04T12:00:00.000Z',
   submittedAt: null, deliveredAt: null, confirmedAt: null, nusoReference: null, failureMessage: null, sendingEnabled: true,
   items: ids.map((id, i) => ({ position: i + 1, caseId: id, caseNumber: `B2026-90${id.slice(-1)}`, decedentDisplayName: `Case ${id}`, documentVersion: 1, numbering: 'filled_blank' as const, pageCount: 1 })),
@@ -71,7 +71,7 @@ describe('FaxDcApplicationsDialog — three steps', () => {
     expect(screen.getByText('1 application in one fax')).toBeTruthy();
     expect(screen.getByText('1 of 3 selected')).toBeTruthy();
     await review(1);
-    expect(client.previewFaxBundle).toHaveBeenCalledWith('managed-cremations', ['case-2']);
+    expect(client.previewFaxBundle).toHaveBeenCalledWith('managed-cremations', ['case-2'], 'builtin');
     expect(currentStep()).toMatch(/Review fax/);
   });
 
@@ -86,14 +86,14 @@ describe('FaxDcApplicationsDialog — three steps', () => {
     fireEvent.click(order.getByRole('button', { name: 'Move Alpha Testcase up' }));
     fireEvent.click(order.getByRole('button', { name: 'Remove Bravo Testcase' }));
     await review(2);
-    expect(client.previewFaxBundle).toHaveBeenCalledWith('managed-cremations', ['case-1', 'case-3']);
+    expect(client.previewFaxBundle).toHaveBeenCalledWith('managed-cremations', ['case-1', 'case-3'], 'builtin');
   });
 
   it('cases ticked on the Cases list arrive selected (only those that can be faxed)', async () => {
     client.previewFaxBundle.mockResolvedValue(bundle(['case-2', 'case-1']));
     renderDialog(['case-2', 'case-4', 'case-1']);
     await review(2);
-    expect(client.previewFaxBundle).toHaveBeenCalledWith('managed-cremations', ['case-2', 'case-1']);
+    expect(client.previewFaxBundle).toHaveBeenCalledWith('managed-cremations', ['case-2', 'case-1'], 'builtin');
   });
 
   it('step 2 shows the exact stored PDF with the destination, document, application and page counts — and no Send', async () => {
@@ -252,5 +252,44 @@ describe('FaxDcApplicationsDialog — three steps', () => {
     await screen.findByText(/not yet confirmed delivery/);
     const [first, second] = client.sendFaxBundle.mock.calls.map((c) => c[2]);
     expect(first).not.toBe(second);
+  });
+
+  it('several destinations: the default is preselected, staff can choose another before reviewing, and it is shown on every step', async () => {
+    client.fetchFaxEligibility.mockResolvedValue(
+      eligibility({
+        destinations: [
+          { id: 'fxd-manatee', name: 'Manatee County Vital Statistics', faxNumberDisplay: '941-554-5490', isDefault: true },
+          { id: 'fxd-sarasota', name: 'Sarasota County Records', faxNumberDisplay: '941-555-0177', isDefault: false },
+        ],
+      }),
+    );
+    const sarasota = { destinationId: 'fxd-sarasota', destinationName: 'Sarasota County Records', destinationFax: '941-555-0177', destinationAddress: '9415550177@fax.nuso.io' };
+    client.previewFaxBundle.mockResolvedValueOnce(bundle(['case-1'], { destinationId: 'fxd-manatee' })).mockResolvedValueOnce(bundle(['case-1'], sarasota));
+    renderDialog(['case-1']);
+    const menu = (await screen.findByLabelText('Faxing to')) as HTMLSelectElement;
+    expect(menu.value).toBe('fxd-manatee');
+    expect([...menu.options].map((o) => o.text)).toEqual(['Manatee County Vital Statistics — Fax 941-554-5490 (default)', 'Sarasota County Records — Fax 941-555-0177']);
+    await review(1);
+    expect(client.previewFaxBundle).toHaveBeenLastCalledWith('managed-cremations', ['case-1'], 'fxd-manatee');
+
+    // Back, choose Sarasota: a different destination is a different fax — a new preview, never the old bundle.
+    fireEvent.click(screen.getByRole('button', { name: '‹ Back to cases' }));
+    fireEvent.change(screen.getByLabelText('Faxing to'), { target: { value: 'fxd-sarasota' } });
+    expect(screen.getByText('Not the default destination')).toBeTruthy();
+    await review(1);
+    expect(client.previewFaxBundle).toHaveBeenCalledTimes(2);
+    expect(client.previewFaxBundle).toHaveBeenLastCalledWith('managed-cremations', ['case-1'], 'fxd-sarasota');
+    expect(within(screen.getByRole('complementary', { name: 'Fax details' })).getByText('Sarasota County Records')).toBeTruthy();
+    toConfirm();
+    const card = within(screen.getByRole('region', { name: 'Send this fax?' }));
+    expect(card.getByText('Sarasota County Records')).toBeTruthy();
+    expect(card.getByText('Fax 941-555-0177')).toBeTruthy();
+    expect(confirmBox().closest('label')!.textContent).toMatch(/to Sarasota County Records at 941-555-0177/);
+  });
+
+  it('one destination: no menu, just the destination', async () => {
+    renderDialog();
+    expect(await screen.findByText('Manatee County Vital Statistics')).toBeTruthy();
+    expect(screen.queryByLabelText('Faxing to')).toBeNull();
   });
 });

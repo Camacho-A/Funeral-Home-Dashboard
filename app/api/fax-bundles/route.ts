@@ -9,8 +9,10 @@ export const maxDuration = 120;
 /**
  * Manatee County DC application fax bundles (2026-11).
  *   GET  ?organizationId=…                 → the cases staff can choose from
- *   POST { organizationId, caseIds }       → 201: the bundle, built and stored
- *                                            (exactly these cases, in this order)
+ *   POST { organizationId, caseIds,        → 201: the bundle, built and stored
+ *          destinationId? }                  (exactly these cases, in this order,
+ *                                            to this organization's chosen active
+ *                                            destination; omitted = its default)
  * Nothing is sent here.
  */
 export async function GET(request: Request) {
@@ -36,7 +38,7 @@ export async function POST(request: Request) {
   const auth = await authorizeFax(body.organizationId, 'send');
   if (!auth.context) return auth.response;
   try {
-    const bundle = await previewFaxBundle(faxActivityContext(auth.context, crypto.randomUUID()), body.caseIds, auth.mode);
+    const bundle = await previewFaxBundle(faxActivityContext(auth.context, crypto.randomUUID()), body.caseIds, auth.mode, body.destinationId);
     return NextResponse.json({ bundle }, { status: 201 });
   } catch (error) {
     return faxErrorResponse(error, 'The bundle could not be prepared. Please try again.');

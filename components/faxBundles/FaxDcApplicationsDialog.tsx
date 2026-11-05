@@ -12,6 +12,7 @@ import {
   previewFaxBundle,
   sendFaxBundle,
   type FaxBundleView,
+  type FaxDestinationChoice,
   type FaxEligibleCase,
 } from '@/lib/faxBundlesClient';
 import styles from './FaxDcApplicationsDialog.module.css';
@@ -44,6 +45,8 @@ const shortDate = (localDate: string | null) => (localDate ? new Date(`${localDa
 const formatSize = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const sameOrder = (ids: readonly string[], bundle: FaxBundleView | null) => bundle !== null && ids.length === bundle.items.length && bundle.items.every((item, i) => item.caseId === ids[i]);
+/** 'builtin' is the organization's built-in destination, which a bundle records as null. */
+const sameDestination = (choiceId: string | null, bundle: FaxBundleView) => (choiceId === 'builtin' ? null : choiceId) === (bundle.destinationId ?? null);
 
 export function FaxDcApplicationsDialog({
   organizationId,
@@ -67,10 +70,18 @@ export function FaxDcApplicationsDialog({
   const [uncertainBundleId, setUncertainBundleId] = useState<string | null>(null);
   const submissionId = useRef(newSubmissionId());
   const confirmId = useId();
+  const destinationSelectId = useId();
+  /** The destination staff chose for this fax; null until they change it (the default is used). */
+  const [pickedDestinationId, setPickedDestinationId] = useState<string | null>(null);
 
   const cases = useMemo(() => eligibility.data?.cases ?? [], [eligibility.data]);
   const byId = useMemo(() => new Map(cases.map((c) => [c.caseId, c])), [cases]);
   const max = eligibility.data?.maxApplications ?? 20;
+  const destinations: FaxDestinationChoice[] = useMemo(
+    () => eligibility.data?.destinations ?? (eligibility.data ? [{ id: 'builtin', name: eligibility.data.destinationName, faxNumberDisplay: eligibility.data.destinationFax, isDefault: true }] : []),
+    [eligibility.data],
+  );
+  const destination = destinations.find((d) => d.id === pickedDestinationId) ?? destinations.find((d) => d.isDefault) ?? destinations[0] ?? null;
   const availableCount = cases.filter((c) => c.available).length;
   // Until staff change it, the selection is what was ticked on the Cases list (when selectable).
   const selected = picked ?? preselectedCaseIds.filter((id) => byId.get(id)?.available).slice(0, max);
@@ -95,12 +106,13 @@ export function FaxDcApplicationsDialog({
   async function review() {
     // Back from Review with nothing changed: the bundle already prepared is
     // still the one to check — no second bundle for the same selection.
-    if (sameOrder(selected, bundle) && bundle!.state === 'ready' && bundle!.id !== uncertainBundleId) return go('review');
+    // A different destination is a different fax: always a new preview.
+    if (sameOrder(selected, bundle) && sameDestination(destination?.id ?? null, bundle!) && bundle!.state === 'ready' && bundle!.id !== uncertainBundleId) return go('review');
     setBusy('preview');
     setError(null);
     setProblems({});
     try {
-      const built = await previewFaxBundle(organizationId, selected);
+      const built = await previewFaxBundle(organizationId, selected, destination?.id ?? null);
       setBundle(built);
       submissionId.current = newSubmissionId();
       go('review');
@@ -206,7 +218,37 @@ export function FaxDcApplicationsDialog({
 
         {data && step === 'select' && (
           <>
-            <Destination name={data.destinationName} fax={data.destinationFax} />
+            {destinations.length > 1 && destination ? (
+              <div className={`${styles.destination} ${styles.destinationPicker}`}>
+                <label className={styles.destinationLabel} htmlFor={destinationSelectId}>
+                  Faxing to
+                </label>
+                <select
+                  id={destinationSelectId}
+                  className={`sx-select ${styles.destinationSelect}`}
+                  value={destination.id}
+                  disabled={busy !== null}
+                  onChange={(e) => {
+                    setPickedDestinationId(e.target.value);
+                    setError(null);
+                    setProblems({});
+                  }}
+                >
+                  {destinations.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name} — Fax {d.faxNumberDisplay}
+                      {d.isDefault ? ' (default)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className={styles.destinationValue} aria-live="polite">
+                  <strong>{destination.name}</strong> <span className={styles.faxNumber}>Fax {destination.faxNumberDisplay}</span>
+                  {!destination.isDefault && <span className={styles.notDefault}>Not the default destination</span>}
+                </span>
+              </div>
+            ) : (
+              <Destination name={destination?.name ?? data.destinationName} fax={destination?.faxNumberDisplay ?? data.destinationFax} />
+            )}
             {cases.length === 0 ? (
               <div className={styles.empty}>
                 <p className={styles.emptyTitle}>No applications are waiting to be faxed.</p>
@@ -335,6 +377,7 @@ export function FaxDcApplicationsDialog({
                 </div>
               </dl>
               <p className={styles.hint}>Check every page. The viewer shows the stored file Send Fax attaches, exactly as it will be faxed.</p>
+              {destinations.length > 1 && <p className={styles.hint}>To fax it somewhere else, go back to cases and choose another destination — a new fax is prepared.</p>}
               <div className={styles.reviewOrder}>
                 <h3 className={styles.panelTitle}>Order</h3>
                 <ol className={styles.inlineList}>

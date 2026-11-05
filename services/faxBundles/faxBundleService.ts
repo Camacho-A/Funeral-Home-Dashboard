@@ -41,7 +41,7 @@ import {
   formatMegabytes,
   type DeathCertificateFaxSettings,
 } from '@/domain/faxBundles/faxSettings';
-import { FaxSettingsServiceError, renderBundleEmail, resolveFaxConfiguration, type EffectiveFaxConfiguration } from '../faxSettings/faxSettingsService';
+import { FaxSettingsServiceError, listSendableFaxDestinations, renderBundleEmail, resolveFaxConfiguration, type EffectiveFaxConfiguration, type SendableFaxDestination } from '../faxSettings/faxSettingsService';
 import { DC_APPLICATION_FAX_DELIVERED_EVENT, dcApplicationSentItem } from '@/domain/faxBundles/faxChecklist';
 import { FaxBundleError } from './faxBundleError';
 import { RequestBoxError, buildFaxBundlePdf, inspectApplication } from './faxBundlePdf';
@@ -106,9 +106,9 @@ function requireSettings(organizationId: string): DeathCertificateFaxSettings {
  * destination, provider, subject and message. With nothing saved it is the
  * organization profile's built-in values, exactly as before Fax Settings.
  */
-async function configurationOf(organizationId: string, mode: DataAdapterMode): Promise<EffectiveFaxConfiguration> {
+async function configurationOf(organizationId: string, mode: DataAdapterMode, destinationId?: string | null): Promise<EffectiveFaxConfiguration> {
   try {
-    return await resolveFaxConfiguration(organizationId, mode);
+    return await resolveFaxConfiguration(organizationId, mode, destinationId);
   } catch (error) {
     if (error instanceof FaxSettingsServiceError) throw new FaxBundleError(`${error.message} Nothing was sent.`, error.status === 404 ? 404 : error.status === 409 ? 409 : 503);
     throw error;
@@ -159,6 +159,8 @@ export type FaxBundleView = {
   applicationCount: number;
   pageCount: number;
   sizeBytes: number;
+  /** The destination it was prepared for (null = the built-in destination). */
+  destinationId: string | null;
   destinationName: string;
   destinationFax: string;
   destinationAddress: string;
@@ -191,6 +193,7 @@ async function viewOf(bundle: FaxBundle, mode: DataAdapterMode): Promise<FaxBund
     applicationCount: bundle.applicationCount,
     pageCount: bundle.pdfPageCount,
     sizeBytes: bundle.pdfSizeBytes,
+    destinationId: bundle.destinationId,
     destinationName: bundle.destinationName,
     destinationFax: formatFaxNumber(bundle.destinationFaxNumber),
     destinationAddress: bundle.destinationAddress,
@@ -274,7 +277,10 @@ function heldReason(bundle: FaxBundle): string {
  * not delivered by fax, and not already marked "Sent day before ashes
  * arrive" (sent outside SOLIS). Each says why if it cannot be selected.
  */
-export async function listFaxEligibleCases(organizationId: string, mode: DataAdapterMode): Promise<{ cases: FaxEligibleCase[]; destinationName: string; destinationFax: string; sendingEnabled: boolean; maxApplications: number }> {
+export async function listFaxEligibleCases(
+  organizationId: string,
+  mode: DataAdapterMode,
+): Promise<{ cases: FaxEligibleCase[]; destinationName: string; destinationFax: string; destinations: SendableFaxDestination[]; sendingEnabled: boolean; maxApplications: number }> {
   const settings = requireSettings(organizationId);
   const [applications, claims] = await Promise.all([latestApplicationsByCase(organizationId, mode), listFaxCaseClaims(organizationId, mode)]);
   const claimOf = new Map(claims.map((c) => [c.caseId, c.bundleId]));
@@ -303,7 +309,9 @@ export async function listFaxEligibleCases(organizationId: string, mode: DataAda
   }
   cases.sort((a, b) => (a.targetDate ?? '9999').localeCompare(b.targetDate ?? '9999') || a.caseNumber.localeCompare(b.caseNumber));
   const config = await configurationOf(organizationId, mode);
-  return { cases, destinationName: config.destination.name, destinationFax: formatFaxNumber(config.destination.faxNumber), sendingEnabled: settings.sendingEnabled, maxApplications: MAX_APPLICATIONS_PER_BUNDLE };
+  // The organization's own active destinations (name and number), default first — staff may pick one per bundle.
+  const destinations = await listSendableFaxDestinations(organizationId, mode).catch(() => []);
+  return { cases, destinationName: config.destination.name, destinationFax: formatFaxNumber(config.destination.faxNumber), destinations, sendingEnabled: settings.sendingEnabled, maxApplications: MAX_APPLICATIONS_PER_BUNDLE };
 }
 
 // ---------------------------------------------------------------- preview
@@ -345,9 +353,13 @@ async function uniqueReference(organizationId: string, mode: DataAdapterMode): P
  * Refused — nothing stored — with each case's reason if any case cannot be
  * included.
  */
-export async function previewFaxBundle(ctx: ActivityContext, requestedCaseIds: unknown, mode: DataAdapterMode): Promise<FaxBundleView> {
+export async function previewFaxBundle(ctx: ActivityContext, requestedCaseIds: unknown, mode: DataAdapterMode, requestedDestinationId?: unknown): Promise<FaxBundleView> {
   const settings = requireSettings(ctx.organizationId);
-  const config = await configurationOf(ctx.organizationId, mode);
+  // One of this organization's active destinations, or (omitted) its default. Checked on the server; never trusted from the browser.
+  if (requestedDestinationId !== undefined && requestedDestinationId !== null && (typeof requestedDestinationId !== 'string' || !requestedDestinationId || requestedDestinationId.length > 64)) {
+    throw new FaxBundleError('Choose a fax destination from the list.', 400);
+  }
+  const config = await configurationOf(ctx.organizationId, mode, requestedDestinationId as string | null | undefined);
   const caseIds = validCaseIds(requestedCaseIds);
   await discardExpiredPreviews(ctx, mode);
 
@@ -549,7 +561,9 @@ export async function sendFaxBundle(ctx: ActivityContext, bundleId: string, subm
   // Everything the preview showed, exactly as it was. Fax Settings changed
   // since then (destination, provider, subject or message): nothing is
   // sent — the bundle is never redirected or re-worded; preview again.
-  const config = await configurationOf(ctx.organizationId, mode);
+  // The bundle's OWN destination is checked: still this organization's,
+  // still active, still the same number (null = the default, as before).
+  const config = await configurationOf(ctx.organizationId, mode, bundle.destinationId);
   if (config.destination.address !== bundle.destinationAddress || config.provider.key !== bundle.providerKey) {
     throw new FaxBundleError(`The fax destination ${CHANGED_SINCE_PREVIEW} Nothing was sent.`, 409);
   }

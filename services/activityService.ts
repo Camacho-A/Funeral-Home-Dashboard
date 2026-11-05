@@ -1276,6 +1276,7 @@ export function recordFaxConfigurationEvent(
     | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_CREATED
     | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_UPDATED
     | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_ARCHIVED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_RESTORED
     | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_DEFAULT_CHANGED,
   details: { resourceType: 'faxSettings' | 'faxDestination'; resourceId: string; description: string; previous: Record<string, unknown> | null; next: Record<string, unknown> | null },
   dataAdapterMode: DataAdapterMode,
