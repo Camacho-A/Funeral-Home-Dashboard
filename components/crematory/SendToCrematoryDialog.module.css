@@ -235,3 +235,417 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+/* ---------- 2026-11 refresh: the Fax DC Applications layout ---------- */
+.body {
+  gap: 16px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.breakAll {
+  overflow-wrap: anywhere;
+}
+
+.bannerWarn {
+  margin: 0;
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  border: 1px solid oklch(0.9 0.05 75);
+}
+
+.bannerWarn .warn {
+  color: inherit;
+}
+
+/* Step 1: the cases on the left, what goes in the email on the right. */
+.selectLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+}
+
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--sx-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.groupCount {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--sx-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-2);
+  font-size: 11.5px;
+  line-height: 18px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.cases {
+  gap: 8px;
+}
+
+.case {
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  background: #fff;
+  min-width: 0;
+  transition: border-color var(--sx-ease), background-color var(--sx-ease);
+}
+
+.case:hover {
+  border-color: var(--sx-border-input);
+}
+
+.case:has(.caseTitle input:checked) {
+  border-color: var(--sx-navy);
+  background: var(--sx-selected);
+}
+
+.caseSent,
+.caseSent:hover {
+  background: var(--sx-subtle);
+  border-color: var(--sx-border);
+}
+
+.caseTitle {
+  font-size: 14px;
+}
+
+.caseTitle input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--sx-navy);
+}
+
+/* Collapsed: one line of what is still missing. */
+.missingLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-left: 26px;
+}
+
+.missingLabel {
+  color: var(--sx-text-2);
+  font-size: 12.5px;
+}
+
+.chip {
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.hideChecklist {
+  align-self: flex-start;
+}
+
+.side {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  background: #fff;
+  min-width: 0;
+}
+
+.sideTitle {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.sideList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.sideList li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--sx-border-soft);
+  overflow-wrap: anywhere;
+}
+
+.sideList li:last-child {
+  border-bottom: 0;
+}
+
+.caseNo {
+  color: var(--sx-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sideFacts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.sideFacts dt {
+  font-size: 12px;
+  color: var(--sx-muted);
+}
+
+.sideFacts dd {
+  margin: 0;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 40px 16px;
+  border: 1px dashed var(--sx-border-input);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.emptyTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Step 2: the email on the left, the package PDF fills the rest. */
+.bodyReview {
+  overflow: hidden;
+}
+
+.reviewLayout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 20px;
+}
+
+.emailCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.fieldRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fromLine {
+  margin: 0;
+  color: var(--sx-text-2);
+  font-size: 13px;
+}
+
+.attachTitle {
+  margin: 4px 0 0;
+  color: var(--sx-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.attachment {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  transition: border-color var(--sx-ease), background-color var(--sx-ease);
+}
+
+.attachment:hover {
+  border-color: var(--sx-border-input);
+}
+
+.attachment:focus-visible {
+  outline: 2px solid var(--sx-navy);
+  outline-offset: 2px;
+}
+
+.attachmentShown,
+.attachmentShown:hover {
+  border-color: var(--sx-navy);
+  background: var(--sx-selected);
+}
+
+.deliveryNote {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--sx-subtle);
+  color: var(--sx-text-2);
+  font-size: 12.5px;
+  line-height: 18px;
+}
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  overflow: hidden;
+  overflow: clip;
+  --pdf-toolbar-sticky-top: 0;
+}
+
+.preview > .muted {
+  padding: 24px;
+}
+
+.preview .viewer {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+/* Done */
+.doneLayout {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.doneCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 640px;
+  padding: 20px 22px;
+  border: 1px solid var(--sx-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.doneTitle {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.doneText {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.doneAttachment {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--sx-border-soft);
+  font-size: 13px;
+}
+
+@media (max-width: 860px) {
+  .selectLayout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  /* On a narrow screen the email summary comes first, then the list. */
+  .side {
+    position: static;
+    order: -1;
+  }
+
+  .bodyReview {
+    overflow-y: auto;
+  }
+
+  .reviewLayout {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .emailCard {
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .preview {
+    flex: none;
+    --pdf-toolbar-sticky-top: -20px;
+  }
+
+  .preview .viewer {
+    flex: none;
+    height: clamp(340px, calc(100dvh - 260px), 900px);
+  }
+}
+
+@media (max-width: 560px) {
+  .missingLine {
+    padding-left: 0;
+  }
+}

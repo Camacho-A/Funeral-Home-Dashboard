@@ -29,6 +29,8 @@ import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { ReplacePermitButton } from './ReplacePermitButton';
 import { PreviousSendDialog } from './PreviousSendDialog';
 import { PermitPdfPreview } from './PermitPdfPreview';
+import { PdfViewer } from '@/components/documents/PdfViewer';
+import { DialogSteps } from '@/components/ui/DialogSteps';
 import styles from './SendToCrematoryDialog.module.css';
 
 /**
@@ -101,7 +103,10 @@ export function SendToCrematoryDialog({
   const [cc, setCc] = useState('');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
-  const [reviewed, setReviewed] = useState(false);
+  /** Which selected case's package the review shows (the first, until another attachment is clicked). */
+  const [previewCaseId, setPreviewCaseId] = useState<string | null>(null);
+  /** Per-case: whether its checklist is open in the list (2026-11). */
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [sending, setSending] = useState(false);
   /** `unclear`: the send may have gone out (2026-10) — nothing more can be
       sent from here; an administrator resolves it after checking Sent
@@ -216,7 +221,7 @@ export function SendToCrematoryDialog({
     setCc(overview.data!.settings.cc.join(', '));
     setSubject(crematoryEmailSubject(name, chosen.map((c) => ({ decedentDisplayName: c.subjectName, expectedReadyDate: c.readyDate.confirmed! }))));
     setMessage(defaultCrematoryMessage(name, attachments));
-    setReviewed(false);
+    setPreviewCaseId(null);
     setSendError(null);
     submissionId.current = crypto.randomUUID();
     setStep('review');
@@ -238,7 +243,10 @@ export function SendToCrematoryDialog({
         submissionId: submissionId.current,
         confirmResend: false,
         reviewFingerprint: reviewFingerprint.current,
-        acknowledged: reviewed,
+        // Pressing Confirm & Send on the review is the acknowledgment (two
+        // clicks, decided 2026-10): the server still requires it and
+        // records who acknowledged, and when.
+        acknowledged: true,
       });
       setResult(sent);
       setChecklistRetry({ busy: false, error: null, done: false });
@@ -270,15 +278,95 @@ export function SendToCrematoryDialog({
 
   const mailbox = overview.data?.mailbox;
   const title = 'Send to Crematory';
+
+  // UI refresh (2026-11, the Fax DC Applications design): cases grouped by
+  // where they stand; a case that needs attention shows what is missing on
+  // one line and opens to its checklist. The checks, actions and send are
+  // unchanged.
+  const isSent = (c: CrematoryCaseSummary) => c.lastSubmission?.status === 'submitted' || c.previousSend?.recorded?.decision === 'sent_outside_solis';
+  const readyCases = candidates.filter((c) => !isSent(c) && c.readiness.readyToSend);
+  const attentionCases = candidates.filter((c) => !isSent(c) && !c.readiness.readyToSend);
+  const sentCases = candidates.filter(isSent);
+  // One case, or only a couple needing attention: their checklists are open from the start.
+  const openByDefault = Boolean(caseId) || attentionCases.length <= 2;
+  const isOpen = (id: string) => expanded[id] ?? openByDefault;
+  const previewSummary = chosen.find((c) => c.caseId === previewCaseId) ?? chosen[0] ?? null;
+
+  const renderRow = (c: CrematoryCaseSummary) => (
+    <CaseRow
+      key={c.caseId}
+      summary={c}
+      checked={selected.includes(c.caseId)}
+      onToggle={(on) => setSelected((current) => (on ? [...current, c.caseId] : current.filter((id) => id !== c.caseId)))}
+      busy={busyCase === c.caseId}
+      error={caseError?.caseId === c.caseId ? caseError.message : null}
+      dateValue={dates[c.caseId] ?? toIsoInput(c.readyDate.confirmed ?? c.readyDate.suggested)}
+      onDateChange={(value) => setDates((d) => ({ ...d, [c.caseId]: value }))}
+      nameValue={names[c.caseId] ?? c.packageName.confirmed ?? c.packageName.suggested ?? { first: '', last: '' }}
+      onNameChange={(value) => setNames((n) => ({ ...n, [c.caseId]: value }))}
+      onConfirmName={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_package_name', ...value }))}
+      canPrepare={overview.data!.canPrepare}
+      organizationId={organizationId}
+      onUploadPermit={(file) => act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE }))}
+      onConfirmPermit={() => {
+        setShownPermitChecksum(null);
+        setPermitPrompt(c);
+      }}
+      onExtract={() => void prepareCase(c.caseId)}
+      preparing={preparingIds.includes(c.caseId)}
+      prepareError={prepareErrors[c.caseId] ?? null}
+      onRetryPrepare={() => void prepareCase(c.caseId)}
+      onChooseDocument={(kind, documentId) => setChooser({ summary: c, kind, documentId })}
+      onPermitReplaced={() => void Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) })])}
+      canSend={overview.data!.canSend}
+      onResolveWorkflow={() => resolveWorkflow(c)}
+      onVerifyPreviousSend={() => setPreviousSendFor(c)}
+      canManage={overview.data!.canManage === true}
+      onCorrectPreviousSend={() => setCorrectingPreviousSend(c)}
+      onResolveSend={(decision, reason) =>
+        act(c, async () => {
+          await crematoryCaseAction(organizationId, c.caseId, { action: 'reconcile_send', decision, reason });
+          // The case header and checklist read the case itself.
+          await queryClient.invalidateQueries({ queryKey: ['case', organizationId] });
+        })
+      }
+      onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
+      onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
+      open={isOpen(c.caseId)}
+      onOpenChange={(value) => setExpanded((e) => ({ ...e, [c.caseId]: value }))}
+    />
+  );
+  const group = (label: string, cases: CrematoryCaseSummary[]) =>
+    cases.length > 0 && (
+      <section className={styles.group} aria-label={label}>
+        <h3 className={styles.groupTitle}>
+          {label} <span className={styles.groupCount}>{cases.length}</span>
+        </h3>
+        <ul className={styles.cases}>{cases.map(renderRow)}</ul>
+      </section>
+    );
+
+  const fromLine =
+    mailbox?.connected ? (
+      mailbox.status === 'connected' ? (
+        <span className={styles.breakAll}>{mailbox.accountEmail}</span>
+      ) : (
+        <span className={styles.warn}>The Outlook mailbox {mailbox.accountEmail} needs to be signed in again — Settings → Crematory.</span>
+      )
+    ) : (
+      <span className={styles.warn}>No Outlook mailbox is connected. An administrator can connect one in Settings → Crematory.</span>
+    );
+
   return (
-    <Modal open={open} onClose={onClose} title={title} size="lg">
+    <Modal open={open} onClose={onClose} title={title} size="xl">
       <div className="sx-modal-header">
         <h2 className="sx-modal-title">{title}</h2>
         <button type="button" className="sx-icon-btn" aria-label="Close" onClick={onClose}>
           ×
         </button>
       </div>
-      <div className={`sx-modal-body ${styles.body}`}>
+      {step !== 'done' && <DialogSteps steps={['Select cases', 'Review & send']} current={step === 'prepare' ? 0 : 1} />}
+      <div className={`sx-modal-body ${styles.body} ${step === 'review' ? styles.bodyReview : ''}`}>
         {overview.isPending && <p className={styles.muted}>Loading cases…</p>}
         {overview.error && (
           <div className="sx-form-banner sx-form-banner-error" role="alert">
@@ -286,24 +374,13 @@ export function SendToCrematoryDialog({
           </div>
         )}
 
-        {overview.data && step !== 'done' && (
-          <p className={styles.mailbox}>
-            {mailbox?.connected ? (
-              mailbox.status === 'connected' ? (
-                <>
-                  From <strong>{mailbox.accountEmail}</strong> (Outlook)
-                </>
-              ) : (
-                <span className={styles.warn}>The Outlook mailbox {mailbox.accountEmail} needs to be signed in again — Settings → Crematory.</span>
-              )
-            ) : (
-              <span className={styles.warn}>No Outlook mailbox is connected. An administrator can connect one in Settings → Crematory.</span>
-            )}
-          </p>
-        )}
-
         {overview.data && step === 'prepare' && (
           <>
+            {overview.data && !(mailbox?.connected && mailbox.status === 'connected') && (
+              <div className={`sx-form-banner ${styles.bannerWarn}`} role="status">
+                {fromLine}
+              </div>
+            )}
             {preparing && (
               <p className={styles.muted} role="status">
                 Preparing documents from each case&rsquo;s Arrangement Form and permit… The checklists update as each case finishes.
@@ -335,155 +412,194 @@ export function SendToCrematoryDialog({
                 {reviewError}
               </div>
             )}
-            {candidates.length === 0 && <p className={styles.muted}>No open cremation cases.</p>}
-            <ul className={styles.cases}>
-              {candidates.map((c) => (
-                <CaseRow
-                  key={c.caseId}
-                  summary={c}
-                  checked={selected.includes(c.caseId)}
-                  onToggle={(on) => setSelected((current) => (on ? [...current, c.caseId] : current.filter((id) => id !== c.caseId)))}
-                  busy={busyCase === c.caseId}
-                  error={caseError?.caseId === c.caseId ? caseError.message : null}
-                  dateValue={dates[c.caseId] ?? toIsoInput(c.readyDate.confirmed ?? c.readyDate.suggested)}
-                  onDateChange={(value) => setDates((d) => ({ ...d, [c.caseId]: value }))}
-                  nameValue={names[c.caseId] ?? c.packageName.confirmed ?? c.packageName.suggested ?? { first: '', last: '' }}
-                  onNameChange={(value) => setNames((n) => ({ ...n, [c.caseId]: value }))}
-                  onConfirmName={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_package_name', ...value }))}
-                  canPrepare={overview.data!.canPrepare}
-                  organizationId={organizationId}
-                  onUploadPermit={(file) => act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE }))}
-                  onConfirmPermit={() => {
-                    setShownPermitChecksum(null);
-                    setPermitPrompt(c);
-                  }}
-                  onExtract={() => void prepareCase(c.caseId)}
-                  preparing={preparingIds.includes(c.caseId)}
-                  prepareError={prepareErrors[c.caseId] ?? null}
-                  onRetryPrepare={() => void prepareCase(c.caseId)}
-                  onChooseDocument={(kind, documentId) => setChooser({ summary: c, kind, documentId })}
-                  onPermitReplaced={() => void Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) })])}
-                  canSend={overview.data!.canSend}
-                  onResolveWorkflow={() => resolveWorkflow(c)}
-                  onVerifyPreviousSend={() => setPreviousSendFor(c)}
-                  canManage={overview.data!.canManage === true}
-                  onCorrectPreviousSend={() => setCorrectingPreviousSend(c)}
-                  onResolveSend={(decision, reason) =>
-                    act(c, async () => {
-                      await crematoryCaseAction(organizationId, c.caseId, { action: 'reconcile_send', decision, reason });
-                      // The case header and checklist read the case itself.
-                      await queryClient.invalidateQueries({ queryKey: ['case', organizationId] });
-                    })
-                  }
-                  onConfirmDate={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_ready_date', date: value }))}
-                  onBuild={() => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'build_package' }))}
-                />
-              ))}
-            </ul>
+            {candidates.length === 0 ? (
+              <div className={styles.empty}>
+                <p className={styles.emptyTitle}>No open cremation cases.</p>
+              </div>
+            ) : (
+              <div className={styles.selectLayout}>
+                <div className={styles.groups}>
+                  {group('Ready to send', readyCases)}
+                  {group('Needs attention', attentionCases)}
+                  {group('Sent', sentCases)}
+                </div>
+                <aside className={styles.side} aria-label="In this email">
+                  <h3 className={styles.sideTitle}>In this email</h3>
+                  {chosen.length === 0 ? (
+                    <p className={styles.muted}>Tick the ready cases to send. Each goes as its own PDF in one email.</p>
+                  ) : (
+                    <ol className={styles.sideList}>
+                      {chosen.map((c) => (
+                        <li key={c.caseId}>
+                          <strong>{c.decedentDisplayName}</strong> <span className={styles.caseNo}>{c.caseNumber}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                  <dl className={styles.sideFacts}>
+                    <div>
+                      <dt>To</dt>
+                      <dd className={styles.breakAll}>{overview.data.settings.to.join(', ') || '—'}</dd>
+                    </div>
+                    {overview.data.settings.cc.length > 0 && (
+                      <div>
+                        <dt>CC</dt>
+                        <dd className={styles.breakAll}>{overview.data.settings.cc.join(', ')}</dd>
+                      </div>
+                    )}
+                    <div>
+                      <dt>From</dt>
+                      {/* A problem with the mailbox is spelled out in the banner above. */}
+                      <dd className={styles.breakAll}>{mailbox?.connected && mailbox.status === 'connected' ? mailbox.accountEmail : <span className={styles.warn}>Not connected — see above</span>}</dd>
+                    </div>
+                  </dl>
+                </aside>
+              </div>
+            )}
           </>
         )}
 
         {overview.data && step === 'review' && (
-          <div className={styles.review}>
-            <label className="sx-label" htmlFor="crematory-to">
-              To
-            </label>
-            <input id="crematory-to" className="sx-input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="crematory@example.com" />
-            <label className="sx-label" htmlFor="crematory-cc">
-              CC
-            </label>
-            <input id="crematory-cc" className="sx-input" value={cc} onChange={(e) => setCc(e.target.value)} />
-            <label className="sx-label" htmlFor="crematory-subject">
-              Subject
-            </label>
-            <input id="crematory-subject" className="sx-input" value={subject} onChange={(e) => setSubject(e.target.value)} />
-            <label className="sx-label" htmlFor="crematory-message">
-              Message
-            </label>
-            <textarea id="crematory-message" className={`sx-textarea ${styles.message}`} value={message} onChange={(e) => setMessage(e.target.value)} rows={8} />
-            <p className="sx-label">Attachments — one PDF per decedent</p>
-            <ul className={styles.attachments}>
-              {attachments.map((a) => (
-                <li key={a.attachmentName}>
-                  <strong>{a.attachmentName}</strong>
-                  <span className={styles.muted}>
-                    {a.decedentDisplayName} · {a.caseNumber} · expected {toCaseDate(a.expectedReadyDate)} · Crematory Package v{a.version ?? 1}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <label className={styles.confirm}>
-              <input type="checkbox" checked={reviewed} onChange={(e) => setReviewed(e.target.checked)} /> I reviewed the recipients, subject, message and attachments.
-            </label>
-            {sendError && (
-              <div className="sx-form-banner sx-form-banner-error" role="alert">
-                {sendError.message}
+          <div className={styles.reviewLayout}>
+            <div className={styles.emailCard}>
+              <div className={styles.fieldRow}>
+                <label className="sx-label" htmlFor="crematory-to">
+                  To
+                </label>
+                <input id="crematory-to" className="sx-input" value={to} onChange={(e) => setTo(e.target.value)} placeholder="crematory@example.com" />
               </div>
-            )}
-            {sendError?.unclear && (
-              <p className={styles.hint}>Nothing more will be sent from here. An administrator resolves this from the case after checking Sent Items.</p>
-            )}
+              <div className={styles.fieldRow}>
+                <label className="sx-label" htmlFor="crematory-cc">
+                  CC
+                </label>
+                <input id="crematory-cc" className="sx-input" value={cc} onChange={(e) => setCc(e.target.value)} />
+              </div>
+              <div className={styles.fieldRow}>
+                <label className="sx-label" htmlFor="crematory-subject">
+                  Subject
+                </label>
+                <input id="crematory-subject" className="sx-input" value={subject} onChange={(e) => setSubject(e.target.value)} />
+              </div>
+              <div className={styles.fieldRow}>
+                <label className="sx-label" htmlFor="crematory-message">
+                  Message
+                </label>
+                <textarea id="crematory-message" className={`sx-textarea ${styles.message}`} value={message} onChange={(e) => setMessage(e.target.value)} rows={7} />
+              </div>
+              <p className={styles.fromLine}>From {fromLine}</p>
+              <p className={styles.attachTitle}>Attachments — one PDF per decedent</p>
+              <ul className={styles.attachments}>
+                {attachments.map((a) => {
+                  const c = chosen.find((x) => x.caseNumber === a.caseNumber);
+                  const shown = c && previewSummary?.caseId === c.caseId;
+                  return (
+                    <li key={a.attachmentName}>
+                      <button type="button" className={`${styles.attachment} ${shown ? styles.attachmentShown : ''}`} aria-pressed={shown} onClick={() => c && setPreviewCaseId(c.caseId)}>
+                        <strong>{a.attachmentName}</strong>
+                        <span className={styles.muted}>
+                          {a.decedentDisplayName} · {a.caseNumber} · expected {toCaseDate(a.expectedReadyDate)} · Crematory Package v{a.version ?? 1}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className={styles.deliveryNote}>
+                Confirm &amp; Send emails these packages through Outlook. &ldquo;Sent&rdquo; means Outlook accepted the email — <strong>not</strong> that the crematory received it.
+              </p>
+              {sendError && (
+                <div className="sx-form-banner sx-form-banner-error" role="alert">
+                  {sendError.message}
+                </div>
+              )}
+              {sendError?.unclear && <p className={styles.hint}>Nothing more will be sent from here. An administrator resolves this from the case after checking Sent Items.</p>}
+            </div>
+            <div className={styles.preview}>
+              {previewSummary?.package ? (
+                <PdfViewer
+                  key={previewSummary.package.documentId}
+                  url={buildCaseDocumentViewUrl(organizationId, previewSummary.caseId, previewSummary.package.documentId)}
+                  fileName={previewSummary.package.fileName}
+                  variant="review"
+                  className={styles.viewer}
+                />
+              ) : (
+                <p className={styles.muted}>No package to preview.</p>
+              )}
+            </div>
           </div>
         )}
 
         {step === 'done' && result && (
-          <div className={styles.review} role="status">
-            <div className="sx-form-banner sx-form-banner-info">
-              Submitted to Outlook from {result.mailbox} to {result.to.join(', ')}. This confirms Outlook accepted the email — not that the crematory received it.
-            </div>
-            {result.unrecorded && result.unrecorded.length > 0 && (
-              <div className="sx-form-banner sx-form-banner-error" role="alert">
-                Outlook accepted the email, but SOLIS could not record the send on {result.unrecorded.map((c) => c.caseNumber).join(', ')}. Nothing will be sent again for{' '}
-                {result.unrecorded.length === 1 ? 'that case' : 'those cases'}; an administrator must record {result.unrecorded.length === 1 ? 'it' : 'them'} as sent from the case.
-              </div>
-            )}
-            {result.checklist && result.checklist.failed.length > 0 && !checklistRetry.done ? (
-              <div className="sx-form-banner sx-form-banner-error" role="alert">
-                The email was sent and is recorded, but Workflow 3 (&ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to
-                crematory&rdquo;) could not be checked for {result.checklist.failed.map((c) => c.caseNumber).join(', ')}. Nothing will be sent again.{' '}
-                <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={checklistRetry.busy} onClick={() => void retrySentChecklist(result.checklist!.failed)}>
-                  {checklistRetry.busy ? 'Saving…' : 'Save checklist again'}
-                </button>
-                {checklistRetry.error && <span className={styles.muted}> {checklistRetry.error}</span>}
-              </div>
-            ) : (
-              <p className={styles.muted}>Workflow 3 updated: &ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to crematory&rdquo; are checked.</p>
-            )}
-            <ul className={styles.attachments}>
-              {result.attachments.map((a) => (
-                <li key={a.attachmentName}>
-                  <strong>{a.attachmentName}</strong>
-                  <span className={styles.muted}>
-                    {a.decedentDisplayName} · {a.caseNumber} · v{a.packageVersion ?? 1}
-                  </span>
-                </li>
-              ))}
-            </ul>
+          <div className={styles.doneLayout} role="status">
+            <section className={styles.doneCard}>
+              <h3 className={styles.doneTitle}>Submitted to Outlook</h3>
+              <p className={styles.doneText}>
+                Submitted to Outlook from {result.mailbox} to {result.to.join(', ')}. This confirms Outlook accepted the email — not that the crematory received it.
+              </p>
+              {result.unrecorded && result.unrecorded.length > 0 && (
+                <div className="sx-form-banner sx-form-banner-error" role="alert">
+                  Outlook accepted the email, but SOLIS could not record the send on {result.unrecorded.map((c) => c.caseNumber).join(', ')}. Nothing will be sent again for{' '}
+                  {result.unrecorded.length === 1 ? 'that case' : 'those cases'}; an administrator must record {result.unrecorded.length === 1 ? 'it' : 'them'} as sent from the case.
+                </div>
+              )}
+              {result.checklist && result.checklist.failed.length > 0 && !checklistRetry.done ? (
+                <div className="sx-form-banner sx-form-banner-error" role="alert">
+                  The email was sent and is recorded, but Workflow 3 (&ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to
+                  crematory&rdquo;) could not be checked for {result.checklist.failed.map((c) => c.caseNumber).join(', ')}. Nothing will be sent again.{' '}
+                  <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={checklistRetry.busy} onClick={() => void retrySentChecklist(result.checklist!.failed)}>
+                    {checklistRetry.busy ? 'Saving…' : 'Save checklist again'}
+                  </button>
+                  {checklistRetry.error && <span className={styles.muted}> {checklistRetry.error}</span>}
+                </div>
+              ) : (
+                <p className={styles.muted}>Workflow 3 updated: &ldquo;Permit sent to crematory&rdquo; and &ldquo;Authorization of release sent to crematory&rdquo; are checked.</p>
+              )}
+              <ul className={styles.attachments}>
+                {result.attachments.map((a) => (
+                  <li key={a.attachmentName} className={styles.doneAttachment}>
+                    <strong>{a.attachmentName}</strong>
+                    <span className={styles.muted}>
+                      {a.decedentDisplayName} · {a.caseNumber} · v{a.packageVersion ?? 1}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
           </div>
         )}
       </div>
       <div className="sx-modal-footer">
-        {step === 'review' && (
-          <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setStep('prepare')} disabled={sending}>
-            Back
-          </button>
-        )}
-        <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
-          {step === 'done' ? 'Done' : 'Close'}
-        </button>
         {step === 'prepare' && (
-          <button type="button" className="sx-btn sx-btn-primary" onClick={() => void startReview()} disabled={chosen.length === 0 || !overview.data?.canSend || reviewing}>
-            {reviewing ? 'Preparing review…' : `Review email${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
-          </button>
+          <>
+            <span className="sx-modal-footer-note">{chosen.length > 0 ? `${chosen.length} ${chosen.length === 1 ? 'case' : 'cases'} selected` : 'Nothing is sent from this step.'}</span>
+            <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>
+              Close
+            </button>
+            <button type="button" className="sx-btn sx-btn-primary" onClick={() => void startReview()} disabled={chosen.length === 0 || !overview.data?.canSend || reviewing}>
+              {reviewing ? 'Preparing review…' : `Review & send${chosen.length > 0 ? ` (${chosen.length})` : ''}`}
+            </button>
+          </>
         )}
         {step === 'review' && (
-          <button
-            type="button"
-            className="sx-btn sx-btn-primary"
-            onClick={send}
-            disabled={sending || !reviewed || parseRecipientList(to).length === 0 || !subject.trim() || sendError?.unclear === true}
-          >
-            {sending ? 'Sending…' : `Send to Crematory (${chosen.length})`}
+          <>
+            <span className="sx-modal-footer-note">Check the email and each package, then confirm.</span>
+            <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setStep('prepare')} disabled={sending}>
+              ‹ Back to cases
+            </button>
+            <button
+              type="button"
+              className="sx-btn sx-btn-primary"
+              onClick={send}
+              disabled={sending || parseRecipientList(to).length === 0 || !subject.trim() || sendError?.unclear === true}
+            >
+              {sending ? 'Sending…' : `Confirm & Send (${chosen.length})`}
+            </button>
+          </>
+        )}
+        {step === 'done' && (
+          <button type="button" className="sx-btn sx-btn-primary" onClick={onClose}>
+            Done
           </button>
         )}
       </div>
@@ -607,6 +723,8 @@ function CaseRow({
   canManage,
   onCorrectPreviousSend,
   onResolveSend,
+  open,
+  onOpenChange,
 }: {
   summary: CrematoryCaseSummary;
   checked: boolean;
@@ -639,6 +757,9 @@ function CaseRow({
   onCorrectPreviousSend: () => void;
   /** Administrators: resolve a send SOLIS could not confirm (2026-10). */
   onResolveSend: (decision: 'sent' | 'not_sent', reason: string) => void;
+  /** Whether the checklist is shown, or one line of what is missing (2026-11). */
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
   const req = (key: string) => summary.readiness.requirements.find((r) => r.key === key);
@@ -899,7 +1020,20 @@ function CaseRow({
         </p>
       ) : notCremation ? (
         <p className={styles.hint}>{req('cremation')?.detail}</p>
+      ) : !open ? (
+        <div className={styles.missingLine}>
+          <span className={styles.missingLabel}>Missing:</span>
+          {STEPS.filter((step) => !ok(step.key) && !waiting[step.key]).map((step) => (
+            <span key={step.key} className={styles.chip}>
+              {step.label}
+            </span>
+          ))}
+          <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => onOpenChange(true)} aria-expanded={false} aria-label={`Show checklist for ${summary.decedentDisplayName}`}>
+            Show checklist
+          </button>
+        </div>
       ) : (
+        <>
         <ol className={styles.steps}>
           {STEPS.map((step) => {
             const state = ok(step.key) ? 'done' : waiting[step.key] ? 'waiting' : 'todo';
@@ -914,6 +1048,10 @@ function CaseRow({
             );
           })}
         </ol>
+        <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.hideChecklist}`} onClick={() => onOpenChange(false)} aria-expanded={true} aria-label={`Hide checklist for ${summary.decedentDisplayName}`}>
+          Hide checklist
+        </button>
+        </>
       )}
 
       {summary.sendReview ? (

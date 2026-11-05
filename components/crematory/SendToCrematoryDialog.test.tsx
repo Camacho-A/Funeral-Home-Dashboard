@@ -35,6 +35,10 @@ vi.mock('@/components/crematory/PermitPdfPreview', async () => {
     },
   };
 });
+/** The package preview on the review (2026-11) — stood in for, as pdf.js cannot draw in jsdom. */
+vi.mock('@/components/documents/PdfViewer', () => ({
+  PdfViewer: ({ url, fileName }: { url: string; fileName: string }) => <div data-testid="package-preview" data-url={url}>{`Previewing ${fileName}`}</div>,
+}));
 const { SendToCrematoryDialog } = await import('./SendToCrematoryDialog');
 const { CrematoryRequestError } = await import('@/lib/crematoryClient');
 
@@ -122,7 +126,30 @@ describe('SendToCrematoryDialog', () => {
     expect(question).toHaveTextContent('the approved state cremation permit for Walter Boone (B2026-903)?');
     fireEvent.click(screen.getByRole('button', { name: 'Yes, this is the approved permit' }));
     await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_permit', documentId: 'permit-1050', displayedChecksumSha256: 'sha-permit-1050' }));
-    expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review & send' })).toBeDisabled();
+  });
+
+  it('groups the cases (2026-11): ready first; with several needing attention, each shows what is missing and opens to its checklist', async () => {
+    const attention = (id: string, name: string, number: string) => ({ ...notReady, ...readyCase(id, name, number), readiness: notReady.readiness, readyDate: notReady.readyDate, package: null });
+    client.fetchCrematoryOverview.mockResolvedValue(
+      overview([attention('1050', 'Walter Boone', 'B2026-903'), readyCase('1042', 'Richard Reynolds', 'B2026-901'), attention('1051', 'Ada Lowe', 'B2026-904'), attention('1052', 'Iris Vance', 'B2026-905')]),
+    );
+    open();
+    const ready = await screen.findByRole('region', { name: 'Ready to send' });
+    expect(ready).toHaveTextContent('Richard Reynolds');
+    const needs = screen.getByRole('region', { name: 'Needs attention' });
+    expect(within(needs).getAllByRole('listitem')).toHaveLength(3);
+    // Collapsed: the missing steps on one line, no actions yet.
+    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
+    expect(within(needs).getAllByText('Permit confirmed')).toHaveLength(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Show checklist for Ada Lowe' }));
+    expect(screen.getAllByRole('button', { name: 'Confirm permit' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Hide checklist for Ada Lowe' }));
+    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
+    // The email summary lists what is ticked.
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' }));
+    expect(screen.getByRole('complementary', { name: 'In this email' })).toHaveTextContent('Richard Reynolds');
+    expect(screen.getByRole('button', { name: 'Review & send (1)' })).toBeEnabled();
   });
 
   it('several ready cases: one email, one PDF each, the shared-date subject — and sends only after review', async () => {
@@ -142,7 +169,7 @@ describe('SendToCrematoryDialog', () => {
     open({ preselectedCaseIds: ['1042'] });
     expect(await screen.findByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Estela Salas Rueda' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Review email (2)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review & send (2)' }));
     await screen.findByLabelText('Subject');
 
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory — Expected 11/06/2026');
@@ -151,9 +178,13 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByText('Salas Rueda_Estela_11-06-2026.pdf')).toBeInTheDocument();
     expect(screen.getByText(/From/)).toHaveTextContent('office@funeralhome.example');
 
-    const sendButton = screen.getByRole('button', { name: 'Send to Crematory (2)' });
-    expect(sendButton).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
+    // The review shows the first package; another attachment shows its own.
+    expect(screen.getByTestId('package-preview')).toHaveAttribute('data-url', expect.stringContaining('pkg-1042'));
+    fireEvent.click(screen.getByRole('button', { name: /Salas Rueda_Estela_11-06-2026.pdf/ }));
+    expect(screen.getByTestId('package-preview')).toHaveAttribute('data-url', expect.stringContaining('pkg-1044'));
+    // Two clicks (2026-10 decision): Confirm & Send on the review is the acknowledgment — no checkbox.
+    expect(screen.queryByRole('checkbox', { name: /I reviewed/ })).toBeNull();
+    const sendButton = screen.getByRole('button', { name: 'Confirm & Send (2)' });
     fireEvent.click(sendButton);
     expect(await screen.findByText(/Submitted to Outlook from office@funeralhome.example/)).toHaveTextContent('not that the crematory received it');
     expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
@@ -177,10 +208,9 @@ describe('SendToCrematoryDialog', () => {
     async function toReviewedSend() {
       client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
       open({ caseId: '1042' });
-      fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Review & send (1)' }));
       await screen.findByLabelText('Subject');
-      fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
-      return screen.getByRole('button', { name: 'Send to Crematory (1)' });
+      return screen.getByRole('button', { name: 'Confirm & Send (1)' });
     }
 
     it('while sending, the button is disabled and says so; a double click sends one request', async () => {
@@ -216,7 +246,7 @@ describe('SendToCrematoryDialog', () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
     client.reviewCrematorySend.mockRejectedValueOnce(new CrematoryRequestError('Nothing was sent. B2026-901 is still being prepared. Try again in a moment.', 409));
     open({ caseId: '1042' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review & send (1)' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('still being prepared');
     expect(screen.queryByLabelText('Subject')).toBeNull();
     expect(client.sendToCrematory).not.toHaveBeenCalled();
@@ -225,7 +255,7 @@ describe('SendToCrematoryDialog', () => {
   it('one case from the case page: the single-decedent subject', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')]));
     open({ caseId: '1042' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review & send (1)' }));
     await screen.findByLabelText('Subject');
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — Richard Reynolds — Expected 11/06/2026');
     expect(client.fetchCrematoryOverview).toHaveBeenCalledWith('managed-cremations', '1042');
@@ -234,7 +264,7 @@ describe('SendToCrematoryDialog', () => {
   it('different dates never share a date in the subject', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901'), readyCase('1044', 'Estela Salas Rueda', 'B2026-902', '11/07/2026')]));
     open({ preselectedCaseIds: ['1042', '1044'] });
-    fireEvent.click(await screen.findByRole('button', { name: 'Review email (2)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review & send (2)' }));
     await screen.findByLabelText('Subject');
     expect(screen.getByLabelText('Subject')).toHaveValue('Manors Cremation — 2 Cases for Crematory');
   });
@@ -334,7 +364,7 @@ describe('SendToCrematoryDialog', () => {
     );
     open({ preselectedCaseIds: ['1042'] });
     await screen.findByRole('checkbox', { name: 'Select Hannelore Willson' });
-    fireEvent.click(screen.getByRole('button', { name: 'Review email (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Review & send (1)' }));
     await screen.findByLabelText('Subject');
     expect(screen.getByText('WILLSON_HANNELORE_CREMATORY_PACKAGE_10-30-2026.pdf')).toBeInTheDocument();
     expect(screen.queryByText('Willson_Hannelore_10-30-2026.pdf')).toBeNull();
@@ -470,7 +500,7 @@ describe('SendToCrematoryDialog', () => {
       expect(screen.queryByText(/sent to doctor/i)).toBeNull();
       expect(screen.queryByText(/Finish it on the/)).toBeNull();
       expect(screen.getByRole('checkbox', { name: 'Select Louis Fictional' })).toBeDisabled();
-      expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Review & send' })).toBeDisabled();
     });
 
     it('Resolve Workflow 2 from All Cases closes this window and opens the case on its Workflow 2 step', async () => {
@@ -575,12 +605,14 @@ describe('SendToCrematoryDialog', () => {
     };
     client.fetchCrematoryOverview.mockResolvedValue(overview([sent]));
     open({ preselectedCaseIds: ['1042'] });
-    expect(await screen.findByText('Sent')).toBeInTheDocument();
+    // Listed under its own "Sent" group, with the "Sent" status on its row.
+    expect(await screen.findByText('Sent', { selector: '.sx-status' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Sent' })).toHaveTextContent('Richard Reynolds');
     expect(screen.getByText(/Sent .* to intake@crematory.example · Reynolds_Richard_11-06-2026.pdf/)).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' })).toBeDisabled();
     expect(screen.queryByRole('button', { name: 'Build package' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Replace permit' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Review email' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Review & send' })).toBeDisabled();
   });
 
   // Replaced (2026-10, durable duplicate-send protection): a send that may
@@ -593,12 +625,11 @@ describe('SendToCrematoryDialog', () => {
       new CrematoryRequestError('Outlook did not respond. The email may still have been sent. It will not be sent again until an administrator checks Sent Items in office@funeralhome.example and records whether it was sent.', 502),
     );
     open({ caseId: '1042' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review & send (1)' }));
     await screen.findByLabelText('Subject');
-    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Crematory (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm & Send (1)' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('may still have been sent');
-    expect(screen.getByRole('button', { name: 'Send to Crematory (1)' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirm & Send (1)' })).toBeDisabled();
     expect(screen.queryByRole('checkbox', { name: /I checked Sent Items/ })).not.toBeInTheDocument();
     expect(screen.getByText(/An administrator resolves this from the case/)).toBeInTheDocument();
     expect(client.sendToCrematory).toHaveBeenCalledTimes(1);
@@ -617,7 +648,7 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByText(/SOLIS could not record whether it was accepted/)).toBeInTheDocument();
     expect(screen.getByText('Ask an administrator to resolve it.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'It was sent' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review email/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Review & send/ })).toBeDisabled();
   });
 
   it('an administrator records what Sent Items shows — with a reason — and nothing is sent', async () => {
@@ -642,10 +673,9 @@ describe('SendToCrematoryDialog', () => {
       checklist: { failed: [] }, unrecorded: [{ caseId: '1042', caseNumber: 'B2026-901' }],
     });
     open({ caseId: '1042' });
-    fireEvent.click(await screen.findByRole('button', { name: 'Review email (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Review & send (1)' }));
     await screen.findByLabelText('Subject');
-    fireEvent.click(screen.getByRole('checkbox', { name: /I reviewed the recipients/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Send to Crematory (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm & Send (1)' }));
     expect(await screen.findByText(/SOLIS could not record the send on B2026-901/)).toHaveTextContent('Nothing will be sent again');
   });
 
@@ -672,7 +702,7 @@ describe('SendToCrematoryDialog', () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901')], { canSend: false }));
     open({ preselectedCaseIds: ['1042'] });
     expect(await screen.findByText(/sending them needs the Send Crematory Packages permission/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Review email/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Review & send/ })).toBeDisabled();
   });
 
   it('staff without document permission get no prepare actions', async () => {
