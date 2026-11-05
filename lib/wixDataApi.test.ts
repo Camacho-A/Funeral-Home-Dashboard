@@ -104,34 +104,21 @@ describe('queryAllWixDataItems — Manors go-live incident fix (2026-09)', () =>
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('requests the first page via paging.limit alone, and every subsequent page via paging.cursor alone (never both together, per Wix Data\'s own contract)', async () => {
+  it('requests the first page via cursorPaging.limit with the filter and sort, and every later page via cursorPaging { cursor, limit } with no filter or sort (Wix rejects a filter sent with a cursor, WDE0080, and pages by 50 if the limit is not resent)', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(page([{ id: '1', dataCollectionId: 'x', data: {} }], true, 'cursor-1'))
       .mockResolvedValueOnce(page([{ id: '2', dataCollectionId: 'x', data: {} }], false));
     vi.stubGlobal('fetch', fetchMock);
 
-    await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' }, { limit: 100 });
+    const sort = [{ fieldName: 'createdAt', order: 'DESC' as const }];
+    await queryAllWixDataItems('rolePermissions', { roleId: 'role-administrator' }, { limit: 100, sort });
 
     const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(firstBody.query.paging).toEqual({ limit: 100 });
+    expect(firstBody.query).toEqual({ filter: { roleId: 'role-administrator' }, sort, cursorPaging: { limit: 100 } });
     const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(secondBody.query.paging).toEqual({ cursor: 'cursor-1' });
-  });
-
-  it('passes the filter through on every page, not just the first', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(page([{ id: '1', dataCollectionId: 'x', data: {} }], true, 'cursor-1'))
-      .mockResolvedValueOnce(page([{ id: '2', dataCollectionId: 'x', data: {} }], false));
-    vi.stubGlobal('fetch', fetchMock);
-
-    await queryAllWixDataItems('rolePermissions', { roleId: 'role-administrator' });
-
-    const firstBody = JSON.parse(fetchMock.mock.calls[0][1].body);
-    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(firstBody.query.filter).toEqual({ roleId: 'role-administrator' });
-    expect(secondBody.query.filter).toEqual({ roleId: 'role-administrator' });
+    expect(secondBody.query).toEqual({ cursorPaging: { cursor: 'cursor-1', limit: 100 } });
+    expect(firstBody.query.paging).toBeUndefined();
   });
 
   it('defaults to a 100-item page size when no limit is given', async () => {
@@ -141,7 +128,7 @@ describe('queryAllWixDataItems — Manors go-live incident fix (2026-09)', () =>
     await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.query.paging).toEqual({ limit: 100 });
+    expect(body.query.cursorPaging).toEqual({ limit: 100 });
   });
 
   it('stops if hasNext is true but no cursor is actually returned, rather than looping forever', async () => {
@@ -153,8 +140,18 @@ describe('queryAllWixDataItems — Manors go-live incident fix (2026-09)', () =>
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it('throws — never returns duplicates — if a later page repeats a row already read (the old symptom: Wix answering with the first page again)', async () => {
+    const first = Array.from({ length: 50 }, (_, i) => ({ id: `r-${i}`, dataCollectionId: 'x', data: {} }));
+    const fetchMock = vi.fn().mockImplementation(async () => page(first, true, 'cursor-again'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(queryAllWixDataItems('rolePermissions')).rejects.toThrow(/already returned/);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('throws rather than looping unbounded if hasNext never becomes false', async () => {
-    const fetchMock = vi.fn().mockImplementation(async () => page([{ id: 'x', dataCollectionId: 'x', data: {} }], true, 'always-more'));
+    let n = 0;
+    const fetchMock = vi.fn().mockImplementation(async () => page([{ id: `x-${n++}`, dataCollectionId: 'x', data: {} }], true, 'always-more'));
     vi.stubGlobal('fetch', fetchMock);
 
     await expect(queryAllWixDataItems('rolePermissions', { roleId: 'role-x' })).rejects.toThrow(/did not terminate/);
@@ -165,6 +162,95 @@ describe('queryAllWixDataItems — Manors go-live incident fix (2026-09)', () =>
 
     const result = await queryAllWixDataItems('rolePermissions', { roleId: 'role-x' });
     expect(result).toHaveLength(1);
+  });
+});
+
+/**
+ * Pagination correction (2026-11). A fake Wix that follows the live
+ * behaviour verified on 2026-11-04: `paging.cursor` is ignored (the first
+ * page comes back again, 50 rows by default, `hasNext: true`);
+ * `cursorPaging.cursor` continues where the cursor left off with the
+ * cursor's own filter and sort, at the limit sent with it (50 if none),
+ * and a `filter` sent with a cursor is rejected (HTTP 400, WDE0080).
+ */
+describe('queryAllWixDataItems — pagination against Wix\'s real paging rules (2026-11)', () => {
+  type Row = { id: string; dataCollectionId: string; data: { organizationId: string; seq: number } };
+  function fakeWix(rows: Row[]) {
+    const cursors = new Map<string, { offset: number; limit: number; filter?: Record<string, unknown>; sort?: Array<{ fieldName: string; order: string }> }>();
+    const select = (filter?: Record<string, unknown>, sort?: Array<{ fieldName: string; order: string }>) => {
+      let out = rows.filter((r) => Object.entries(filter ?? {}).every(([k, v]) => (r.data as Record<string, unknown>)[k] === v));
+      for (const { fieldName, order } of [...(sort ?? [])].reverse()) {
+        out = [...out].sort((a, b) => {
+          const d = Number((a.data as Record<string, unknown>)[fieldName]) - Number((b.data as Record<string, unknown>)[fieldName]);
+          return order === 'DESC' ? -d : d;
+        });
+      }
+      return out;
+    };
+    const respond = (state: { offset: number; limit: number; filter?: Record<string, unknown>; sort?: Array<{ fieldName: string; order: string }> }) => {
+      const all = select(state.filter, state.sort);
+      const items = all.slice(state.offset, state.offset + state.limit);
+      const hasNext = state.offset + state.limit < all.length;
+      let next: string | null = null;
+      if (hasNext) {
+        next = `c${cursors.size}`;
+        cursors.set(next, { ...state, offset: state.offset + state.limit });
+      }
+      return { ok: true, status: 200, json: async () => ({ dataItems: items, pagingMetadata: { count: items.length, hasNext, cursors: { next } } }) };
+    };
+    return vi.fn(async (_url: string, init: { body: string }) => {
+      const { query } = JSON.parse(init.body);
+      if (query.cursorPaging?.cursor) {
+        if (query.filter || query.sort) return { ok: false, status: 400, json: async () => ({ message: 'WDE0080' }) };
+        const state = cursors.get(query.cursorPaging.cursor);
+        if (!state) return { ok: false, status: 400, json: async () => ({}) };
+        // A cursor page without a limit falls back to 50, as live Wix does.
+        return respond({ ...state, limit: query.cursorPaging.limit ?? 50 });
+      }
+      if (query.cursorPaging) return respond({ offset: 0, limit: query.cursorPaging.limit ?? 50, filter: query.filter, sort: query.sort });
+      // Offset paging: a cursor here is ignored, exactly as live Wix does.
+      return respond({ offset: query.paging?.offset ?? 0, limit: query.paging?.limit ?? 50, filter: query.filter, sort: query.sort });
+    });
+  }
+  // Two organizations interleaved, so the filter has real work to do.
+  const rowsFor = (manors: number, other = 37): Row[] => {
+    const out: Row[] = [];
+    for (let i = 0; i < Math.max(manors, other); i++) {
+      if (i < manors) out.push({ id: `m-${String(i).padStart(4, '0')}`, dataCollectionId: 'caseDocuments', data: { organizationId: 'managed-cremations', seq: i } });
+      if (i < other) out.push({ id: `o-${String(i).padStart(4, '0')}`, dataCollectionId: 'caseDocuments', data: { organizationId: 'other-org', seq: i } });
+    }
+    return out;
+  };
+
+  it.each([
+    [1, 100], [100, 100], [101, 100], [153, 100], [153, 50], [242, 100], [242, 7], [1000, 100],
+  ])('%i matching rows, %i per page: every row exactly once, in order, only the filtered organization', async (count, limit) => {
+    const fetchMock = fakeWix(rowsFor(count));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await queryAllWixDataItems<Row['data']>('caseDocuments', { organizationId: 'managed-cremations' }, { limit, sort: [{ fieldName: 'seq', order: 'DESC' }] });
+
+    expect(result).toHaveLength(count);
+    expect(new Set(result.map((r) => r.id)).size).toBe(count);
+    expect(result.every((r) => r.data.organizationId === 'managed-cremations')).toBe(true);
+    expect(result.map((r) => r.data.seq)).toEqual(Array.from({ length: count }, (_, i) => count - 1 - i));
+    expect(fetchMock).toHaveBeenCalledTimes(Math.max(1, Math.ceil(count / limit)));
+  });
+
+  it('an unfiltered query over more than one page (the live failure: 242 rolePermissions rows) reads every row', async () => {
+    vi.stubGlobal('fetch', fakeWix(rowsFor(205, 37)));
+    const result = await queryAllWixDataItems('rolePermissions');
+    expect(result).toHaveLength(242);
+    expect(new Set(result.map((r) => r.id)).size).toBe(242);
+  });
+
+  it('the old request shape (paging.cursor) really does repeat the first page on this fake — the simulator reproduces the live bug', async () => {
+    const fetchMock = fakeWix(rowsFor(153));
+    vi.stubGlobal('fetch', fetchMock);
+    const first = await queryWixDataItems('caseDocuments', { paging: { limit: 100 } });
+    const cursor = first.pagingMetadata!.cursors!.next!;
+    const second = await queryWixDataItems('caseDocuments', { paging: { cursor } } as never);
+    expect(second.dataItems.map((r) => r.id)).toEqual(first.dataItems.slice(0, 50).map((r) => r.id));
   });
 });
 

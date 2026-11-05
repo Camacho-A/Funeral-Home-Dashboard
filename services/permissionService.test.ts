@@ -177,7 +177,7 @@ describe('permissionService', () => {
         }
 
         if (dataCollectionId === 'rolePermissions') {
-          const pageIndex = query.paging?.cursor ? Number(query.paging.cursor.replace('page-', '')) : 0;
+          const pageIndex = query.cursorPaging?.cursor ? Number(query.cursorPaging.cursor.replace('page-', '')) : 0;
           const permissionKeys = options.grantPages[pageIndex] ?? [];
           const hasNext = pageIndex + 1 < options.grantPages.length;
           return {

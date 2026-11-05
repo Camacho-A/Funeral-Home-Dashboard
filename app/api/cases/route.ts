@@ -261,24 +261,30 @@ export async function GET(request: Request) {
 
     const pageSize = clampCaseListPageSize(requestedLimit);
     const searchFilter = buildCaseSearchWixFilter(searchQuery);
-    const pageResponse = await queryWixDataItems<WixCaseItem>('cases', {
-      filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter, scope }),
-      sort: CASE_LIST_SORT,
-      // Wix's cursor-paging contract: the first page is requested via
-      // `limit` alone, every subsequent page via `cursor` alone — never
-      // both together (see lib/wixDataApi.ts's own comment). `cursor` here
-      // is already the raw Wix-issued token (unwrapped by
-      // validateCaseCursor above), never a client-supplied value. Per
-      // Wix's own docs, `filter`/`sort` are ignored on a cursor-continuation
-      // call anyway (locked in from the first page) — still passed here
-      // for clarity/symmetry, since Wix accepts and ignores rather than
-      // rejecting them.
-      paging: cursor?.wix ? { cursor: cursor.wix } : { limit: pageSize },
-    });
+    // Wix's cursor-paging contract (pagination correction, 2026-11 — see
+    // lib/wixDataApi.ts): the first page sends the filter and sort with
+    // `cursorPaging: { limit }`; every later page sends `cursorPaging:
+    // { cursor, limit }` with NO filter or sort — the cursor carries the
+    // first page's filter and sort, and Wix rejects a filter sent with one
+    // (HTTP 400, WDE0080); the limit is resent or Wix pages by 50.
+    // This used to send `paging: { cursor }`, which Wix ignores (page 2
+    // came back as page 1 again). `cursor.wix` is the raw Wix-issued token
+    // (unwrapped by validateCaseCursor above, bound to this organization,
+    // search, stage and scope), never a client-chosen filter; and every row
+    // is still checked against the organization below.
+    const pageResponse = await queryWixDataItems<WixCaseItem>(
+      'cases',
+      cursor?.wix
+        ? { cursorPaging: { cursor: cursor.wix, limit: pageSize } }
+        : { filter: buildCaseListWixFilter({ organizationId, rawStages, searchFilter, scope }), sort: CASE_LIST_SORT, cursorPaging: { limit: pageSize } },
+    );
 
     const cases = pageResponse.dataItems
       .map((item) => mapWixCaseItem(item.data))
       .filter((c): c is Case => c !== null);
+    if (cases.some((c) => c.organizationId !== organizationId)) {
+      return NextResponse.json({ cases: [], hasMore: false, nextCursor: null, error: 'Invalid or expired pagination cursor.' }, { status: 400 });
+    }
     // No post-fetch search re-filtering here, deliberately: the whole
     // point of buildCaseSearchWixFilter above is that Wix already applied
     // it — re-filtering client-side would silently mask a real mismatch

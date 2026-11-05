@@ -9,8 +9,44 @@ ONE PDF, numbers each application "n of N" in the form's own
 Fax — emails it as ONE attachment from the connected Outlook mailbox to
 NuSo's email-to-fax gateway: one bundle = one email = one fax.
 
-Status: built and tested on `feat/manatee-fax-bundle`. **Not live**: the
-Wix collections do not exist yet and `sendingEnabled` is `false`.
+Status (2026-11-04): built and tested on `feat/manatee-fax-bundle`, which
+is pushed but **not merged or deployed** — Production still runs code
+without this feature. The live Wix collections and the Manors fax
+permissions are in place (see "Live record" below). **Fax sending is
+disabled** (`sendingEnabled: false`); nothing can be faxed until a reviewed
+deploy turns it on.
+
+## Live record (2026-11-04)
+
+Done with approval, step by step; nothing else in live Wix was changed
+(record ids and update times of `cases`, `caseDocuments`, `organizations`,
+`roles`, `rolePermissions`, `organizationRoles` and
+`organizationMemberships` compared before and after: identical).
+
+- **Collections created** in the live Wix site: `faxBundles` (36 fields)
+  and `faxBundleCases` (10 fields), NATIVE, permissions Admin ×4, every
+  field optional, with the five indexes in §Wix schema. Read back: fields,
+  types, permissions and indexes exactly as specified; all five indexes
+  ACTIVE. `caseIds` is Wix type `ARRAY_STRING`. Both collections are empty.
+- **Concurrency verified live** on those collections (throwaway
+  organization `zz-fax-verification`, fictional rows, all deleted after):
+  a second insert of the same claim id is refused (409, `WDE0074`); 10
+  truly concurrent claim races — exactly one winner each time; a stale
+  revision, status or organization condition is refused (428, `WDE0193`)
+  and changes nothing; 8 concurrent conditional updates — exactly one
+  applied each time; `$in` status queries and organization filtering
+  correct; `items` / `history` round-trip intact (Wix may reorder object
+  keys; values are unchanged); ids ≤ 128 characters. The branch's own store
+  functions (`claimCaseForFaxBundle`, `releaseFaxCaseClaim`,
+  `updateFaxBundleIf`, `getFaxBundle`, …) passed the same races live.
+- **Permissions applied** — the 9 Manors-only grant overrides below
+  (actor `system-fax-permission-rollout-2026-11-04`, with their 9 audit
+  entries). Effective permissions verified for all eight roles: each role
+  gained exactly its approved fax keys and lost nothing; `crematory.send`
+  unchanged; re-running the grant changes nothing. Shared default-role
+  rows were not touched.
+- **Vercel Preview isolation** (§Vercel preview security) completed; the
+  branch push was cancelled on the Manors project as intended.
 
 ## Where things are
 
@@ -72,7 +108,7 @@ Wix collections do not exist yet and `sendingEnabled` is `false`.
   limit is confirmed) and never above 25 MB (Exchange's 35 MB message limit
   after encoding). A real application is ~220 KB, so 20 ≈ 4.4 MB.
 
-## Wix schema (approved in principle 2026-11-04; NOT created)
+## Wix schema (created and verified live 2026-11-04)
 
 Both collections: permissions read/insert/update/remove = **Admin** (API key
 only). All fields optional at the Wix level (the app validates).
@@ -106,7 +142,7 @@ Indexes: (`organizationId`, `createdAt`), (`organizationId`, `status`),
 
 Indexes: (`organizationId`, `caseId`), (`organizationId`, `bundleId`).
 
-## Permission rollout (live data — needs approval)
+## Permission rollout (applied to Manors 2026-11-04)
 
 Live role grants are rows in Wix written when an organization was set up;
 new code keys reach nobody until granted. The rollout adds **9
@@ -140,7 +176,7 @@ default grants. That is informational; its "apply" refuses to run on any
 deployment limited to specific organizations (Manors Production is), so the
 shared rows cannot be changed from there.
 
-## Wix collections — migration checklist (needs approval)
+## Wix collections — migration checklist (done 2026-11-04)
 
 1. Create `faxBundles` and `faxBundleCases` with exactly the fields above,
    all optional at the Wix level; permissions read/insert/update/remove =
@@ -163,7 +199,7 @@ shared rows cannot be changed from there.
 4. Rollback: delete the two collections (only while they hold no real
    bundles); nothing else references them.
 
-## Vercel preview security (before ANY push — needs approval)
+## Vercel preview security (done 2026-11-04)
 
 Verified read-only on 2026-11-04: all three projects expose system
 environment variables (`autoExposeSystemEnvs: true`), have no custom
@@ -190,6 +226,11 @@ any Preview → cancelled; if `VERCEL_ENV` were ever missing, master still
 builds, so Production can never be blocked by it. Instant Rollback /
 promote do not build, so they are unaffected.
 
+Done 2026-11-04: steps 1–3 and 5 below. Manors Preview now has only
+`APP_BASE_URL`, `RESEND_FROM_ADDRESS` and `DEPLOYMENT_ORGANIZATION_IDS`;
+both Blob stores are Production-only; the first branch push built CANCELED
+on the Manors project. Step 4 (rotation) was not done.
+
 Procedure (each step needs approval; only the Manors project is touched —
 `gus-solis-sandbox`, `manors-solis-sandbox` and the legacy Gus project are
 not):
@@ -213,13 +254,11 @@ not):
 
 ## Live setup — each step needs separate approval
 
-1. **Create the two collections** exactly as above; read back fields,
-   permissions and indexes (read-only script).
-2. **Disposable live check** (fictional rows under a throwaway organization
-   id, then deleted): a duplicate claim insert is refused (409); a stale
-   conditional patch is refused (428) and changes nothing; array/object
-   fields round-trip; ids ≤ 128 characters.
+1. ~~**Create the two collections**~~ — done 2026-11-04 (Live record).
+2. ~~**Disposable live check**~~ — done 2026-11-04, all passed.
+   ~~**Fax permissions**~~ — 9 Manors grants applied 2026-11-04.
 3. **Deploy with `sendingEnabled: false`** — staff can preview bundles.
+   Not done yet; needs approval.
 4. **Activation checks:**
    - the connected mailbox (Settings → Crematory) is an authorized outbound
      sender in NuSo — its missing authorization caused earlier failed tests;
