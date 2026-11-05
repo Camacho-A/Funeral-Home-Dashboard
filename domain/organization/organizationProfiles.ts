@@ -411,6 +411,10 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
       emailOrganizationName: 'Manors Cremation',
       maxAttachmentBytes: 10 * 1024 * 1024,
       sendingEnabled: false,
+      // Test transmissions: OFF. Recipients are added here only once the
+      // business has approved them (a fax number Manors controls; an email
+      // address for the dry run), and removed again after testing.
+      testRecipients: { faxNumbers: [], emailAddresses: [] },
     },
     manateeDeathCertificateApplication: true,
     caseSsn: true,

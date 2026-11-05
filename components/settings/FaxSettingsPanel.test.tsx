@@ -16,6 +16,8 @@ const client = vi.hoisted(() => ({
   makeDefaultFaxDestination: vi.fn(),
 }));
 vi.mock('@/lib/faxSettingsClient', () => client);
+// The Test Transmissions section has its own tests (FaxTestPanel.test.tsx); here it is simply off.
+vi.mock('@/components/settings/FaxTestPanel', () => ({ FaxTestPanel: () => <p>Test transmissions are off.</p> }));
 const { FaxSettingsPanel } = await import('./FaxSettingsPanel');
 
 const nuso = { key: 'nuso' as const, label: 'NuSo IPFax', gatewayDomain: 'fax.nuso.io', emailBody: 'unverified' as const, coverPage: 'unsupported' as const, notes: 'Email-to-fax.' };

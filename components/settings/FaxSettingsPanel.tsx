@@ -19,6 +19,7 @@ import {
 import { formatTimestamp } from '@/utils/format';
 import { renderFaxTemplate, validateBodyTemplate, validateSubjectTemplate } from '@/domain/faxBundles/faxTemplates';
 import { normalizeFaxNumber } from '@/domain/faxBundles/faxConfiguration';
+import { FaxTestPanel } from './FaxTestPanel';
 import styles from './FaxSettingsPanel.module.css';
 
 /**
@@ -375,6 +376,14 @@ export function FaxSettingsPanel() {
         </button>
         {settingsDirty && <span className="sx-help">{subjectProblem || bodyProblem ? 'Fix the highlighted field to save.' : 'Unsaved changes'}</span>}
       </div>
+
+      {/* Test transmissions (2026-11) ---------------------------------- */}
+      <section className={styles.section} aria-labelledby="fax-tests">
+        <h2 id="fax-tests" className="sx-section-title">
+          Test Transmissions
+        </h2>
+        <FaxTestPanel organizationId={organizationId} />
+      </section>
 
       {/* 5 ------------------------------------------------------------ */}
       <section className={styles.section} aria-labelledby="fax-history">

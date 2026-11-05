@@ -1265,6 +1265,38 @@ export function recordFaxBundleEvent(
 }
 
 /**
+ * Fax test transmissions (2026-11) — every attempt and outcome of a
+ * fictional test PDF sent to an approved test recipient. Never a case.
+ */
+export function recordFaxTestEvent(
+  ctx: ActivityContext,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_ATTEMPTED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_SUBMITTED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_NOT_SENT
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_NEEDS_REVIEW
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_OUTCOME_RECORDED,
+  details: { transmissionId: string; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType,
+      resourceType: 'faxTestTransmission',
+      resourceId: details.transmissionId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: details.severity ?? 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/**
  * Fax Settings (2026-11) — one administrator change to the organization's
  * fax configuration. `previous` / `next` hold only the changed fields.
  * Category `administration`; resourceType names which record changed.

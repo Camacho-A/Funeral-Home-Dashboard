@@ -278,6 +278,16 @@ export const ACTIVITY_EVENT_TYPES = {
   FAX_DESTINATION_UPDATED: 'fax_destination.updated',
   FAX_DESTINATION_ARCHIVED: 'fax_destination.archived',
   FAX_DESTINATION_RESTORED: 'fax_destination.restored',
+  /** Fax test transmissions (2026-11): a FICTIONAL test PDF sent to an
+      approved test recipient (docs/FAX_TEST_TRANSMISSIONS.md). Category
+      `administration`, resourceType `faxTestTransmission`, never a case.
+      attempted is written BEFORE Outlook is contacted; then exactly one
+      of submitted / not_sent / needs_review; then each recorded outcome. */
+  FAX_TEST_ATTEMPTED: 'fax_test.attempted',
+  FAX_TEST_SUBMITTED: 'fax_test.submitted',
+  FAX_TEST_NOT_SENT: 'fax_test.not_sent',
+  FAX_TEST_NEEDS_REVIEW: 'fax_test.needs_review',
+  FAX_TEST_OUTCOME_RECORDED: 'fax_test.outcome_recorded',
   FAX_DESTINATION_DEFAULT_CHANGED: 'fax_destination.default_changed',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this

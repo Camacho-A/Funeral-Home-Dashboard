@@ -25,6 +25,14 @@ export type DeathCertificateFaxSettings = {
   /** Off until the sender, NuSo account and a controlled test delivery are
       verified. Previews still work while it is off; nothing can be sent. */
   sendingEnabled: boolean;
+  /**
+   * Fax test transmissions (2026-11, docs/FAX_TEST_TRANSMISSIONS.md): the
+   * ONLY recipients a fictional test PDF may be sent to — fax numbers the
+   * organization controls, and email addresses for the dry run. Code
+   * only (a reviewed deploy); both empty = test transmissions are off.
+   * Independent of sendingEnabled, which keeps real bundles blocked.
+   */
+  testRecipients?: { faxNumbers: readonly string[]; emailAddresses: readonly string[] };
 };
 
 /** Email-to-fax gateways SOLIS may send to. */

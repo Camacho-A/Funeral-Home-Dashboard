@@ -284,10 +284,10 @@ not):
    - Exchange admin: no mail-flow rule or signature service appends a
      disclaimer/signature to the mailbox's outgoing mail (it would become
      a fax page);
-   - one controlled test: a fictional one-page application to a fax number
-     we own (temporarily the destination, via a reviewed code change) —
-     NuSo must report exactly 1 page; then a two-application bundle — exactly
-     2 pages.
+   - controlled tests WITHOUT turning sending on: Settings → Fax Settings →
+     Test Transmissions (docs/FAX_TEST_TRANSMISSIONS.md) — an email dry run,
+     then a fictional one-page fax to a number we own (exactly 1 page), then
+     a two-page one (exactly 2 pages).
 5. **Turn on** `sendingEnabled: true` for Manors (reviewed deploy).
 
 Rollback: set `sendingEnabled: false` (deploy). The collections affect no
