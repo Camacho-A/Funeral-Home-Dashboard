@@ -86,7 +86,7 @@ export function AppShell({
  * to the new canvas-and-cards design. Grows area by area until every page
  * is refreshed, then this check goes away.
  */
-const REFRESHED_ROUTES = ['/dashboard', '/settings', '/reports', '/accounting', '/tasks'];
+const REFRESHED_ROUTES = ['/dashboard', '/settings', '/reports', '/accounting', '/tasks', '/cases', '/calendar', '/notifications'];
 function isRefreshed(pathname: string | null): boolean {
   return !!pathname && REFRESHED_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
 }

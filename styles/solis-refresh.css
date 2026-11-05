@@ -277,10 +277,21 @@
   border-bottom: none;
 }
 
+/* A case's workflow timeline as a card. */
+.sx-refresh .sx-wf {
+  max-width: 880px;
+  padding: 18px 20px 12px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
 /* Inside a card, a section title is a heading again, not a label. */
 .sx-refresh .sx-settings-card .sx-section-title,
 .sx-refresh .sx-card .sx-section-title,
-.sx-refresh .sx-task-group .sx-section-title {
+.sx-refresh .sx-task-group .sx-section-title,
+.sx-refresh .sx-wf > .sx-section-title {
   padding: 0 0 10px;
   font-size: 14px;
   letter-spacing: normal;

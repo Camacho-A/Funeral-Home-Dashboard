@@ -229,3 +229,42 @@
   font-weight: 400;
   font-style: italic;
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): the case list is one
+   card on the canvas; rows highlight on hover; the column header sits
+   inside the card. */
+.card.card {
+  overflow: hidden;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.card.card .headerRow {
+  border-top: none;
+  background: oklch(0.985 0.002 255);
+  padding-top: 11px;
+  padding-bottom: 11px;
+}
+
+.card.card .row {
+  padding: 14px 16px;
+}
+
+.card.card .row:hover {
+  background: var(--sx-subtle);
+}
+
+.card.card .row:last-of-type {
+  border-bottom: none;
+}
+
+.card.card .name {
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.card.card .loadMoreRow {
+  border-top: 1px solid var(--sx-border-soft);
+}
