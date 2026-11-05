@@ -15,7 +15,8 @@ import {
   type FaxSettingsOverview,
 } from '@/lib/faxSettingsClient';
 import { formatTimestamp } from '@/utils/format';
-import { renderFaxTemplate } from '@/domain/faxBundles/faxTemplates';
+import { renderFaxTemplate, validateBodyTemplate, validateSubjectTemplate } from '@/domain/faxBundles/faxTemplates';
+import { normalizeFaxNumber } from '@/domain/faxBundles/faxConfiguration';
 import styles from './FaxSettingsPanel.module.css';
 
 /**
@@ -40,6 +41,8 @@ export function FaxSettingsPanel() {
   const query = useQuery({ queryKey: ['faxSettings', organizationId], queryFn: () => fetchFaxSettings(organizationId) });
   const history = useQuery({ queryKey: ['faxSettingsHistory', organizationId], queryFn: () => fetchFaxConfigurationHistory(organizationId) });
   const [notice, setNotice] = useState<Notice>(null);
+  /** A refused destination save is shown in its form, where staff are looking. */
+  const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   // Templates and options — one Save.
@@ -64,6 +67,7 @@ export function FaxSettingsPanel() {
   async function run(key: string, action: () => Promise<FaxSettingsOverview>, success: string) {
     setBusy(key);
     setNotice(null);
+    setFormError(null);
     try {
       const overview = await action();
       queryClient.setQueryData(['faxSettings', organizationId], overview);
@@ -71,7 +75,9 @@ export function FaxSettingsPanel() {
       setNotice({ ok: true, message: success });
       return true;
     } catch (error) {
-      setNotice({ ok: false, message: error instanceof Error ? error.message : 'That could not be saved.' });
+      const message = error instanceof Error ? error.message : 'That could not be saved.';
+      if (key === 'destination') setFormError(message);
+      else setNotice({ ok: false, message });
       await queryClient.invalidateQueries({ queryKey: ['faxSettings', organizationId] });
       return false;
     } finally {
@@ -82,6 +88,9 @@ export function FaxSettingsPanel() {
   const data = query.data;
   const provider = useMemo(() => data?.providers.find((p) => p.key === providerKey) ?? data?.provider ?? null, [data, providerKey]);
   const subjectExample = useMemo(() => renderFaxTemplate(subject, { reference: 'DC-7Q4K9M', organizationName: data?.organizationName ?? '', applicationCount: 3, pageCount: 3 }), [subject, data]);
+  // The server's own checks, run as staff type — the same words, before Save.
+  const subjectProblem = useMemo(() => problemOf(() => validateSubjectTemplate(subject)), [subject]);
+  const bodyProblem = useMemo(() => problemOf(() => validateBodyTemplate(body)), [body]);
 
   if (query.isPending) return <p>Loading…</p>;
   if (query.error || !data || !provider) return <div className="sx-form-banner sx-form-banner-error" role="alert">{query.error?.message ?? 'Fax Settings could not be loaded.'}</div>;
@@ -99,10 +108,12 @@ export function FaxSettingsPanel() {
   const defaultRevision = data.settings.revision;
 
   function startEdit(d: Destination) {
+    setFormError(null);
     setEditing(d.id);
-    setForm({ name: d.name, faxNumber: d.faxNumberDisplay, purpose: d.builtIn ? 'Death certificate applications' : d.purpose, makeDefault: false });
+    setForm({ name: d.name, faxNumber: d.faxNumberDisplay, purpose: d.builtIn ? '' : d.purpose, makeDefault: false });
   }
   function startAdd() {
+    setFormError(null);
     setEditing('new');
     setForm({ name: '', faxNumber: '', purpose: '', makeDefault: false });
   }
@@ -122,16 +133,18 @@ export function FaxSettingsPanel() {
   return (
     <div className={styles.panel}>
       {notice && (
-        <div className={`sx-form-banner ${notice.ok ? 'sx-form-banner-info' : 'sx-form-banner-error'}`} role={notice.ok ? 'status' : 'alert'}>
-          {notice.message}
+        <div className={`sx-form-banner ${notice.ok ? styles.success : 'sx-form-banner-error'}`} role={notice.ok ? 'status' : 'alert'}>
+          <span>{notice.message}</span>
         </div>
       )}
 
       <div className={`sx-form-banner ${data.sendingEnabled ? 'sx-form-banner-info' : styles.caution}`} role="status">
-        <strong>Fax sending is {data.sendingEnabled ? 'on' : 'off'}.</strong>{' '}
-        {data.sendingEnabled
-          ? 'Changes here apply to bundles prepared from now on.'
-          : 'Bundles can be prepared and previewed. Sending is turned on by SOLIS only after a verified test delivery — not from this page.'}
+        <span>
+          <strong>Fax sending is {data.sendingEnabled ? 'on' : 'off'}.</strong>{' '}
+          {data.sendingEnabled
+            ? 'Changes here apply to bundles prepared from now on.'
+            : 'Bundles can be prepared and previewed. Sending is turned on by SOLIS only after a verified test delivery — not from this page.'}
+        </span>
       </div>
       {data.problem && (
         <div className="sx-form-banner sx-form-banner-error" role="alert">
@@ -154,7 +167,7 @@ export function FaxSettingsPanel() {
           {visible.map((d) => (
             <li key={d.id} className={`${styles.destination} ${d.status === 'archived' ? styles.archived : ''}`}>
               {editing === d.id ? (
-                <DestinationForm form={form} setForm={setForm} isNew={false} busy={busy === 'destination'} onCancel={() => setEditing(null)} onSave={saveDestination} />
+                <DestinationForm form={form} setForm={setForm} isNew={false} busy={busy === 'destination'} error={formError} onCancel={() => setEditing(null)} onSave={saveDestination} />
               ) : (
                 <>
                   <div className={styles.destinationText}>
@@ -166,8 +179,7 @@ export function FaxSettingsPanel() {
                     <span className={styles.nowrap}>Fax {d.faxNumberDisplay}</span>
                     <span className="sx-help">
                       {d.address}
-                      {d.purpose ? ` · ${d.purpose}` : ''}
-                      {d.builtIn ? ' · built into SOLIS for your organization; editing it saves it here' : ''}
+                      {d.builtIn ? ' · Built into SOLIS for your organization. Editing it saves your own copy here.' : d.purpose ? ` · ${d.purpose}` : ''}
                     </span>
                   </div>
                   {d.status === 'active' && (
@@ -194,7 +206,7 @@ export function FaxSettingsPanel() {
         </ul>
         {editing === 'new' ? (
           <div className={styles.destination}>
-            <DestinationForm form={form} setForm={setForm} isNew busy={busy === 'destination'} onCancel={() => setEditing(null)} onSave={saveDestination} />
+            <DestinationForm form={form} setForm={setForm} isNew busy={busy === 'destination'} error={formError} onCancel={() => setEditing(null)} onSave={saveDestination} />
           </div>
         ) : (
           <div>
@@ -262,9 +274,13 @@ export function FaxSettingsPanel() {
           <label className="sx-label" htmlFor="fax-subject">
             Email subject
           </label>
-          <input id="fax-subject" className="sx-input" value={subject} maxLength={150} onChange={(e) => setSubject(e.target.value)} />
-          <span className="sx-help">
-            Must include <code>{'{reference}'}</code>. Example: <span className={styles.breakAll}>{subjectExample}</span>
+          <input id="fax-subject" className="sx-input" value={subject} maxLength={150} onChange={(e) => setSubject(e.target.value)} aria-invalid={subjectProblem ? 'true' : undefined} aria-describedby="fax-subject-help" />
+          <span id="fax-subject-help" className={subjectProblem ? styles.fieldError : 'sx-help'}>
+            {subjectProblem ?? (
+              <>
+                Must include <code>{'{reference}'}</code>. Example: <span className={styles.breakAll}>{subjectExample}</span>
+              </>
+            )}
           </span>
         </div>
         <ul className={styles.placeholders} aria-label="Placeholders">
@@ -291,7 +307,12 @@ export function FaxSettingsPanel() {
           <label className="sx-label" htmlFor="fax-body">
             Message {bodyAllowed ? '' : '(draft — not sent)'}
           </label>
-          <textarea id="fax-body" className="sx-textarea" rows={4} maxLength={2000} value={body} disabled={provider.emailBody === 'unsupported'} onChange={(e) => setBody(e.target.value)} placeholder="Leave empty to send the attachment only (recommended)." />
+          <textarea id="fax-body" className="sx-textarea" rows={4} maxLength={2000} value={body} disabled={provider.emailBody === 'unsupported'} onChange={(e) => setBody(e.target.value)} placeholder="Leave empty to send the attachment only (recommended)." aria-invalid={bodyProblem ? 'true' : undefined} aria-describedby={bodyProblem ? 'fax-body-error' : undefined} />
+          {bodyProblem && (
+            <span id="fax-body-error" className={styles.fieldError}>
+              {bodyProblem}
+            </span>
+          )}
         </div>
         <div className={`sx-form-banner ${styles.caution}`}>{data.warning}</div>
       </section>
@@ -316,7 +337,7 @@ export function FaxSettingsPanel() {
         <button
           type="button"
           className="sx-btn sx-btn-primary"
-          disabled={!settingsDirty || busy !== null}
+          disabled={!settingsDirty || busy !== null || subjectProblem !== null || bodyProblem !== null}
           onClick={() =>
             run(
               'settings',
@@ -327,7 +348,7 @@ export function FaxSettingsPanel() {
         >
           {busy === 'settings' ? 'Saving…' : 'Save settings'}
         </button>
-        {settingsDirty && <span className="sx-help">Unsaved changes</span>}
+        {settingsDirty && <span className="sx-help">{subjectProblem || bodyProblem ? 'Fix the highlighted field to save.' : 'Unsaved changes'}</span>}
       </div>
 
       {/* 5 ------------------------------------------------------------ */}
@@ -363,6 +384,7 @@ function DestinationForm({
   setForm,
   isNew,
   busy,
+  error,
   onCancel,
   onSave,
 }: {
@@ -370,11 +392,14 @@ function DestinationForm({
   setForm: (f: { name: string; faxNumber: string; purpose: string; makeDefault: boolean }) => void;
   isNew: boolean;
   busy: boolean;
+  /** The server's refusal of the last save, shown here rather than at the top of the page. */
+  error: string | null;
   onCancel: () => void;
   onSave: () => void;
 }) {
-  const digits = form.faxNumber.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
-  const numberHint = form.faxNumber && digits.length !== 10 ? 'Enter a 10-digit US or Canadian fax number.' : null;
+  // The server's own number check, so it never refuses what this form accepted.
+  const numberHint = form.faxNumber.trim() ? problemOf(() => normalizeFaxNumber(form.faxNumber)) : null;
+  const numberOk = form.faxNumber.trim() !== '' && numberHint === null;
   return (
     <form
       className={styles.form}
@@ -388,14 +413,18 @@ function DestinationForm({
           <label className="sx-label" htmlFor="fax-destination-name">
             Destination name
           </label>
-          <input id="fax-destination-name" className="sx-input" value={form.name} maxLength={100} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Manatee County Vital Statistics" required />
+          <input id="fax-destination-name" className="sx-input" value={form.name} maxLength={100} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. County Vital Statistics" required />
         </div>
         <div className="sx-field">
           <label className="sx-label" htmlFor="fax-destination-number">
             Fax number
           </label>
-          <input id="fax-destination-number" className="sx-input" inputMode="tel" value={form.faxNumber} aria-invalid={numberHint ? 'true' : undefined} onChange={(e) => setForm({ ...form, faxNumber: e.target.value })} placeholder="941-554-5490" required />
-          {numberHint && <span className="sx-help">{numberHint}</span>}
+          <input id="fax-destination-number" className="sx-input" inputMode="tel" autoComplete="off" value={form.faxNumber} aria-invalid={numberHint ? 'true' : undefined} aria-describedby={numberHint ? 'fax-destination-number-error' : undefined} onChange={(e) => setForm({ ...form, faxNumber: e.target.value })} placeholder="e.g. 941-555-0100" required />
+          {numberHint && (
+            <span id="fax-destination-number-error" className={styles.fieldError}>
+              {numberHint}
+            </span>
+          )}
         </div>
         <div className="sx-field sx-span-all">
           <label className="sx-label" htmlFor="fax-destination-purpose">
@@ -410,14 +439,29 @@ function DestinationForm({
           </label>
         )}
       </div>
+      {error && (
+        <div className={`sx-form-banner sx-form-banner-error ${styles.formError}`} role="alert">
+          <span>{error}</span>
+        </div>
+      )}
       <div className={styles.actions}>
         <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button type="submit" className="sx-btn sx-btn-primary sx-btn-sm" disabled={busy || !form.name.trim() || digits.length !== 10}>
+        <button type="submit" className="sx-btn sx-btn-primary sx-btn-sm" disabled={busy || !form.name.trim() || !numberOk}>
           {busy ? 'Saving…' : isNew ? 'Add destination' : 'Save destination'}
         </button>
       </div>
     </form>
   );
+}
+
+/** The message a validator throws, or null when the value is fine. */
+function problemOf(check: () => unknown): string | null {
+  try {
+    check();
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error.message : 'Not valid.';
+  }
 }

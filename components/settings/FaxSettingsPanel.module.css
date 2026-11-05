@@ -180,3 +180,21 @@
     width: 100%;
   }
 }
+
+/* Saved: green, like SOLIS's other success states. */
+.success {
+  border: 1px solid oklch(0.88 0.05 150);
+  background: var(--sx-green-bg);
+  color: var(--sx-green-text);
+}
+
+/* A field's own problem, under it — the same words the server would use. */
+.fieldError {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--sx-red);
+}
+
+.formError {
+  margin: 0;
+}

@@ -78,18 +78,32 @@ describe('FaxSettingsPanel', () => {
     expect(screen.getByText(/never creates a cover page itself/)).toBeTruthy();
   });
 
-  it('saves the subject with the revision it was loaded at; the server\'s refusal is shown', async () => {
-    client.saveFaxSettings.mockRejectedValueOnce(new Error('The subject must include {reference}, so each fax can be matched to its NuSo confirmation.'));
+  it('checks the subject as it is typed, with the server\'s own rules — a subject without {reference} or with case details cannot be saved', async () => {
     renderPanel();
     const subject = (await screen.findByLabelText('Email subject')) as HTMLInputElement;
     const save = screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
     fireEvent.change(subject, { target: { value: 'DC applications' } });
+    expect(screen.getByText(/must include \{reference\}/)).toBeTruthy();
+    expect(subject.getAttribute('aria-invalid')).toBe('true');
+    expect(save.disabled).toBe(true);
+    fireEvent.change(subject, { target: { value: 'DC applications for {decedentName} {reference}' } });
+    expect(screen.getByText(/never include decedent or case information/)).toBeTruthy();
+    expect(save.disabled).toBe(true);
+    expect(client.saveFaxSettings).not.toHaveBeenCalled();
+  });
+
+  it('saves the subject with the revision it was loaded at; the server\'s refusal is shown', async () => {
+    client.saveFaxSettings.mockRejectedValueOnce(new Error('Fax Settings were changed by someone else. Reload to see them.'));
+    renderPanel();
+    const subject = (await screen.findByLabelText('Email subject')) as HTMLInputElement;
+    const save = screen.getByRole('button', { name: 'Save settings' }) as HTMLButtonElement;
+    fireEvent.change(subject, { target: { value: 'DC applications {reference}' } });
     expect(screen.getByText('Unsaved changes')).toBeTruthy();
     fireEvent.click(save);
     expect(await screen.findByRole('alert')).toBeTruthy();
-    expect(screen.getByRole('alert').textContent).toMatch(/must include \{reference\}/);
-    expect(client.saveFaxSettings).toHaveBeenCalledWith('managed-cremations', { expectedRevision: null, providerKey: 'nuso', subjectTemplate: 'DC applications', bodyEnabled: false, bodyTemplate: '', coverPageEnabled: false });
+    expect(screen.getByRole('alert').textContent).toMatch(/changed by someone else/);
+    expect(client.saveFaxSettings).toHaveBeenCalledWith('managed-cremations', { expectedRevision: null, providerKey: 'nuso', subjectTemplate: 'DC applications {reference}', bodyEnabled: false, bodyTemplate: '', coverPageEnabled: false });
   });
 
   it('adds a destination; the number is checked as it is typed and the server validates it again', async () => {
@@ -106,6 +120,20 @@ describe('FaxSettingsPanel', () => {
     expect(submit.disabled).toBe(false);
     fireEvent.click(submit);
     await waitFor(() => expect(client.addFaxDestination).toHaveBeenCalledWith('managed-cremations', { name: 'Sarasota County Records', faxNumber: '941-555-0177', purpose: '', makeDefault: true }));
+  });
+
+  it('a destination the server refuses keeps its form open and shows why inside it', async () => {
+    client.addFaxDestination.mockRejectedValueOnce(new Error('A destination with that fax number already exists.'));
+    renderPanel();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add destination' }));
+    fireEvent.change(screen.getByLabelText('Destination name'), { target: { value: 'Sarasota County Records' } });
+    fireEvent.change(screen.getByLabelText('Fax number'), { target: { value: '941-555-0177' } });
+    const submit = screen.getAllByRole('button', { name: 'Add destination' }).find((b) => b.getAttribute('type') === 'submit') as HTMLButtonElement;
+    fireEvent.click(submit);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('A destination with that fax number already exists.');
+    expect(alert.closest('form')).toBeTruthy();
+    expect((screen.getByLabelText('Destination name') as HTMLInputElement).value).toBe('Sarasota County Records');
   });
 
   it('other destinations can be made the default or archived; edits carry the destination\'s revision', async () => {

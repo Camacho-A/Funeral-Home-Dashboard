@@ -60,4 +60,26 @@ describe('Modal', () => {
     fireEvent.click(screen.getByText('content'));
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it("size: 'md' and 'lg' keep their own panels; 'xl' (2026-11, fax review) is the lg layout plus its own width and height", () => {
+    const classesFor = (size?: 'md' | 'lg' | 'xl') => {
+      const { unmount } = render(
+        <Modal open onClose={() => {}} title={`Example ${size ?? 'default'}`} size={size}>
+          content
+        </Modal>,
+      );
+      const classes = screen.getByRole('dialog').className.split(/\s+/).filter(Boolean);
+      unmount();
+      return classes;
+    };
+    const md = classesFor();
+    const lg = classesFor('lg');
+    const xl = classesFor('xl');
+    expect(classesFor('md')).toEqual(md);
+    expect(md).toHaveLength(1);
+    expect(lg).toHaveLength(2);
+    expect(lg).toEqual(expect.arrayContaining(md));
+    expect(xl).toHaveLength(3);
+    expect(xl).toEqual(expect.arrayContaining(lg));
+  });
 });

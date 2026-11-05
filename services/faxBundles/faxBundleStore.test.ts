@@ -145,3 +145,16 @@ describe('faxBundleCases (Wix)', () => {
     for (const id of [store.faxClaimId(ORG, longCase), store.faxLinkId(ORG, b.id, longCase), b.id]) expect(id.length).toBeLessThanOrEqual(128);
   });
 });
+
+describe('memoryFaxTable — mock mode (2026-11)', () => {
+  it('is one table per process: a second copy of this module (next dev compiles each route separately) sees the same rows', async () => {
+    const first = await import('./faxBundleStore');
+    await first.memoryFaxTable.insert('faxDestinations', 'fxd-shared-check', { organizationId: 'org-a' });
+    vi.resetModules();
+    const second = await import('./faxBundleStore');
+    expect(second).not.toBe(first);
+    expect(second.memoryFaxTable.rows('faxDestinations')).toEqual([{ organizationId: 'org-a' }]);
+    second.memoryFaxTable.reset();
+    expect(first.memoryFaxTable.rows('faxDestinations')).toEqual([]);
+  });
+});

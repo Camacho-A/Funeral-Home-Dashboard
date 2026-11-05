@@ -90,8 +90,7 @@ function matches(row: Row, filter: Filter): boolean {
 }
 
 /** In-memory table: mock mode and tests. Same refusals as Wix. */
-export function createMemoryTable(): Table & { rows(collection: string): Row[]; reset(): void } {
-  const collections = new Map<string, Map<string, Row>>();
+export function createMemoryTable(collections = new Map<string, Map<string, Row>>()): Table & { rows(collection: string): Row[]; reset(): void } {
   const of = (collection: string) => {
     if (!collections.has(collection)) collections.set(collection, new Map());
     return collections.get(collection)!;
@@ -123,7 +122,15 @@ export function createMemoryTable(): Table & { rows(collection: string): Row[]; 
   };
 }
 
-export const memoryFaxTable = createMemoryTable();
+/**
+ * Mock mode's table is anchored on globalThis (as services/__mocks__/mockStore.ts
+ * does for the fixtures): `next dev` compiles each API route separately and
+ * can give each its own copy of this module, so a destination added through
+ * one route was "not found" by the next. One process, one table.
+ */
+const MEMORY_KEY = Symbol.for('solis.faxMemoryTable.v1');
+const memoryHolder = globalThis as typeof globalThis & { [MEMORY_KEY]?: Map<string, Map<string, Row>> };
+export const memoryFaxTable = createMemoryTable((memoryHolder[MEMORY_KEY] ??= new Map()));
 
 let tableOverride: Table | null = null;
 /** Tests only: route every mode through this table. */

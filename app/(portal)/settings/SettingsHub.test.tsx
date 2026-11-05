@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SettingsHub } from './SettingsHub';
 import { OrganizationProvider } from '@/hooks/useOrganization';
 import * as identityAuthClient from '@/lib/identityAuthClient';
-import { DEFAULT_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
 
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');
@@ -19,11 +19,11 @@ function mockPermissions(permissions: string[]) {
   vi.mocked(identityAuthClient.fetchMyPermissions).mockResolvedValue({ identityId: 'identity-1', roleKey: 'administrator', permissions });
 }
 
-function renderHub(authAdapterMode: 'mock' | 'wix' | 'identity' = 'mock') {
+function renderHub(authAdapterMode: 'mock' | 'wix' | 'identity' = 'mock', organizationId: string = DEFAULT_ORGANIZATION_ID) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <OrganizationProvider organizationId={DEFAULT_ORGANIZATION_ID}>
+      <OrganizationProvider organizationId={organizationId}>
         <SettingsHub authAdapterMode={authAdapterMode} />
       </OrganizationProvider>
     </QueryClientProvider>,
@@ -310,5 +310,28 @@ describe('SettingsHub — Unmatched Forms (Task #12, 2026-09)', () => {
     renderHub('mock');
     const link = (await screen.findByText('Unmatched Forms')).closest('a');
     expect(link).toHaveAttribute('href', '/unmatched-forms');
+  });
+});
+
+describe('SettingsHub — Fax Settings (2026-11)', () => {
+  it('shows Fax Settings, linking to /settings/fax, for an administrator of an organization that faxes', async () => {
+    mockPermissions(['organization.manage']);
+    renderHub('identity');
+    const link = (await screen.findByText('Fax Settings')).closest('a');
+    expect(link?.getAttribute('href')).toBe('/settings/fax');
+  });
+
+  it('hides Fax Settings without organization.manage', async () => {
+    mockPermissions(['case.view', 'fax.send']);
+    renderHub('identity');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Fax Settings')).not.toBeInTheDocument();
+  });
+
+  it('hides Fax Settings for an organization with no faxing, even for an administrator', async () => {
+    mockPermissions(['organization.manage']);
+    renderHub('identity', SECOND_MOCK_ORGANIZATION_ID);
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    expect(screen.queryByText('Fax Settings')).not.toBeInTheDocument();
   });
 });

@@ -2,6 +2,17 @@
 
 **Select 1 or more cases → Preview one bundle → Send one fax.**
 
+The dialog (redesigned 2026-11) shows this as three labelled steps:
+**1 Select cases** (destination, case list with counts, the bundle order),
+**2 Review fax** (the stored PDF fills the dialog; document, application and
+page counts beside it; nothing can be sent from this step), and
+**3 Confirm & send** (destination name and number, the file, its counts and
+applications, a note that Send Fax is not confirmed delivery, and a
+confirmation box that must be ticked before Send Fax is enabled). Going
+back to step 1 without changing the selection reuses the prepared bundle;
+a send that may have gone out is never offered again from the dialog. The
+requests, checks and audit trail behind it are unchanged.
+
 Staff choose exactly which saved Manatee County Death Certificate
 Applications go in a bundle (1–20, in the order they choose). SOLIS builds
 ONE PDF, numbers each application "n of N" in the form's own
