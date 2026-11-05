@@ -661,3 +661,101 @@ describe('case history, eligibility and organization isolation', () => {
     for (const id of rowIds) expect(id.length).toBeLessThanOrEqual(128);
   });
 });
+
+// ---------------------------------------------------------------- Fax Settings (2026-11)
+
+describe('Fax Settings: a prepared bundle keeps what it was previewed with', () => {
+  const settings = () => import('../faxSettings/faxSettingsService');
+
+  it('the preview uses the default destination and subject from Fax Settings, and keeps them on the bundle', async () => {
+    const fs = await settings();
+    let overview = await fs.createFaxDestination(ctx(), { name: 'Sarasota County Records', faxNumber: '941-555-0177', makeDefault: true }, 'mock');
+    overview = await fs.updateFaxSettings(ctx(), { expectedRevision: overview.settings.revision, subjectTemplate: 'DC applications {reference} ({applicationCount})' }, 'mock');
+    const ids = await casesWithApplications(2);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    const destinationId = overview.destinations.find((d) => d.isDefault)!.id;
+    expect(preview).toMatchObject({ destinationName: 'Sarasota County Records', destinationAddress: '9415550177@fax.nuso.io', subject: `DC applications ${preview.reference} (2)` });
+    expect(bundleRow(preview.id)).toMatchObject({ destinationId, providerKey: 'nuso', emailBody: '', settingsRevision: overview.settings.revision });
+
+    const graph = fakeGraph();
+    await service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock');
+    expect(graph.emails()[0].body).toMatchObject({ subject: preview.subject, body: { contentType: 'Text', content: '' }, toRecipients: [{ emailAddress: { address: '9415550177@fax.nuso.io' } }] });
+    const rowIds = [...store.memoryFaxTable.rows('faxDestinations').map((r) => r.beaconFaxDestinationId), ...store.memoryFaxTable.rows('faxSettings').map((r) => r.beaconFaxSettingsId)] as string[];
+    for (const id of rowIds) expect(id.length).toBeLessThanOrEqual(128);
+  });
+
+  it('the destination\'s number changes after the preview: the bundle is never redirected — nothing is sent, nothing held; preview again', async () => {
+    const fs = await settings();
+    const ids = await casesWithApplications(1);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    const before = structuredClone(bundleRow(preview.id));
+    await fs.updateFaxDestination(ctx(), 'builtin', { faxNumber: '941-555-0100' }, 'mock');
+    // The prepared bundle itself is untouched.
+    expect(bundleRow(preview.id)).toEqual(before);
+    const graph = fakeGraph();
+    expect(await sendErr(service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock'))).toMatchObject({ status: 409, message: expect.stringMatching(/fax destination changed since the preview.*Nothing was sent/) });
+    expect(graph.calls).toHaveLength(0);
+    expect(claims()).toHaveLength(0);
+    expect(bundleRow(preview.id).status).toBe('ready');
+    // A new preview goes to the new number.
+    const again = await service.previewFaxBundle(ctx(), ids, 'mock');
+    expect(again.destinationAddress).toBe('9415550100@fax.nuso.io');
+  });
+
+  it('another destination becomes the default after the preview: nothing is sent', async () => {
+    const fs = await settings();
+    const ids = await casesWithApplications(1);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    await fs.createFaxDestination(ctx(), { name: 'Elsewhere', faxNumber: '305-555-0100', makeDefault: true }, 'mock');
+    const graph = fakeGraph();
+    expect(await sendErr(service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock'))).toMatchObject({ status: 409, message: expect.stringContaining('fax destination changed since the preview') });
+    expect(graph.calls).toHaveLength(0);
+  });
+
+  it('the subject template changes after the preview: nothing is sent', async () => {
+    const fs = await settings();
+    const ids = await casesWithApplications(1);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    await fs.updateFaxSettings(ctx(), { expectedRevision: null, subjectTemplate: 'New subject {reference}' }, 'mock');
+    const graph = fakeGraph();
+    expect(await sendErr(service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock'))).toMatchObject({ status: 409, message: expect.stringContaining('fax email settings changed since the preview') });
+    expect(graph.calls).toHaveLength(0);
+  });
+
+  it('a change that does not affect the email (the destination\'s name) leaves the prepared bundle sendable, exactly as previewed', async () => {
+    const fs = await settings();
+    const ids = await casesWithApplications(1);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    await fs.updateFaxDestination(ctx(), 'builtin', { name: 'Manatee County Health Dept. — Vital Statistics' }, 'mock');
+    const graph = fakeGraph();
+    const result = await service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock');
+    expect(result.bundle).toMatchObject({ state: 'submitted', destinationName: 'Manatee County Vital Statistics' });
+    expect(graph.emails()[0].body).toMatchObject({ subject: preview.subject, toRecipients: [{ emailAddress: { address: GATEWAY } }] });
+  });
+
+  it('the default destination is archived by a race: nothing can be prepared, nothing is sent', async () => {
+    const fs = await settings();
+    const ids = await casesWithApplications(1);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    const overview = await fs.updateFaxDestination(ctx(), 'builtin', { name: 'Kept' }, 'mock');
+    const d = overview.destinations[0];
+    await store.memoryFaxTable.patchIf('faxDestinations', d.id, { status: 'archived' }, { revision: d.revision });
+    const graph = fakeGraph();
+    expect(await sendErr(service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock'))).toMatchObject({ status: 409, message: expect.stringContaining('no longer available') });
+    expect(await sendErr(service.previewFaxBundle(ctx(), ids, 'mock'))).toMatchObject({ status: 409 });
+    expect(graph.calls).toHaveLength(0);
+  });
+
+  it('a bundle prepared before Fax Settings existed (no snapshot fields) still sends exactly as it was previewed', async () => {
+    const ids = await casesWithApplications(1);
+    const preview = await service.previewFaxBundle(ctx(), ids, 'mock');
+    const row = bundleRow(preview.id);
+    for (const key of ['destinationId', 'providerKey', 'emailBody', 'settingsRevision']) delete row[key];
+    await store.memoryFaxTable.remove('faxBundles', preview.id);
+    await store.memoryFaxTable.insert('faxBundles', preview.id, row);
+    const graph = fakeGraph();
+    const result = await service.sendFaxBundle(ctx(), preview.id, 'submission-0001', 'mock');
+    expect(result.bundle.state).toBe('submitted');
+    expect(graph.emails()[0].body).toMatchObject({ subject: preview.subject, body: { contentType: 'Text', content: '' }, toRecipients: [{ emailAddress: { address: GATEWAY } }] });
+  });
+});

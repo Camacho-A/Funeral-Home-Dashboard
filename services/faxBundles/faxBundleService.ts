@@ -34,17 +34,14 @@ import {
   type FaxBundleState,
 } from '@/domain/faxBundles/faxBundle';
 import {
-  FAX_EMAIL_BODY,
-  FaxSettingsError,
   MAX_APPLICATIONS_PER_BUNDLE,
   deathCertificateFaxSettings,
   faxAttachmentLimit,
-  faxDestinationAddress,
-  faxSubject,
   formatFaxNumber,
   formatMegabytes,
   type DeathCertificateFaxSettings,
 } from '@/domain/faxBundles/faxSettings';
+import { FaxSettingsServiceError, renderBundleEmail, resolveFaxConfiguration, type EffectiveFaxConfiguration } from '../faxSettings/faxSettingsService';
 import { DC_APPLICATION_FAX_DELIVERED_EVENT, dcApplicationSentItem } from '@/domain/faxBundles/faxChecklist';
 import { FaxBundleError } from './faxBundleError';
 import { RequestBoxError, buildFaxBundlePdf, inspectApplication } from './faxBundlePdf';
@@ -104,11 +101,16 @@ function requireSettings(organizationId: string): DeathCertificateFaxSettings {
   return settings;
 }
 
-function destinationOf(settings: DeathCertificateFaxSettings): string {
+/**
+ * The organization's fax configuration right now (Fax Settings, 2026-11):
+ * destination, provider, subject and message. With nothing saved it is the
+ * organization profile's built-in values, exactly as before Fax Settings.
+ */
+async function configurationOf(organizationId: string, mode: DataAdapterMode): Promise<EffectiveFaxConfiguration> {
   try {
-    return faxDestinationAddress(settings);
+    return await resolveFaxConfiguration(organizationId, mode);
   } catch (error) {
-    if (error instanceof FaxSettingsError) throw new FaxBundleError(`The fax destination is not valid: ${error.message} Ask an administrator.`, 503);
+    if (error instanceof FaxSettingsServiceError) throw new FaxBundleError(`${error.message} Nothing was sent.`, error.status === 404 ? 404 : error.status === 409 ? 409 : 503);
     throw error;
   }
 }
@@ -300,7 +302,8 @@ export async function listFaxEligibleCases(organizationId: string, mode: DataAda
     });
   }
   cases.sort((a, b) => (a.targetDate ?? '9999').localeCompare(b.targetDate ?? '9999') || a.caseNumber.localeCompare(b.caseNumber));
-  return { cases, destinationName: settings.destinationName, destinationFax: formatFaxNumber(settings.faxNumber), sendingEnabled: settings.sendingEnabled, maxApplications: MAX_APPLICATIONS_PER_BUNDLE };
+  const config = await configurationOf(organizationId, mode);
+  return { cases, destinationName: config.destination.name, destinationFax: formatFaxNumber(config.destination.faxNumber), sendingEnabled: settings.sendingEnabled, maxApplications: MAX_APPLICATIONS_PER_BUNDLE };
 }
 
 // ---------------------------------------------------------------- preview
@@ -344,7 +347,7 @@ async function uniqueReference(organizationId: string, mode: DataAdapterMode): P
  */
 export async function previewFaxBundle(ctx: ActivityContext, requestedCaseIds: unknown, mode: DataAdapterMode): Promise<FaxBundleView> {
   const settings = requireSettings(ctx.organizationId);
-  const destinationAddress = destinationOf(settings);
+  const config = await configurationOf(ctx.organizationId, mode);
   const caseIds = validCaseIds(requestedCaseIds);
   await discardExpiredPreviews(ctx, mode);
 
@@ -405,6 +408,7 @@ export async function previewFaxBundle(ctx: ActivityContext, requestedCaseIds: u
 
   const id = newFaxBundleId();
   const reference = await uniqueReference(ctx.organizationId, mode);
+  const email = renderBundleEmail(config, { reference, applicationCount: loaded.length, pageCount: built.pageCount });
   const now = new Date().toISOString();
   const items: FaxBundleItem[] = loaded.map((l, i) => ({
     position: i + 1,
@@ -430,11 +434,16 @@ export async function previewFaxBundle(ctx: ActivityContext, requestedCaseIds: u
     pdfChecksumSha256: sha256(built.bytes),
     pdfSizeBytes: built.bytes.byteLength,
     pdfPageCount: built.pageCount,
-    destinationName: settings.destinationName,
-    destinationFaxNumber: settings.faxNumber,
-    destinationAddress,
-    gatewayDomain: settings.gatewayDomain,
-    subject: faxSubject(settings.emailOrganizationName, reference),
+    // The snapshot Send Fax uses — never the settings as they are later.
+    destinationName: config.destination.name,
+    destinationFaxNumber: config.destination.faxNumber,
+    destinationAddress: config.destination.address,
+    gatewayDomain: config.provider.gatewayDomain,
+    subject: email.subject,
+    destinationId: config.destination.id,
+    providerKey: config.provider.key,
+    emailBody: email.body,
+    settingsRevision: config.settingsRevision,
     senderAddress: null,
     createdBy: ctx.actorIdentityId,
     createdAt: now,
@@ -466,8 +475,8 @@ export async function previewFaxBundle(ctx: ActivityContext, requestedCaseIds: u
   }
   await audit(ctx, null, ACTIVITY_EVENT_TYPES.FAX_BUNDLE_PREVIEWED, {
     bundleId: id,
-    description: `DC application fax bundle ${reference} prepared: ${items.length === 1 ? '1 application' : `${items.length} applications`} (${items.map((i) => i.caseNumber).join(', ')}) for ${settings.destinationName}`,
-    record: { reference, caseIds: bundle.caseIds, items: items.map(({ position, caseNumber, documentId, documentVersion, numbering }) => ({ position, caseNumber, documentId, documentVersion, numbering })), pdfChecksumSha256: bundle.pdfChecksumSha256, pdfPageCount: built.pageCount },
+    description: `DC application fax bundle ${reference} prepared: ${items.length === 1 ? '1 application' : `${items.length} applications`} (${items.map((i) => i.caseNumber).join(', ')}) for ${config.destination.name}`,
+    record: { reference, destinationId: config.destination.id, destinationAddress: config.destination.address, providerKey: config.provider.key, settingsRevision: config.settingsRevision, caseIds: bundle.caseIds, items: items.map(({ position, caseNumber, documentId, documentVersion, numbering }) => ({ position, caseNumber, documentId, documentVersion, numbering })), pdfChecksumSha256: bundle.pdfChecksumSha256, pdfPageCount: built.pageCount },
   }, mode);
   return viewOf(bundle, mode);
 }
@@ -537,8 +546,15 @@ export async function sendFaxBundle(ctx: ActivityContext, bundleId: string, subm
     throw new FaxBundleError(`${message[state]} Nothing was sent.`, 409);
   }
 
-  // Everything the preview showed, exactly as it was.
-  if (destinationOf(settings) !== bundle.destinationAddress) throw new FaxBundleError(`The fax destination ${CHANGED_SINCE_PREVIEW} Nothing was sent.`, 409);
+  // Everything the preview showed, exactly as it was. Fax Settings changed
+  // since then (destination, provider, subject or message): nothing is
+  // sent — the bundle is never redirected or re-worded; preview again.
+  const config = await configurationOf(ctx.organizationId, mode);
+  if (config.destination.address !== bundle.destinationAddress || config.provider.key !== bundle.providerKey) {
+    throw new FaxBundleError(`The fax destination ${CHANGED_SINCE_PREVIEW} Nothing was sent.`, 409);
+  }
+  const email = renderBundleEmail(config, { reference: bundle.reference, applicationCount: bundle.applicationCount, pageCount: bundle.pdfPageCount });
+  if (email.subject !== bundle.subject || email.body !== bundle.emailBody) throw new FaxBundleError(`The fax email settings ${CHANGED_SINCE_PREVIEW} Nothing was sent.`, 409);
   const applications = await latestApplicationsByCase(ctx.organizationId, mode);
   for (const item of bundle.items) {
     const case_ = await loadCaseOnServer(ctx.organizationId, item.caseId, mode).catch(() => null);
@@ -619,7 +635,8 @@ export async function sendFaxBundle(ctx: ActivityContext, bundleId: string, subm
       to: [bundle.destinationAddress],
       cc: [],
       subject: bundle.subject,
-      bodyText: FAX_EMAIL_BODY,
+      // The previewed message — '' (none) unless the provider is verified for one.
+      bodyText: bundle.emailBody,
       attachments: [{ name: `${bundle.reference}.pdf`, contentType: 'application/pdf', bytes: pdf }],
     });
   } catch (error) {

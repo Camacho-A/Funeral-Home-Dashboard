@@ -1264,6 +1264,39 @@ export function recordFaxBundleEvent(
   );
 }
 
+/**
+ * Fax Settings (2026-11) — one administrator change to the organization's
+ * fax configuration. `previous` / `next` hold only the changed fields.
+ * Category `administration`; resourceType names which record changed.
+ */
+export function recordFaxConfigurationEvent(
+  ctx: ActivityContext,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.FAX_SETTINGS_UPDATED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_CREATED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_UPDATED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_ARCHIVED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_DEFAULT_CHANGED,
+  details: { resourceType: 'faxSettings' | 'faxDestination'; resourceId: string; description: string; previous: Record<string, unknown> | null; next: Record<string, unknown> | null },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType,
+      resourceType: details.resourceType,
+      resourceId: details.resourceId,
+      previousValue: details.previous ? JSON.stringify(details.previous) : null,
+      newValue: details.next ? JSON.stringify(details.next) : null,
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

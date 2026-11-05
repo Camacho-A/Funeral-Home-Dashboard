@@ -268,6 +268,16 @@ export const ACTIVITY_EVENT_TYPES = {
   FAX_BUNDLE_NEEDS_REVIEW: 'fax_bundle.needs_review',
   FAX_BUNDLE_DELIVERED: 'fax_bundle.delivered',
   FAX_BUNDLE_NOT_DELIVERED: 'fax_bundle.not_delivered',
+  /** Fax Settings (2026-11). Every change an administrator makes to the
+      organization's fax configuration — category `administration`,
+      resourceType `faxSettings` / `faxDestination`. previousValue/newValue
+      carry only the fields that changed. These are the Fax Configuration
+      History; there is no other log. */
+  FAX_SETTINGS_UPDATED: 'fax_settings.updated',
+  FAX_DESTINATION_CREATED: 'fax_destination.created',
+  FAX_DESTINATION_UPDATED: 'fax_destination.updated',
+  FAX_DESTINATION_ARCHIVED: 'fax_destination.archived',
+  FAX_DESTINATION_DEFAULT_CHANGED: 'fax_destination.default_changed',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */

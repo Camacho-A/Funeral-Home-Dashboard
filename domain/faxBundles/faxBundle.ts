@@ -68,6 +68,16 @@ export type FaxBundle = {
   destinationAddress: string;
   gatewayDomain: string;
   subject: string;
+  /** Fax Settings (2026-11) — what the preview was prepared with, kept on the
+      bundle so a later settings change can never alter or redirect it.
+      Rows prepared before Fax Settings read as: destinationId null (the
+      built-in destination), providerKey 'nuso', emailBody '' (none),
+      settingsRevision null. */
+  destinationId: string | null;
+  providerKey: string;
+  /** Plain text; '' = no message (the default, and always for NuSo today). */
+  emailBody: string;
+  settingsRevision: number | null;
   senderAddress: string | null;
   createdBy: string | null;
   createdAt: string;

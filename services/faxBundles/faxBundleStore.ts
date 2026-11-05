@@ -131,6 +131,8 @@ export function setFaxTableForTesting(table: Table | null): void {
   tableOverride = table;
 }
 const tableFor = (mode: DataAdapterMode): Table => tableOverride ?? (mode === 'mock' ? memoryFaxTable : wixTable);
+/** The same table for the other fax collections (Fax Settings, services/faxSettings/faxSettingsStore.ts). */
+export const faxTableFor = tableFor;
 
 // ---------------------------------------------------------------- ids
 
@@ -156,6 +158,11 @@ function fromRow(row: Row): FaxBundle {
     items: Array.isArray(bundle.items) ? (bundle.items as FaxBundleItem[]) : [],
     caseIds: Array.isArray(bundle.caseIds) ? bundle.caseIds : [],
     history: Array.isArray(bundle.history) ? (bundle.history as FaxBundleHistoryEntry[]) : [],
+    // Bundles prepared before Fax Settings (2026-11): built-in destination, NuSo, no message.
+    destinationId: typeof bundle.destinationId === 'string' && bundle.destinationId ? bundle.destinationId : null,
+    providerKey: typeof bundle.providerKey === 'string' && bundle.providerKey ? bundle.providerKey : 'nuso',
+    emailBody: typeof bundle.emailBody === 'string' ? bundle.emailBody : '',
+    settingsRevision: typeof bundle.settingsRevision === 'number' ? bundle.settingsRevision : null,
   };
 }
 

@@ -1,5 +1,6 @@
 import { isSlaTrackingEnabled } from '@/domain/sla/slaSettings';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
+import { deathCertificateFaxSettings } from '@/domain/faxBundles/faxSettings';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
@@ -63,6 +64,14 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       description: 'The crematory’s email recipients and the Outlook mailbox Crematory Packages are sent from.',
       href: '/settings/crematory',
       visible: permissions.includes('organization.manage') && sendToCrematoryConfig(organizationId) !== null,
+    },
+    {
+      // Fax Settings (2026-11): destinations, provider, templates.
+      key: 'fax',
+      label: 'Fax Settings',
+      description: 'Fax destinations, the fax provider and sending mailbox, and the fax email subject and message.',
+      href: '/settings/fax',
+      visible: permissions.includes('organization.manage') && deathCertificateFaxSettings(organizationId) !== null,
     },
     {
       // Case SSN (2026-10): the one-time fill for existing cases.

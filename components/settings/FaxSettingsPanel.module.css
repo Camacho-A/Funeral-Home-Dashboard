@@ -1,0 +1,182 @@
+/* Fax Settings (2026-11). Five stacked sections; one column on phones. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  max-width: 880px;
+  min-width: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.lead {
+  margin: 0;
+  color: var(--sx-text-2);
+  font-size: 13px;
+}
+
+.caution {
+  border-color: oklch(0.85 0.08 70);
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+}
+
+.destinations {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.destination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--sx-border-soft);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.archived {
+  opacity: 0.7;
+}
+
+.destinationText {
+  display: flex;
+  flex: 1 1 260px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.destinationName {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.badge {
+  font-weight: 500;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.form {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.capabilities div {
+  display: flex;
+  gap: 8px;
+}
+
+.capabilities dt {
+  color: var(--sx-text-2);
+}
+
+.capabilities dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.placeholders {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--sx-text-2);
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.check input:disabled + * {
+  cursor: default;
+}
+
+.saveRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sx-border-soft);
+  overflow-wrap: anywhere;
+  font-size: 13.5px;
+}
+
+.warn {
+  color: var(--sx-amber-text);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.breakAll {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .panel :global(.sx-form-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .actions {
+    width: 100%;
+  }
+}

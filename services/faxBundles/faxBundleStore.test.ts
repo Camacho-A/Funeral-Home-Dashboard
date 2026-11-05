@@ -68,6 +68,7 @@ const bundle = (overrides: Partial<FaxBundle> = {}): FaxBundle => ({
   items: [{ position: 1, caseId: 'case-1', caseNumber: 'B2026-901', documentId: 'doc-1', documentVersion: 1, documentChecksumSha256: 'a'.repeat(64), pageCount: 1, numbering: 'filled_blank' }],
   caseIds: ['case-1'], applicationCount: 1, pdfStorageKey: `${ORG}/fax-bundles/x.pdf`, pdfChecksumSha256: 'b'.repeat(64), pdfSizeBytes: 100, pdfPageCount: 1,
   destinationName: 'Manatee County Vital Statistics', destinationFaxNumber: '9415545490', destinationAddress: '9415545490@fax.nuso.io', gatewayDomain: 'fax.nuso.io',
+  destinationId: null, providerKey: 'nuso', emailBody: '', settingsRevision: null,
   subject: 'Manors Cremation - DC Application Bundle DC-ABC234', senderAddress: null, createdBy: 'staff', createdAt: '2026-11-04T12:00:00.000Z', updatedAt: '2026-11-04T12:00:00.000Z',
   submissionId: null, sentBy: null, outlookContactedAt: null, submittedAt: null, outlookDraftId: null, internetMessageId: null, failureCode: null, failureMessage: null,
   confirmedBy: null, confirmedAt: null, deliveredAt: null, nusoReference: null, confirmationDocumentId: null, history: [], ...overrides,

@@ -53,6 +53,7 @@ Done with approval, step by step; nothing else in live Wix was changed
 | Piece | Code |
 |---|---|
 | Settings (destination, gateway, limit, on/off) | `domain/organization/organizationProfiles.ts` → `features.deathCertificateFax` (Manors only); `domain/faxBundles/faxSettings.ts` |
+| Fax Settings (destinations, provider, subject/message, cover page — administrators; branch `feat/fax-settings`) | `docs/FAX_SETTINGS.md` |
 | Statuses, reference, target day | `domain/faxBundles/faxBundle.ts` |
 | Checklist items | `domain/faxBundles/faxChecklist.ts` |
 | Bundle PDF + numbering | `services/faxBundles/faxBundlePdf.ts` |
