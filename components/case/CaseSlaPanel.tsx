@@ -40,7 +40,7 @@ function formatDate(date: string | null): string {
   return date ? new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—';
 }
 
-export function CaseSlaPanel({ case_, sla }: { case_: Case; sla: CaseSlaEvaluation }) {
+export function CaseSlaPanel({ case_, sla, compact = false }: { case_: Case; sla: CaseSlaEvaluation; /** In the case header, under the Current SLA line (2026-11): a small toggle, details in a card below it. */ compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [showTimes, setShowTimes] = useState(false);
 
@@ -54,7 +54,7 @@ export function CaseSlaPanel({ case_, sla }: { case_: Case; sla: CaseSlaEvaluati
   const timed = sla.events.filter((event) => event.occurred && event.time);
 
   return (
-    <section className={styles.panel} aria-label="SLA details">
+    <section className={compact ? styles.panelCompact : styles.panel} aria-label="SLA details">
       <button type="button" className={styles.toggle} aria-expanded={open} onClick={() => setOpen((value) => !value)}>
         <span>SLA details</span>
         <span aria-hidden="true">{open ? '▴' : '▾'}</span>

@@ -38,6 +38,7 @@ export function CaseHeader({
   stages,
   onStepClick,
   sla,
+  slaDetails,
   actions,
 }: {
   caseNumber: string;
@@ -63,6 +64,8 @@ export function CaseHeader({
   /** SLA tracking (2026-10): when present, the header shows business days
       in stage and the current SLA in place of the old per-stage target. */
   sla?: CaseSlaEvaluation | null;
+  /** The SLA details toggle, under the Current SLA line (2026-11). */
+  slaDetails?: React.ReactNode;
   /** Case-level actions shown under the case's identity (Print Label,
       2026-10). Omitted → nothing renders. */
   actions?: React.ReactNode;
@@ -123,7 +126,10 @@ export function CaseHeader({
             />
           )}
           {sla ? (
-            <CurrentSlaLine sla={sla} />
+            <>
+              <CurrentSlaLine sla={sla} />
+              {slaDetails}
+            </>
           ) : (
             <span className={`${styles.slaLine} ${isOverdue ? styles.slaOverdue : styles.slaNeutral}`}>
               {daysWaitingInStage}d in stage · target {slaTargetLabel}
