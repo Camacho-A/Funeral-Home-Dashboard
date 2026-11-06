@@ -132,6 +132,102 @@
   color: var(--color-danger-text);
 }
 
+/* ---------- Case panel (2026-11 refresh) ----------
+   Line items as a divided list, the totals as a right-aligned summary, the
+   actions under them, then Payment history as its own section. */
+.card.card {
+  padding: 0;
+}
+
+.header.header {
+  margin: 0;
+}
+
+.orderBody {
+  padding-top: 8px;
+  padding-bottom: 16px;
+}
+
+.lineItems.lineItems {
+  gap: 0;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.lineItemRow.lineItemRow {
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--sx-border-soft);
+  font-size: 13.5px;
+  color: var(--sx-text);
+}
+
+.lineItemRow.lineItemRow:first-child {
+  border-top: 0;
+}
+
+.lineItemRow > :first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lineItemRow > :last-child {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.totalsBlock.totalsBlock {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--sx-border);
+  border-radius: 10px;
+  background: var(--sx-subtle);
+  font-variant-numeric: tabular-nums;
+}
+
+.balanceRow.balanceRow {
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 var(--sx-border);
+}
+
+.actions.actions {
+  gap: 8px;
+  margin: 0;
+}
+
+.recordPaymentPanel.recordPaymentPanel {
+  margin-top: 14px;
+  border-color: var(--sx-border);
+  border-radius: 10px;
+  background: var(--sx-subtle);
+}
+
+.historyTitle.historyTitle {
+  margin: 0 0 4px;
+}
+
+.card .history {
+  gap: 0;
+  margin: 0;
+}
+
+.historyRow.historyRow {
+  padding: 10px 0;
+  box-shadow: none;
+  border-top: 1px solid var(--sx-border-soft);
+  font-size: 13px;
+}
+
+.historyRow.historyRow:first-child {
+  border-top: 0;
+}
+
+.historyAmount {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Mobile Payment History fix (2026-10). `.historyDate`'s desktop
    `margin-left: auto` claims the ENTIRE free space of whatever flex line
    it lands on — including when `.historyRow`'s own `flex-wrap` gives it a
@@ -179,4 +275,8 @@
 .recordPaymentActions {
   display: flex;
   gap: var(--space-4);
+}
+
+.orderBody > :global(.sx-empty) + .actions {
+  margin-top: 12px;
 }

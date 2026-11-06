@@ -157,7 +157,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 32px;
-  align-items: start;
+  /* Case panels (2026-11): side by side, the two cards share a height and
+     their add/record footers line up along the bottom. */
+  align-items: stretch;
 }
 
 @media (max-width: 1200px) {

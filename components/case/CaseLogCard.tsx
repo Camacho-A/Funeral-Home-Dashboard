@@ -140,19 +140,25 @@ export function CaseLogCard({
   }
 
   return (
-    <div className={styles.card}>
-      <div className={styles.header}>
-        <div className={styles.title}>Case Log</div>
-        <button type="button" className={styles.printLink} onClick={onPrint}>
-          Print
-        </button>
-      </div>
-      <div className={styles.description}>
-        Preferences and special requests, plus every call to the ME, doctor&apos;s office, or next of
-        kin — who was contacted, what was said, and when.
+    <section className={`sx-panel ${styles.card}`} aria-label="Case Log">
+      <div className="sx-panel-head">
+        <div className="sx-panel-heading">
+          <h2 className="sx-panel-title">
+            Case Log {entries.length > 0 && <span className="sx-panel-count">{entries.length}</span>}
+          </h2>
+          <p className="sx-panel-sub">
+            Preferences and special requests, plus every call to the ME, doctor&apos;s office, or next of
+            kin — who was contacted, what was said, and when.
+          </p>
+        </div>
+        <div className="sx-panel-actions">
+          <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={onPrint}>
+            Print
+          </button>
+        </div>
       </div>
 
-      <div className={styles.entries}>
+      <div className={`sx-panel-body ${styles.entries}`}>
         {entries.length === 0 ? (
           <EmptyState message="No case log entries yet — add a note or logged call below." />
         ) : (
@@ -165,7 +171,9 @@ export function CaseLogCard({
                   entryRefs.current[entry.id] = el;
                 }}
                 className={styles.entry}
+                data-type={entry.type}
               >
+                <span className={styles.entryKind}>{entry.type === 'contact' ? 'Call' : 'Note'}</span>
                 {headline && <div className={styles.entryHeadline}>{headline}</div>}
                 {body && <div className={styles.entryBody}>{body}</div>}
                 <div className={styles.entryMeta}>
@@ -177,17 +185,18 @@ export function CaseLogCard({
         )}
       </div>
 
-      <div className={styles.tabs}>
+      <div className="sx-panel-foot">
+      <div className="sx-seg" role="group" aria-label="Entry type">
         <button
           type="button"
-          className={`${styles.tab} ${logType === 'note' ? styles.tabActive : styles.tabInactive}`}
+          aria-pressed={logType === 'note'}
           onClick={() => setLogType('note')}
         >
           Note
         </button>
         <button
           type="button"
-          className={`${styles.tab} ${logType === 'contact' ? styles.tabActive : styles.tabInactive}`}
+          aria-pressed={logType === 'contact'}
           onClick={() => setLogType('contact')}
         >
           Contact
@@ -261,6 +270,7 @@ export function CaseLogCard({
           {isSaving ? 'Saving…' : 'Add entry'}
         </Button>
       </div>
-    </div>
+      </div>
+    </section>
   );
 }

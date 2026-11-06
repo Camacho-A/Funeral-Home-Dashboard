@@ -505,3 +505,132 @@
   gap: 8px 12px;
   margin-top: 10px;
 }
+
+/* ---------- Case panels (2026-11) ----------
+   The case page's cards share one shape with the Next step checklist: a
+   header band (title, one-line description, actions), a body of divided
+   rows, and a soft footer band for adding or recording. */
+.sx-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  overflow: hidden;
+}
+
+.sx-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sx-border-soft);
+}
+
+.sx-panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sx-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.sx-panel-sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--sx-text-2);
+}
+
+.sx-panel-count {
+  min-width: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--sx-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sx-panel-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sx-panel-body {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 20px;
+}
+
+/* An empty body: the empty state sits in its own padding. */
+.sx-panel-body:has(> .sx-empty:only-child) {
+  padding: 16px 20px;
+}
+
+.sx-panel-section {
+  padding: 14px 20px;
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.sx-panel-section-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-panel-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--sx-border-soft);
+  background: var(--sx-subtle);
+}
+
+@media (max-width: 560px) {
+  .sx-panel-head,
+  .sx-panel-section,
+  .sx-panel-foot {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-panel-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+.sx-seg > button[aria-pressed='true'] {
+  background: #fff;
+  color: var(--sx-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.06);
+}
+
+.sx-panel-foot .sx-seg {
+  align-self: flex-start;
+}
