@@ -48,6 +48,29 @@ const show = () =>
   );
 
 describe('CrematoryPackageStatus', () => {
+  it('Gus (2026-11): no authorization document source — its own names, never Manors\' "page 3" / "Workflow 2", and never "Being prepared" for a page 3 it cannot have', async () => {
+    const { GUS_CAMACHO_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
+    const gus = summary({
+      readiness: { requirements: OK.map((r) => (r.key === 'crematory_form' ? req('crematory_form', false, 'No source set up.') : r.key === 'workflow_2' ? req('workflow_2', false, 'Not yet checked on the case: Authorization signed.') : r)), readyToBuild: false, readyToSend: false },
+      package: null,
+    });
+    expect(preparationDue(gus, false)).toBe(false);
+    expect(preparationDue(gus)).toBe(true); // Manors: page 3 would be extracted
+    fetchCrematoryCaseSummary.mockResolvedValue(gus);
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <CrematoryPackageStatus organizationId={GUS_CAMACHO_ORGANIZATION_ID} caseId="gus-case-003" />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText('Cremation authorization document')).toBeInTheDocument();
+    expect(screen.getByText('Authorization steps complete')).toBeInTheDocument();
+    expect(screen.getByText(/Made from the cremation authorization document and the state permit/)).toBeInTheDocument();
+    expect(screen.getByText('Needs attention')).toBeInTheDocument();
+    expect(screen.queryByText(/page 3/i)).toBeNull();
+    expect(screen.queryByText(/Workflow 2/)).toBeNull();
+    expect(screen.queryByText('Being prepared')).toBeNull();
+  });
+
   it('a current package with nothing else outstanding: ready for final review and sending, its file name and version, every source ticked', async () => {
     fetchCrematoryCaseSummary.mockResolvedValue(summary());
     show();

@@ -116,14 +116,19 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
       : 'A newer Arrangement Form arrived. Extract the Crematory Form again.');
 
   const missing = input.workflow2Missing ?? [];
-  add('workflow_2', 'Workflow 2 complete', input.workflow2Complete === true,
+  // "Workflow 2" is Manors' name for its authorization stage; an organization
+  // with no authorization document source (Gus, 2026-11) gets plain names.
+  const manorsNames = input.authorizationDocumentSource !== 'not_configured';
+  add('workflow_2', manorsNames ? 'Workflow 2 complete' : 'Authorization steps complete', input.workflow2Complete === true,
     input.workflow2Complete === null
-      ? "This case's workflow has no stage 2."
+      ? manorsNames ? "This case's workflow has no stage 2." : "This case's workflow has no authorization stage."
       : missing.length > 0
         ? `${input.medicalExaminerCase ? 'Medical Examiner case — not' : 'Not'} yet checked on the case: ${missing.join(' · ')}.`
-        : input.medicalExaminerCase
-          ? 'Check every Medical Examiner verification step of workflow 2 on the case.'
-          : 'Check every step of workflow 2 (EDRS & Doctor / Cause of Death).');
+        : !manorsNames
+          ? 'Check every step of the authorization stage on the case.'
+          : input.medicalExaminerCase
+            ? 'Check every Medical Examiner verification step of workflow 2 on the case.'
+            : 'Check every step of workflow 2 (EDRS & Doctor / Cause of Death).');
 
   add('package_name', 'Name for the package confirmed', input.packageNameConfirmed,
     "Enter or confirm the decedent's last name and first name(s) exactly as they should appear in the file name.");

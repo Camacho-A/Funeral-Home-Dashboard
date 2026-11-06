@@ -94,4 +94,12 @@ describe('evaluateCrematoryReadiness', () => {
     // Absent and 'arrangement_form_page' are the Manors behaviour, unchanged.
     expect(evaluateCrematoryReadiness({ ...ready, authorizationDocumentSource: 'arrangement_form_page' })).toEqual(evaluateCrematoryReadiness(ready));
   });
+
+  it('names: "Workflow 2" is Manors\' — with no authorization document source the step is "Authorization steps complete" (2026-11)', () => {
+    const label = (input: typeof ready) => evaluateCrematoryReadiness(input).requirements.find((r) => r.key === 'workflow_2');
+    expect(label(ready)?.label).toBe('Workflow 2 complete');
+    const gus = label({ ...ready, authorizationDocumentSource: 'not_configured', workflow2Complete: false, workflow2Missing: [] });
+    expect(gus?.label).toBe('Authorization steps complete');
+    expect(gus?.detail).toBe('Check every step of the authorization stage on the case.');
+  });
 });
