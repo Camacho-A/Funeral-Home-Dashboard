@@ -645,8 +645,10 @@
 
 .sx-docs-layout:has(.sx-docs-rail > *) {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
-  gap: 48px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  /* Closer than Overview's 48px (2026-11): the list's status column ends at
+     its right edge, so a wide gap read as empty space. */
+  gap: 24px;
   align-items: start;
 }
 
