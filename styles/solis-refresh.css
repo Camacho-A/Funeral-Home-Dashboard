@@ -389,7 +389,12 @@
   font-weight: 600;
 }
 
+/* The full description (2026-11): the two-line clamp above, with overflow
+   left visible here, showed "…" and then the third line spilling below the
+   card. The card grows to fit instead. */
 .sx-refresh .sx-settings-hub .sx-dir-desc {
+  display: block;
+  -webkit-line-clamp: unset;
   margin-top: 3px;
   white-space: normal;
   overflow: visible;
