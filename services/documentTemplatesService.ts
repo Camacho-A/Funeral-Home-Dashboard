@@ -10,6 +10,7 @@ import {
 } from '../lib/wixDocumentTemplateMapper';
 import type { DocumentTemplate, DocumentTemplateCategory, DocumentTemplateStatus, DocumentTemplateVersion } from '../types/documentTemplate';
 import { isValidDocumentTypeKey } from '../domain/documents/documentTypeRegistry';
+import { isDocumentTypeAvailable } from '../domain/documents/documentTypeAvailability';
 import { validateMergeTokens, mergeTemplate, resolveMergeContext, extractMergeTokens, type MergeSourceData } from '../domain/documents/mergeEngine';
 import { sanitizeTemplateBody } from '../domain/documents/sanitizeTemplateBody';
 import {
@@ -132,6 +133,9 @@ export async function createTemplate(
 ): Promise<DocumentTemplate> {
   if (!isValidDocumentTypeKey(params.documentTypeKey)) {
     throw new DocumentTemplateServiceError(`Unrecognized document type key: "${params.documentTypeKey}".`);
+  }
+  if (!isDocumentTypeAvailable(params.organizationId, params.documentTypeKey)) {
+    throw new DocumentTemplateServiceError('That document type is not available for this organization.');
   }
   const sanitizedBody = validateAndSanitizeBody(params.body);
 

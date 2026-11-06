@@ -33,7 +33,8 @@ import {
   isCaseDocumentEligibleForBulkAction,
 } from '@/domain/documents/caseDocumentDisplay';
 import type { BulkDocumentExclusion } from '@/lib/caseDocumentsClient';
-import { getDocumentTypeDefinition, UPLOADABLE_DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
+import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
+import { uploadableDocumentTypesFor } from '@/domain/documents/documentTypeAvailability';
 import { buildCaseDocumentDownloadUrl, buildCaseDocumentViewUrl } from '@/lib/caseDocumentsClient';
 import { ConfirmActionDialog } from '@/components/settings/ConfirmActionDialog';
 import { RemoveDocumentDialog } from './RemoveDocumentDialog';
@@ -536,7 +537,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
                     disabled={upload.isPending}
                   >
                     <option value="">No document type</option>
-                    {UPLOADABLE_DOCUMENT_TYPES.map((type) => (
+                    {uploadableDocumentTypesFor(organizationId).map((type) => (
                       <option key={type.key} value={type.key}>
                         {type.displayName}
                       </option>

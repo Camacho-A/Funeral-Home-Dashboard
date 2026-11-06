@@ -5,6 +5,7 @@ import { requireSameOrigin } from '@/lib/auth/csrf';
 import { canGenerateDocument, canUploadDocument } from '@/services/authorizationPolicyService';
 import { upload, DocumentServiceError } from '@/services/documentService';
 import { DOCUMENT_TYPES, isValidDocumentTypeKey, SOLIS_BUILT_DOCUMENT_TYPE_KEYS } from '@/domain/documents/documentTypeRegistry';
+import { isDocumentTypeAvailable } from '@/domain/documents/documentTypeAvailability';
 import { ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY } from '@/domain/documents/arrangementPageExtracts';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { addPermit, CrematoryError, prepareCrematoryDocuments } from '@/services/crematory/crematoryPackageService';
@@ -76,6 +77,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   const authResult = await requireAuthorizedOrganization(organizationId);
   if (!authResult.authorized) return authResult.response;
   const { organizationId: resolvedOrganizationId, userId, role } = authResult.context;
+  // A type that belongs to another organization's feature (2026-11) is never accepted.
+  if (typeof documentTypeKey === 'string' && !isDocumentTypeAvailable(resolvedOrganizationId, documentTypeKey)) {
+    return NextResponse.json({ error: 'That document type is not available for this organization.' }, { status: 400 });
+  }
   // Send to Crematory (2026-10): page 3 and the package are built by SOLIS
   // from their sources, so a file is never uploaded as one of them.
   if (typeof documentTypeKey === 'string' && SOLIS_BUILT_DOCUMENT_TYPE_KEYS.has(documentTypeKey) && sendToCrematoryConfig(resolvedOrganizationId)) {

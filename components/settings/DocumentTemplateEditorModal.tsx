@@ -6,12 +6,15 @@ import { TextField } from '@/components/ui/TextField';
 import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
 import { useCreateDocumentTemplate, useCreateDocumentTemplateVersion, usePreviewDocumentTemplate } from '@/hooks/useDocumentTemplates';
-import { DOCUMENT_TYPES, getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
+import { getDocumentTypeDefinition } from '@/domain/documents/documentTypeRegistry';
+import { documentTypesFor } from '@/domain/documents/documentTypeAvailability';
 import { MERGE_FIELD_CATALOG } from '@/domain/documents/mergeEngine';
 import type { DocumentTemplate } from '@/types/documentTemplate';
 import styles from './DocumentTemplateEditorModal.module.css';
 
-const DOCUMENT_TYPE_OPTIONS = Object.values(DOCUMENT_TYPES).sort((a, b) => a.category.localeCompare(b.category) || a.displayName.localeCompare(b.displayName));
+/** This organization's document types only (2026-11), by category then name. */
+const documentTypeOptions = (organizationId: string) =>
+  [...documentTypesFor(organizationId)].sort((a, b) => a.category.localeCompare(b.category) || a.displayName.localeCompare(b.displayName));
 
 /**
  * Phase 25 (Document Generation & Template Management). Create-or-edit
@@ -125,7 +128,7 @@ export function DocumentTemplateEditorModal({
                 <option value="" disabled>
                   Select a document type…
                 </option>
-                {DOCUMENT_TYPE_OPTIONS.map((def) => (
+                {documentTypeOptions(organizationId).map((def) => (
                   <option key={def.key} value={def.key}>
                     {def.displayName}
                   </option>

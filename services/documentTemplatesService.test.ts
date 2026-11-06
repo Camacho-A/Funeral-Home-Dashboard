@@ -63,6 +63,13 @@ async function createSampleTemplate(overrides: Partial<Parameters<typeof createT
 }
 
 describe('createTemplate', () => {
+  it('refuses a document type that belongs to another organization\'s feature (2026-11) — the Manatee application is Manors-only', async () => {
+    const MANATEE = 'vital_records.manatee_death_certificate_application';
+    await expect(createSampleTemplate({ organizationId: 'gus-camacho-jr', documentTypeKey: MANATEE, category: 'internal_form' })).rejects.toThrow('not available for this organization');
+    const manors = await createSampleTemplate({ documentTypeKey: MANATEE, category: 'internal_form' });
+    expect(manors.documentTypeKey).toBe(MANATEE);
+  });
+
   it('creates a template with version 1 and records document.template.created', async () => {
     const template = await createSampleTemplate();
     expect(template.versions).toHaveLength(1);
