@@ -115,6 +115,9 @@ describe('CrematoryPackageStatus', () => {
       for (const over of [{ permit: PERMIT, canPrepare: true, lastSubmission: sent }, { permit: PERMIT, canPrepare: true, lastSubmission: { ...sent, status: 'uncertain' as const } }, { permit: PERMIT, canPrepare: false }]) {
         fetchCrematoryCaseSummary.mockResolvedValue(summary(over));
         const { unmount } = show();
+        // A sent case folds its rows (2026-11): open them to check.
+        const details = await screen.findByRole('button', { name: 'Show details' }).catch(() => null);
+        if (details) fireEvent.click(details);
         expect(await screen.findByText(/FICTIONAL PERMIT\.pdf/)).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Replace permit' })).toBeNull();
         unmount();
@@ -165,5 +168,21 @@ describe('CrematoryPackageStatus', () => {
     const { container } = show();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('once sent, the rows fold behind "Show details" (2026-11)', async () => {
+    const sent = { submissionId: 's', status: 'submitted' as const, packageDocumentId: 'pkg', packageVersion: 2, attachmentName: 'x.pdf', to: [], cc: [], mailbox: null, internetMessageId: null, error: null, at: '2026-10-27T15:00:00.000Z', by: null };
+    fetchCrematoryCaseSummary.mockResolvedValue(summary({ lastSubmission: sent }));
+    show();
+    fireEvent.click(await screen.findByRole('button', { name: 'Show details' }));
+    expect(screen.getByText(/Arrangement Form page 3/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it('shows how many requirements are ready, and links to the package itself (2026-11)', async () => {
+    fetchCrematoryCaseSummary.mockResolvedValue(summary());
+    show();
+    expect(await screen.findByRole('progressbar', { name: 'Crematory Package progress' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute('href', expect.stringContaining('/documents/'));
   });
 });

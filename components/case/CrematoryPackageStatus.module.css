@@ -1,58 +1,183 @@
+/* Crematory Package on the Documents tab (2026-11 refresh): a case panel
+   (.sx-panel) — the file and status in the header band, progress, then one
+   row per thing the package needs. */
 .panel {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface-card);
-  padding: var(--space-3) var(--space-4);
-  margin-bottom: var(--space-4);
-}
-
-.head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
 
 /* The status names what still blocks sending (2026-10) — longer than a
    one-word chip, so it may wrap on a narrow screen instead of overflowing. */
-.head > :global(.sx-status) {
+.status {
+  flex: none;
+  max-width: 50%;
   white-space: normal;
-  max-width: 100%;
-}
-
-.title {
-  margin: 0;
-  font-size: var(--font-size-13-5);
-  font-weight: 600;
-  color: var(--color-text-primary);
+  text-align: right;
 }
 
 .file {
-  margin: var(--space-2) 0 0;
-  font-size: var(--font-size-12-5);
-  color: var(--color-text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.fileName {
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
+.open {
+  font-weight: 500;
+  color: var(--sx-link);
+}
+
+.banner {
+  margin: 12px 20px 0;
+  background: var(--sx-amber-bg);
+  color: var(--sx-amber-text);
+  border: 1px solid oklch(0.9 0.05 75);
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px 4px;
+  font-size: 12.5px;
+  color: var(--sx-text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--sx-border);
+  overflow: hidden;
+}
+
+.bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--sx-navy);
+  transition: width 300ms ease;
 }
 
 .list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 4px 20px 8px;
   list-style: none;
-  margin: var(--space-2) 0 0;
-  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+/* Done: a green check; to do: an amber ring. */
+.mark {
+  flex: none;
   display: grid;
-  gap: var(--space-1);
-  font-size: var(--font-size-12-5);
-  color: var(--color-text-primary);
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 2px solid var(--sx-amber-text);
+  background: var(--sx-amber-bg);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.ok {
-  color: var(--color-success-text);
+.row[data-ok] .mark {
+  border-color: var(--sx-green);
+  background: var(--sx-green);
 }
 
-.todo {
-  color: var(--color-warning-text);
+.rowText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowLabel {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--sx-text);
+}
+
+.row[data-ok] .rowLabel {
+  color: var(--sx-text-2);
 }
 
 .detail {
-  color: var(--color-text-muted);
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--sx-muted);
+  overflow-wrap: anywhere;
+}
+
+.rowAction {
+  flex: none;
+}
+
+@media (max-width: 560px) {
+  :global(.sx-panel-head):has(> .status) {
+    flex-wrap: wrap;
+  }
+
+  .status {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .banner {
+    margin: 12px 16px 0;
+  }
+
+  .progress,
+  .list {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .rowAction {
+    flex-basis: 100%;
+    padding-left: 32px;
+  }
+}
+
+.foldBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px;
+  font-size: 13px;
+  color: var(--sx-green-text);
+}
+
+@media (max-width: 560px) {
+  .foldBar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
 }
