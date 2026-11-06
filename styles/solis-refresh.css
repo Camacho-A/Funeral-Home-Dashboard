@@ -849,3 +849,25 @@
   margin: 0;
   font: inherit;
 }
+
+/* The catalog tables have seven columns (2026-11): whenever their panel is
+   narrower than the table needs (a tablet, or a laptop with the Settings
+   menu open) they become the same stacked rows as on a phone, instead of
+   squeezing the code column to a few letters and cutting off the actions. */
+.sx-refresh .sx-catalog-panel {
+  container-type: inline-size;
+}
+
+@container (max-width: 860px) {
+  .sx-catalog-panel .sx-table-stack thead { display: none; }
+  .sx-catalog-panel .sx-table-stack,
+  .sx-catalog-panel .sx-table-stack tbody,
+  .sx-catalog-panel .sx-table-stack tr,
+  .sx-catalog-panel .sx-table-stack td { display: block; width: 100%; }
+  .sx-catalog-panel .sx-table-stack tr { padding: 12px 0; border-bottom: 1px solid var(--sx-border-soft); }
+  .sx-catalog-panel .sx-table-stack td { height: auto; padding: 2px 0 !important; border: none; }
+  .sx-catalog-panel .sx-table-stack td[data-label]:not([data-primary])::before { content: attr(data-label) ' '; color: var(--sx-muted); font-size: 12.5px; }
+  .sx-catalog-panel .sx-table-stack td.sx-num { text-align: left !important; }
+  .sx-catalog-panel .sx-table-stack td[data-primary] { font-weight: 500; padding-bottom: 4px !important; }
+  .sx-catalog-panel .sx-table-stack .sx-row-actions { justify-content: flex-start; margin-top: 6px; }
+}

@@ -62,3 +62,18 @@
   letter-spacing: 0;
   text-transform: none;
 }
+
+/* Phones: the Generate buttons take the full width under the title,
+   inside the panel (2026-11 — in the header band's actions they were
+   wider than the panel). */
+@media (max-width: 560px) {
+  .head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .head > :global(.sx-panel-actions) {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+}
