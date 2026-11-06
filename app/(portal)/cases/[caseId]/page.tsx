@@ -284,6 +284,14 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
    * what guarantees no duplicate rendering, no second copy of the card's
    * internal edit state, and no duplicated content for screen readers.
    */
+  // SLA tracking (2026-10): details collapsed — under Case Information in
+  // the right-hand rail (2026-11), and on the mobile Case Info tab.
+  const slaPanel = viewModel.sla?.enabled ? (
+    <div className={styles.railSla}>
+      <CaseSlaPanel case_={case_} sla={viewModel.sla} />
+    </div>
+  ) : null;
+
   const caseInformationPanel = (
           <CaseInformationCard
             decedentMiddleName={case_.decedentMiddleName}
@@ -403,11 +411,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       )}
       {printLabelOpen && (
         <PrintLabelDialog open onClose={() => setPrintLabelOpen(false)} caseId={case_.id} organizationId={organizationId} />
-      )}
-
-      {/* SLA tracking (2026-10): details collapsed under the header. */}
-      {viewModel.sla?.enabled && (
-        <CaseSlaPanel case_={case_} sla={viewModel.sla} />
       )}
 
       {/* Case concurrency (2026-10): a save refused because the case changed
@@ -535,6 +538,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       {activeTab === 'caseInfo' && isMobileTabs && (
         <section className={styles.caseInfoTab} aria-label="Case details">
           {caseInformationPanel}
+          {slaPanel}
         </section>
       )}
       {activeTab === 'schedule' && <CaseScheduleTab caseId={caseId} />}
@@ -636,6 +640,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
           {!isMobileTabs && (
             <aside className={styles.overviewRail} aria-label="Case details">
               {caseInformationPanel}
+              {slaPanel}
             </aside>
           )}
         </div>

@@ -218,3 +218,8 @@
   font-size: var(--font-size-13-5);
   color: var(--color-text-secondary);
 }
+
+/* SLA details under Case Information (2026-11). */
+.railSla {
+  margin-top: 14px;
+}
