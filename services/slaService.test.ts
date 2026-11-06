@@ -89,12 +89,13 @@ describe('recordSlaEvent', () => {
     expect(current('1042').checklistState['2:2']).toBe(false);
   });
 
-  it('recording the attestation starts the Hard Save SLA and leaves "Attestation Received / Hard Saved" open', async () => {
+  it('recording the attestation completes "Attestation received / Cause of death entered" (2026-11), starts the Hard Save SLA and leaves "Hard Saved" open', async () => {
     useCase('1042', { rawStage: 3 });
     await recordSlaEvent(ctx, '1042', 'attestation_received', ny('2026-10-20', '10:00'), 'mock', ny('2026-10-20', '10:05'));
+    expect(current('1042').checklistState['2:1']).toBe(true);
     expect(current('1042').checklistState['2:2']).toBeUndefined();
     expect(current('1042').checklistCompletions?.['2:2']).toBeUndefined();
-    expect(events(ACTIVITY_EVENT_TYPES.CASE_CHECKLIST_COMPLETED_AUTOMATICALLY)).toHaveLength(0);
+    expect(events(ACTIVITY_EVENT_TYPES.CASE_CHECKLIST_COMPLETED_AUTOMATICALLY)).toHaveLength(1);
     const sla = evaluateCaseSla(current('1042'), normalizeSlaSettings({}, true), ny('2026-10-20', '11:00'));
     expect(sla.current).toMatchObject({ key: 'hard_save', state: 'active' });
   });

@@ -94,6 +94,15 @@ describe('Doctor attestation → same-day Hard Save → approval', () => {
     expect(milestone(atEdrs(), 'doctor_attestation', ny('2026-10-14'))).toMatchObject({ state: 'active', deadline: '2026-10-19', responsibleParty: 'doctor', external: true });
   });
 
+  it('ticking "Attestation received / Cause of death entered" completes the doctor attestation and starts the Hard Save (2026-11)', () => {
+    const attested = atEdrs({
+      checklistState: { '2:0': true, '2:1': true },
+      checklistCompletions: { '2:0': done(ny('2026-10-13', '09:00')), '2:1': done(ny('2026-10-15', '11:00')) },
+    });
+    expect(milestone(attested, 'doctor_attestation', ny('2026-10-15', '12:00'))).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-15' } });
+    expect(milestone(attested, 'hard_save', ny('2026-10-15', '12:00'))).toMatchObject({ state: 'active' });
+  });
+
   it('a legacy tick with no completion record asks for a start date', () => {
     const legacy = atEdrs({ checklistCompletions: undefined });
     expect(milestone(legacy, 'doctor_attestation', ny('2026-10-14'))).toMatchObject({ state: 'start_date_needed' });

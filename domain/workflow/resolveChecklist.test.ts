@@ -689,9 +689,9 @@ describe('Medical Examiner cases (2026-10)', () => {
     expect(items.map((i) => i.index)).toEqual([0, 1, 2]);
     expect(items.map((i) => i.label)).toEqual([
       'EDRS submitted & sent to doctor',
-      'Cause of death entered',
-      // Display-only relabel (checklistRelabel.ts); the stored label is unchanged.
-      'Attestation Received / Hard Saved',
+      // Display-only relabels (checklistRelabel.ts); the stored labels are unchanged.
+      'Attestation received / Cause of death entered',
+      'Hard Saved',
     ]);
   });
 
@@ -761,7 +761,7 @@ describe('resolveChecklist — relabeled checklist items', () => {
   const EDRS_ITEMS = EDRS_STAGE.checklist.items;
   const EDRS_DISPLAY_STAGE = EDRS_STAGE.displayStage;
   const OLD = 'Hardsave for state approval if not an online doctor';
-  const NEW = 'Attestation Received / Hard Saved';
+  const NEW = 'Hard Saved';
 
   const edrsCase = (overrides: Partial<Case> = {}) =>
     baseCase({ organizationId: 'managed-cremations', rawStage: 3, checklistState: {}, ...overrides });

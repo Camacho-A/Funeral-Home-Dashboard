@@ -78,6 +78,8 @@ export type SlaDerivedEventKey = 'cremains_received' | 'released' | 'me_verified
 
 const CHECKLIST_EVENTS: Partial<Record<SlaEventKey | SlaDerivedEventKey, ReadonlyArray<{ displayStage: number; index: number; expectedLabel: string }>>> = {
   edrs_submitted: [{ displayStage: 2, index: 0, expectedLabel: 'EDRS submitted & sent to doctor' }],
+  // Shown as "Attestation received / Cause of death entered" (2026-11).
+  attestation_received: [{ displayStage: 2, index: 1, expectedLabel: 'Cause of death entered' }],
   hard_saved: [{ displayStage: 2, index: 2, expectedLabel: 'Hardsave for state approval if not an online doctor' }],
   permit_sent: [{ displayStage: 3, index: 0, expectedLabel: 'Permit sent to crematory' }],
   sent_to_crematory: [
@@ -353,7 +355,7 @@ function resolveEvents(case_: SlaCase, calendar: BusinessCalendar): Record<SlaEv
   // Hard Save is the submission for state approval, unless a separate
   // submission time was recorded.
   const submitted = either(submittedRecorded, hardSaved.occurred ? { ...hardSaved } : NOT_OCCURRED);
-  const attestation = either(recorded('attestation_received'), hardSaved.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
+  const attestation = either(recorded('attestation_received'), fromChecklist('attestation_received'), hardSaved.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const edrs = either(recorded('edrs_submitted'), fromChecklist('edrs_submitted'), attestation.occurred ? OCCURRED_TIME_UNKNOWN : NOT_OCCURRED);
   const caseReceived = either(recorded('case_received'), OCCURRED_TIME_UNKNOWN);
 

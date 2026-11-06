@@ -192,9 +192,9 @@ describe('readiness — what needs attention', () => {
     expect(summary.readiness).toMatchObject({ readyToBuild: true, readyToSend: false });
     expect(summary.package).toMatchObject({ current: true });
     expect(summary.readiness.requirements.filter((r) => !r.ok)).toEqual([
-      { key: 'workflow_2', label: 'Workflow 2 complete', ok: false, detail: 'Not yet checked on the case: Cause of death entered · Attestation Received / Hard Saved.' },
+      { key: 'workflow_2', label: 'Workflow 2 complete', ok: false, detail: 'Not yet checked on the case: Attestation received / Cause of death entered · Hard Saved.' },
     ]);
-    expect(summary.workflow2).toEqual({ displayStage: 2, medicalExaminer: false, missing: ['Cause of death entered', 'Attestation Received / Hard Saved'] });
+    expect(summary.workflow2).toEqual({ displayStage: 2, medicalExaminer: false, missing: ['Attestation received / Cause of death entered', 'Hard Saved'] });
     await expect(reviewCrematorySend(ORG, ['1042'], 'mock')).rejects.toMatchObject({ status: 422, message: expect.stringContaining('Workflow 2 complete') });
     // Nothing on the workflow was checked by SOLIS.
     expect(caseFixtures[index('1042')].checklistState).toEqual({ '2:0': true });

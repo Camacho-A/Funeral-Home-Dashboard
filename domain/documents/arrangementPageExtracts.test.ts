@@ -61,7 +61,7 @@ describe('Crematory Form workflow trigger (2026-10)', () => {
   it('is ready when the last step of workflow 2 is checked and "Permit sent to crematory" is pending', () => {
     expect(crematoryFormWorkflowState(manors({}))).toMatchObject({ ready: false, nextStepLabel: 'Permit sent to crematory' });
     expect(crematoryFormWorkflowState(manors({ '2:0': true, '2:1': true }))?.ready).toBe(false);
-    expect(crematoryFormWorkflowState(manors({ '2:2': true }))).toEqual({ ready: true, lastStepLabel: 'Attestation Received / Hard Saved', nextStepLabel: 'Permit sent to crematory' });
+    expect(crematoryFormWorkflowState(manors({ '2:2': true }))).toEqual({ ready: true, lastStepLabel: 'Hard Saved', nextStepLabel: 'Permit sent to crematory' });
     expect(crematoryFormWorkflowState(manors({ '2:2': true, '3:0': true }))?.ready).toBe(false);
   });
 
@@ -79,6 +79,6 @@ describe('Crematory Form workflow trigger (2026-10)', () => {
   });
 
   it('checking that step counts as the permit confirmation for the button too', () => {
-    expect(crematoryPermitStatus(manors({ '2:2': true }))).toEqual({ confirmed: true, basis: '"Attestation Received / Hard Saved" checked' });
+    expect(crematoryPermitStatus(manors({ '2:2': true }))).toEqual({ confirmed: true, basis: '"Hard Saved" checked' });
   });
 });
