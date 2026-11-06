@@ -564,6 +564,19 @@ describe('the Crematory Package — one PDF per decedent', () => {
     expect(eventsOf('1042', 'crematory.permit_confirmed')).toHaveLength(1);
   });
 
+  it('the first permit uploaded marks the state approval for the SLA, at its upload time — never over a recorded time (2026-11)', async () => {
+    await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-approval');
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    const permit = caseDocumentFixtures.find((d) => d.id === 'permit-approval')!;
+    expect(caseFixtures[index('1042')].slaEvents?.approval_received).toMatchObject({ at: new Date(permit.createdAt).toISOString(), source: 'automatic', recordedBy: null });
+    // A later permit (or another preparation) never moves it.
+    const first = caseFixtures[index('1042')].slaEvents!.approval_received!.at;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await pkg.addPermit(ctx(), '1042', { fileName: 'State Permit 2.pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-B', 1) }, { replacesDocumentId: 'permit-approval', mayReplace: true }, 'mock');
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect(caseFixtures[index('1042')].slaEvents!.approval_received!.at).toBe(first);
+  });
+
   it('a replaced permit clears the record; its replacement is recorded the same way (2026-11)', async () => {
     await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-first');
     await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');

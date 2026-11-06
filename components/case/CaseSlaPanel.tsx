@@ -1,14 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { Case } from '@/types/case';
-import { SLA_DELAY_REASONS, SLA_EVENT_KEYS, type SlaDelayReason, type SlaEventKey, type SlaMilestoneKey } from '@/types/sla';
 import {
   SLA_DELAY_REASON_LABEL,
-  SLA_EVENT_LABEL,
   SLA_EVENT_SOURCE_LABEL,
-  SLA_MILESTONE_EVENTS,
   SLA_RESPONSIBLE_LABEL,
   SLA_STATUS_LABEL,
   delayHistory,
@@ -22,32 +18,14 @@ import styles from './CaseSlaPanel.module.css';
 
 /**
  * SLA tracking (2026-10) — the case's SLA details, collapsed under the
- * header so the header itself stays compact. Only what needs attention is
- * shown as a card (2026-11): the milestone in progress, one waiting for a
- * start date, or one with an open delay. Finished, later and never-recorded
- * milestones are one line each; the recorded times and the form to record
- * a time sit behind "Recorded times". It lets
- * staff who can edit the case record what SOLIS cannot see for itself: when
- * the attestation arrived, when the state approved, when the crematory
- * received the decedent, and delays. The numbers come from the same
- * evaluation the header and the dashboard use.
+ * header so the header itself stays compact. Read-only (2026-11): every
+ * time comes from what SOLIS sees itself — the case's creation, checklist
+ * ticks, the permit upload, the send to the crematory, the ashes picked up
+ * and the release — so staff never record anything here. Only a milestone
+ * in progress (or with an open delay) is a card; finished, never-recorded
+ * and later milestones are one line each; the recorded times sit behind a
+ * toggle.
  */
-
-type SlaAction =
-  | { action: 'record_event'; event: SlaEventKey; at: string }
-  | { action: 'record_delay'; milestone: SlaMilestoneKey; reason: SlaDelayReason; notes: string | null; expectedResolutionDate: string | null }
-  | { action: 'resolve_delay'; delayId: string };
-
-async function postSlaAction(organizationId: string, caseId: string, body: SlaAction): Promise<Case | null> {
-  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/sla`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ organizationId, ...body }),
-  });
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error ?? 'The SLA update could not be saved.');
-  return (result.case ?? null) as Case | null;
-}
 
 function formatEventTime(time: EventTime | null): string {
   if (!time) return 'Time not recorded';
@@ -62,57 +40,14 @@ function formatDate(date: string | null): string {
   return date ? new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '—';
 }
 
-export function CaseSlaPanel({
-  case_,
-  sla,
-  organizationId,
-  canEdit,
-}: {
-  case_: Case;
-  sla: CaseSlaEvaluation;
-  organizationId: string;
-  canEdit: boolean;
-}) {
-  const queryClient = useQueryClient();
+export function CaseSlaPanel({ case_, sla }: { case_: Case; sla: CaseSlaEvaluation }) {
   const [open, setOpen] = useState(false);
-  const [eventKey, setEventKey] = useState<SlaEventKey>('attestation_received');
-  const [eventAt, setEventAt] = useState('');
-  const [delayFor, setDelayFor] = useState<SlaMilestoneKey | null>(null);
-  const [delayReason, setDelayReason] = useState<SlaDelayReason>('waiting_on_family');
-  const [delayNotes, setDelayNotes] = useState('');
-  const [delayExpected, setDelayExpected] = useState('');
-  /** "Recorded times" and the form to record a time (2026-11: closed until wanted). */
   const [showTimes, setShowTimes] = useState(false);
-  const whenRef = useRef<HTMLInputElement>(null);
 
-  /** One click from a milestone: pick its event and go to the time field. */
-  function startRecording(key: SlaEventKey) {
-    setEventKey(key);
-    setShowTimes(true);
-    setTimeout(() => {
-      whenRef.current?.scrollIntoView?.({ block: 'center' });
-      whenRef.current?.focus();
-    }, 0);
-  }
-
-  const mutation = useMutation({
-    mutationFn: (body: SlaAction) => postSlaAction(organizationId, case_.id, body),
-    onSuccess: (updated) => {
-      if (updated) queryClient.setQueryData(['case', organizationId, case_.id], updated);
-      void queryClient.invalidateQueries({ queryKey: ['case', organizationId, case_.id] });
-      void queryClient.invalidateQueries({ queryKey: ['cases'] });
-      setEventAt('');
-      setDelayFor(null);
-      setDelayNotes('');
-      setDelayExpected('');
-    },
-  });
-
-  const editable = canEdit && !case_.isDeleted;
   const visible = sla.milestones.filter((milestone) => milestone.state !== 'not_applicable');
   const needsAttention = (m: SlaMilestoneEvaluation) =>
     m.state === 'active' || m.state === 'start_date_needed' || m.overdue || delayHistory(case_, m.key).some((delay) => !delay.resolvedAt);
-  const open_ = visible.filter(needsAttention);
+  const current = visible.filter(needsAttention);
   const completed = visible.filter((m) => m.state === 'completed' && !needsAttention(m));
   const notRecorded = visible.filter((m) => m.state === 'not_recorded' && !needsAttention(m));
   const later = visible.filter((m) => m.state === 'not_started' && !needsAttention(m));
@@ -127,22 +62,10 @@ export function CaseSlaPanel({
 
       {open && (
         <div className={styles.body}>
-          {open_.length > 0 ? (
+          {current.length > 0 ? (
             <ul className={styles.milestones}>
-              {open_.map((milestone) => (
-                <MilestoneRow
-                  key={milestone.key}
-                  milestone={milestone}
-                  history={delayHistory(case_, milestone.key)}
-                  editable={editable}
-                  busy={mutation.isPending}
-                  onRecordDelay={() => {
-                    setDelayFor(milestone.key);
-                    setDelayReason(milestone.external ? (milestone.responsibleParty === 'doctor' ? 'waiting_on_doctor' : milestone.responsibleParty === 'crematory' ? 'crematory_delay' : 'other') : 'waiting_on_family');
-                  }}
-                  onResolve={(delayId) => mutation.mutate({ action: 'resolve_delay', delayId })}
-                  onRecordEvent={startRecording}
-                />
+              {current.map((milestone) => (
+                <MilestoneRow key={milestone.key} milestone={milestone} history={delayHistory(case_, milestone.key)} />
               ))}
             </ul>
           ) : (
@@ -157,7 +80,7 @@ export function CaseSlaPanel({
           )}
           {notRecorded.length > 0 && (
             <p className={styles.summaryLine}>
-              <span className={styles.muted}>Never recorded:</span> {notRecorded.map((m) => m.label).join(' · ')}
+              <span className={styles.muted}>Not recorded:</span> {notRecorded.map((m) => m.label).join(' · ')}
             </p>
           )}
           {later.length > 0 && (
@@ -167,7 +90,7 @@ export function CaseSlaPanel({
           )}
 
           <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.timesToggle}`} aria-expanded={showTimes} onClick={() => setShowTimes((value) => !value)}>
-            {showTimes ? 'Hide recorded times' : editable ? 'Recorded times · record a time' : 'Recorded times'}
+            {showTimes ? 'Hide recorded times' : 'Recorded times'}
           </button>
 
           {showTimes && (
@@ -185,120 +108,13 @@ export function CaseSlaPanel({
               </ul>
             </div>
           )}
-
-          {editable && delayFor && (
-            <form
-              className={styles.form}
-              onSubmit={(event) => {
-                event.preventDefault();
-                mutation.mutate({
-                  action: 'record_delay',
-                  milestone: delayFor,
-                  reason: delayReason,
-                  notes: delayNotes.trim() || null,
-                  expectedResolutionDate: delayExpected || null,
-                });
-              }}
-            >
-              <h4 className={styles.formTitle}>Record a delay — {visible.find((m) => m.key === delayFor)?.label}</h4>
-              <p className={styles.hint}>A delay explains a wait. It never moves the deadline or clears an overdue status.</p>
-              <div className={styles.formGrid}>
-                <label className="sx-field">
-                  <span className="sx-label">Reason</span>
-                  <select className="sx-select" value={delayReason} onChange={(event) => setDelayReason(event.target.value as SlaDelayReason)}>
-                    {SLA_DELAY_REASONS.map((reason) => (
-                      <option key={reason} value={reason}>
-                        {SLA_DELAY_REASON_LABEL[reason]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="sx-field">
-                  <span className="sx-label">Expected resolution (optional)</span>
-                  <input className="sx-input" type="date" value={delayExpected} onChange={(event) => setDelayExpected(event.target.value)} />
-                </label>
-              </div>
-              <label className="sx-field" style={{ marginTop: 10 }}>
-                <span className="sx-label">Notes (optional)</span>
-                <textarea className="sx-textarea" style={{ height: 64, padding: 8 }} value={delayNotes} maxLength={1000} onChange={(event) => setDelayNotes(event.target.value)} />
-              </label>
-              <div className={styles.formActions}>
-                <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => setDelayFor(null)} disabled={mutation.isPending}>
-                  Cancel
-                </button>
-                <button type="submit" className="sx-btn sx-btn-primary sx-btn-sm" disabled={mutation.isPending}>
-                  Save delay
-                </button>
-              </div>
-            </form>
-          )}
-
-          {editable && showTimes && (
-            <form
-              className={styles.form}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!eventAt) return;
-                mutation.mutate({ action: 'record_event', event: eventKey, at: new Date(eventAt).toISOString() });
-              }}
-            >
-              <h4 className={styles.formTitle}>Record a time</h4>
-              <p className={styles.hint}>
-                For what SOLIS cannot see for itself. Recording an EDRS submission, attestation, Hard Save or crematory send also completes its checklist item.
-              </p>
-              <div className={styles.formGrid}>
-                <label className="sx-field">
-                  <span className="sx-label">Event</span>
-                  <select className="sx-select" value={eventKey} onChange={(event) => setEventKey(event.target.value as SlaEventKey)}>
-                    {SLA_EVENT_KEYS.map((key) => (
-                      <option key={key} value={key}>
-                        {SLA_EVENT_LABEL[key]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="sx-field">
-                  <span className="sx-label">When</span>
-                  <input ref={whenRef} className="sx-input" type="datetime-local" value={eventAt} onChange={(event) => setEventAt(event.target.value)} required />
-                </label>
-              </div>
-              <div className={styles.formActions}>
-                <button type="submit" className="sx-btn sx-btn-primary sx-btn-sm" disabled={mutation.isPending || !eventAt}>
-                  {mutation.isPending ? 'Saving…' : 'Record'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {mutation.isError && (
-            <p className="sx-error-state" role="alert" style={{ marginTop: 10 }}>
-              {(mutation.error as Error).message}
-            </p>
-          )}
         </div>
       )}
     </section>
   );
 }
 
-function MilestoneRow({
-  milestone,
-  history,
-  editable,
-  busy,
-  onRecordDelay,
-  onResolve,
-  onRecordEvent,
-}: {
-  milestone: SlaMilestoneEvaluation;
-  history: ReturnType<typeof delayHistory>;
-  editable: boolean;
-  busy: boolean;
-  onRecordDelay: () => void;
-  onResolve: (delayId: string) => void;
-  onRecordEvent: (key: SlaEventKey) => void;
-}) {
-  const recordable = SLA_MILESTONE_EVENTS[milestone.key];
+function MilestoneRow({ milestone, history }: { milestone: SlaMilestoneEvaluation; history: ReturnType<typeof delayHistory> }) {
   const tone = slaTone(milestone.status);
   const deadline = describeDeadline(milestone);
   return (
@@ -308,11 +124,7 @@ function MilestoneRow({
           {milestone.label}
           {milestone.advisory && <span className={styles.advisory}> (reminder)</span>}
         </span>
-        {milestone.status ? (
-          <span className={`${styles.pill} ${styles[`pill_${tone}`]}`}>{SLA_STATUS_LABEL[milestone.status]}</span>
-        ) : (
-          <span className={styles.muted}>{milestone.state === 'not_started' ? 'Not started' : milestone.state === 'not_recorded' ? 'Not recorded' : ''}</span>
-        )}
+        {milestone.status && <span className={`${styles.pill} ${styles[`pill_${tone}`]}`}>{SLA_STATUS_LABEL[milestone.status]}</span>}
         {milestone.overdue && milestone.status !== 'overdue' && <span className={`${styles.pill} ${styles.pill_bad}`}>Overdue</span>}
       </div>
       <dl className={styles.facts}>
@@ -331,24 +143,16 @@ function MilestoneRow({
             </dd>
           </div>
         )}
-        {milestone.state === 'completed' && (
-          <div>
-            <dt>Completed</dt>
-            <dd>{milestone.completedAt ? formatEventTime(milestone.completedAt) : 'Completed — date not recorded'}</dd>
-          </div>
-        )}
         {milestone.state === 'start_date_needed' && (
           <div>
             <dt>Start</dt>
-            <dd>{milestone.note ?? 'Start date needed — choose Record start.'}</dd>
+            <dd>{milestone.note ?? 'Not known — this case started before SOLIS kept the time.'}</dd>
           </div>
         )}
-        {(milestone.state === 'active' || milestone.state === 'start_date_needed') && (
-          <div>
-            <dt>Responsible</dt>
-            <dd>{SLA_RESPONSIBLE_LABEL[milestone.responsibleParty]}</dd>
-          </div>
-        )}
+        <div>
+          <dt>Responsible</dt>
+          <dd>{SLA_RESPONSIBLE_LABEL[milestone.responsibleParty]}</dd>
+        </div>
         {milestone.note && milestone.state !== 'start_date_needed' && (
           <div>
             <dt>Note</dt>
@@ -363,38 +167,9 @@ function MilestoneRow({
               <strong>{SLA_DELAY_REASON_LABEL[delay.reason]}</strong> · {SLA_RESPONSIBLE_LABEL[delay.responsibleParty]}
               {delay.expectedResolutionDate ? ` · expected ${formatDate(delay.expectedResolutionDate)}` : ''}
               {delay.notes ? ` — ${delay.notes}` : ''}
-              <span className={styles.muted}>
-                {' '}
-                (recorded {new Date(delay.recordedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                {delay.resolvedAt ? `; ${delay.resolution === 'superseded' ? 'replaced' : 'resolved'} ${new Date(delay.resolvedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''})
-              </span>
-              {editable && !delay.resolvedAt && (
-                <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.inlineButton}`} onClick={() => onResolve(delay.id)} disabled={busy}>
-                  Resolve
-                </button>
-              )}
             </li>
           ))}
         </ul>
-      )}
-      {editable && (milestone.state === 'active' || milestone.state === 'start_date_needed' || milestone.state === 'not_recorded') && (
-        <div className={styles.rowActions}>
-          {milestone.state === 'start_date_needed' && recordable.start && (
-            <button type="button" className={`sx-btn sx-btn-sm ${styles.inlineButton}`} onClick={() => onRecordEvent(recordable.start!)} disabled={busy}>
-              Record start
-            </button>
-          )}
-          {recordable.stop && (
-            <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.inlineButton}`} onClick={() => onRecordEvent(recordable.stop!)} disabled={busy}>
-              Record completion
-            </button>
-          )}
-          {milestone.state !== 'not_recorded' && (
-            <button type="button" className={`sx-btn sx-btn-ghost sx-btn-sm ${styles.inlineButton}`} onClick={onRecordDelay} disabled={busy}>
-              Record delay
-            </button>
-          )}
-        </div>
       )}
     </li>
   );

@@ -125,7 +125,8 @@ export const SLA_MILESTONE_EVENTS: Record<SlaMilestoneKey, { start: SlaEventKey 
   doctor_attestation: { start: 'edrs_submitted', stop: 'attestation_received' },
   hard_save: { start: 'attestation_received', stop: 'hard_saved' },
   approval: { start: 'submitted_for_approval', stop: 'approval_received' },
-  crematory_turnaround: { start: 'crematory_received', stop: 'cremains_ready' },
+  // 2026-11: from the SOLIS send to the ashes picked up — both seen by SOLIS itself.
+  crematory_turnaround: { start: 'sent_to_crematory', stop: null },
   // Both ends of family pickup come from the case: Date Received (Schedule
   // tab) and the release (Record pickup).
   family_pickup: { start: null, stop: null },
@@ -165,7 +166,8 @@ export const SLA_STATUS_LABEL: Record<SlaStatus, string> = {
   waiting_on_others: 'Waiting on Others',
   exception_acknowledged: 'Exception Acknowledged',
   completed: 'Completed',
-  start_date_needed: 'Start Date Needed',
+  // 2026-11: nothing for staff to enter — the start simply is not known.
+  start_date_needed: 'Start Unknown',
 };
 
 export const SLA_DELAY_REASON_LABEL: Record<SlaDelayReason, string> = {
@@ -206,7 +208,8 @@ const MILESTONES: readonly MilestoneDefinition[] = [
   { key: 'doctor_attestation', responsible: 'doctor', start: 'edrs_submitted', stop: 'attestation_received', target: (s) => s.targets.doctorAttestation, standardCaseOnly: true },
   { key: 'hard_save', responsible: 'staff', start: 'attestation_received', stop: 'hard_saved', target: (s) => s.targets.hardSave, standardCaseOnly: true },
   { key: 'approval', responsible: 'state', start: 'submitted_for_approval', stop: 'approval_received', target: (s) => s.targets.approval },
-  { key: 'crematory_turnaround', responsible: 'crematory', start: 'crematory_received', stop: 'cremains_ready', target: (s) => s.targets.crematoryTurnaround },
+  // 2026-11: measured from the send to the ashes picked up — SOLIS sees neither the crematory's receipt nor its finishing.
+  { key: 'crematory_turnaround', responsible: 'crematory', start: 'sent_to_crematory', stop: 'cremains_received', target: (s) => s.targets.crematoryTurnaround },
   { key: 'family_pickup', responsible: 'family', start: 'cremains_received', stop: 'released', target: (s) => s.targets.familyPickup, advisory: true },
 ];
 

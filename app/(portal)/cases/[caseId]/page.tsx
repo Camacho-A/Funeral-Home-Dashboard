@@ -407,14 +407,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
       {/* SLA tracking (2026-10): details collapsed under the header. */}
       {viewModel.sla?.enabled && (
-        <CaseSlaPanel
-          case_={case_}
-          sla={viewModel.sla}
-          organizationId={organizationId}
-          // Same convention as the Schedule tab: unknown permissions show the
-          // controls and the server decides (the SLA route checks case edit).
-          canEdit={!permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('case.update')}
-        />
+        <CaseSlaPanel case_={case_} sla={viewModel.sla} />
       )}
 
       {/* Case concurrency (2026-10): a save refused because the case changed

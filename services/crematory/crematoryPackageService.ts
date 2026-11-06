@@ -54,6 +54,7 @@ import { mergePdfs, UnreadablePdfError } from '@/lib/pdf/mergePdfs';
 import { sendOutcomeNeedingReview, type SendOutcomeReview } from '@/domain/crematory/sendState';
 import { toDisplayCasingIfAllCaps } from '@/utils/string';
 import { ArrangementExtractError, extractArrangementPage } from '../arrangementPageExtractService';
+import { recordSlaEventAutomatically } from '../slaService';
 
 /**
  * Send to Crematory (2026-10). Everything between "the permit was uploaded"
@@ -1087,7 +1088,10 @@ export function prepareCrematoryDocuments(
   const previous = preparing.get(key) ?? Promise.resolve(NOT_NEEDED);
   const run = previous
     .catch(() => NOT_NEEDED)
-    .then(() => prepareWithLease(ctx, caseId, mode, options))
+    .then(async () => {
+      await recordApprovalFromPermit(ctx.organizationId, caseId, mode);
+      return prepareWithLease(ctx, caseId, mode, options);
+    })
     .catch((error) => {
       console.error(`[crematory-auto] Case ${caseId}: preparation failed:`, error instanceof Error ? error.message : error);
       return { crematoryForm: 'failed', package: 'failed' } as AutoPrepareResult;
@@ -1097,6 +1101,24 @@ export function prepareCrematoryDocuments(
     if (preparing.get(key) === run) preparing.delete(key);
   });
   return run;
+}
+
+/**
+ * State approval for the SLA (2026-11): SOLIS cannot see the state approve,
+ * but the state permit is what the approval produces — so the first permit
+ * uploaded to the case marks it, at its upload time. Never over a time
+ * already recorded (by staff or before). Never throws.
+ */
+async function recordApprovalFromPermit(organizationId: string, caseId: string, mode: DataAdapterMode): Promise<void> {
+  try {
+    const case_ = await loadCase(organizationId, caseId, mode);
+    if (case_.isDeleted || case_.slaEvents?.approval_received) return;
+    const permits = (await listCaseDocuments(organizationId, caseId, mode)).filter((d) => d.documentTypeKey === PERMIT_TYPE);
+    const first = permits.map((d) => d.createdAt).filter(Boolean).sort()[0];
+    if (first) await recordSlaEventAutomatically(organizationId, caseId, 'approval_received', first, mode);
+  } catch (error) {
+    console.error(`[crematory-auto] Case ${caseId}: state approval could not be recorded from the permit:`, error instanceof Error ? error.message : error);
+  }
 }
 
 type Work = { page3: boolean; build: boolean; details: boolean };

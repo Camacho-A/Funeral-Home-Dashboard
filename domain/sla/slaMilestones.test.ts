@@ -192,15 +192,20 @@ describe('Crematory turnaround and family pickup', () => {
       ...extra,
     });
 
-  it('sent to the crematory with no receipt date recorded → Start Date Needed', () => {
-    expect(milestone(sent(), 'crematory_turnaround', ny('2026-10-20'))).toMatchObject({ state: 'start_date_needed', deadline: null });
+  it('runs from the send to the crematory — nothing for staff to record (2026-11)', () => {
+    expect(milestone(sent(), 'crematory_turnaround', ny('2026-10-14'))).toMatchObject({ state: 'active', startedAt: { date: '2026-10-13' } });
   });
 
-  it('5 business days from the crematory\'s receipt; a fixed weekly schedule moves it to the next return day', () => {
-    const received = sent({ slaEvents: events({ crematory_received: ny('2026-10-14') }) });
-    expect(milestone(received, 'crematory_turnaround', ny('2026-10-15')).deadline).toBe('2026-10-21');
+  it('5 business days from the send; a fixed weekly schedule moves it to the next return day (2026-11)', () => {
+    const sentWed = sent({ checklistCompletions: { '3:0': done(ny('2026-10-14')), '3:1': done(ny('2026-10-14')) } });
+    expect(milestone(sentWed, 'crematory_turnaround', ny('2026-10-15')).deadline).toBe('2026-10-21');
     const tueFri = normalizeSlaSettings({ crematoryReturnWeekdays: [2, 5] }, true);
-    expect(evaluateCaseSla(received, tueFri, ny('2026-10-15')).milestones.find((m) => m.key === 'crematory_turnaround')!.deadline).toBe('2026-10-23');
+    expect(evaluateCaseSla(sentWed, tueFri, ny('2026-10-15')).milestones.find((m) => m.key === 'crematory_turnaround')!.deadline).toBe('2026-10-23');
+  });
+
+  it('completes when the ashes are picked up, at that time (2026-11)', () => {
+    const back = sent({ rawStage: 6, checklistState: { '3:0': true, '3:1': true, '5:0': true }, checklistCompletions: { '3:0': done(ny('2026-10-13')), '3:1': done(ny('2026-10-13')), '5:0': done(ny('2026-10-17', '10:00')) } });
+    expect(milestone(back, 'crematory_turnaround', ny('2026-10-20'))).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-17' } });
   });
 
   it('a date of cremation is not cremains ready; Date Received is', () => {
@@ -364,10 +369,10 @@ describe('Cremains already back with Manors', () => {
     expect(evaluateCaseSla(b2026036({ rawStage: 6 }), SETTINGS, NOW).current).toMatchObject({ key: 'family_pickup', state: 'start_date_needed' });
   });
 
-  it('cremains received with a recorded date: family pickup runs from that date; crematory completes without inventing a ready time', () => {
+  it('cremains received with a recorded date: family pickup runs from that date; the crematory turnaround ends on it (2026-11)', () => {
     const evaluation = evaluateCaseSla(b2026036({ cremainsReceivedAt: '10/16/2026' }), SETTINGS, NOW);
     expect(evaluation.current).toMatchObject({ key: 'family_pickup', state: 'active', deadline: '2026-10-23', startedAt: { date: '2026-10-16', minutes: null } });
-    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')).toMatchObject({ state: 'completed', completedAt: null });
+    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-16' } });
   });
 
   it('the "Ashes picked up" completion record supplies the received time when there is one', () => {
@@ -375,14 +380,14 @@ describe('Cremains already back with Manors', () => {
     expect(evaluateCaseSla(recordedTick, SETTINGS, NOW).current).toMatchObject({ key: 'family_pickup', state: 'active', startedAt: { date: '2026-10-16', minutes: 10 * 60 + 30 } });
   });
 
-  it('cremains ready at the crematory but not yet collected: crematory complete, family pickup not started', () => {
+  it('cremains ready at the crematory but not yet collected: the turnaround runs until they are picked up; family pickup not started (2026-11)', () => {
     const ready = base({
       rawStage: 6,
       checklistState: { '3:0': true, '3:1': true },
       slaEvents: events({ crematory_received: ny('2026-10-14'), cremains_ready: ny('2026-10-20', '09:00') }),
     });
     const evaluation = evaluateCaseSla(ready, SETTINGS, NOW);
-    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')).toMatchObject({ state: 'completed', completedAt: { date: '2026-10-20' } });
+    expect(evaluation.milestones.find((m) => m.key === 'crematory_turnaround')!.state).not.toBe('completed');
     expect(evaluation.milestones.find((m) => m.key === 'family_pickup')!.state).toBe('not_started');
     expect(evaluation.events.find((e) => e.key === 'cremains_received')!.occurred).toBe(false);
   });
