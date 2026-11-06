@@ -29,10 +29,9 @@
   align-items: start;
 }
 
-/* A missing Tag Number prompt gets the whole row, so it reads on one line. */
-.grid > div:has(.missingValue) {
-  grid-column: 1 / -1;
-}
+/* A missing Tag Number prompt stays in its own cell (2026-11) — spanning
+   the row moved every later field over by one, so cases did not share one
+   layout. It wraps inside the cell instead. */
 
 .operationalRow {
   margin-top: 12px;
@@ -333,15 +332,9 @@ button.missingValue:focus-visible {
   box-shadow: var(--sx-focus);
 }
 
-/* Below 1024px the rail becomes full width again (page.module.css), so
-   let fields spread back into more columns. */
-@media (max-width: 1024px) {
-  .grid {
-    /* 140px keeps two columns even on a phone, so short values (dates,
-       times, weight) sit side by side instead of one per row. */
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  }
-}
+/* Two columns at every width (2026-11): every case lays out the same —
+   Date of birth | Date of death, Time of death | Weight, Tag Number | Date
+   of Cremation, Location | Social Security number. */
 
 /* Archived cases are read-only (2026-10). The value keeps the same type
    and alignment as the editable one it replaces, so the card does not
@@ -566,8 +559,11 @@ button.missingValue:focus-visible {
 .ssnLine {
   display: flex;
   align-items: baseline;
+  /* The action sits on the value's line, to its right (2026-11); only a
+     column too narrow for both (a small phone) moves it underneath. */
   flex-wrap: wrap;
   gap: 2px 10px;
+  white-space: nowrap;
 }
 
 /* Served in the armed forces, as a field beside the SSN rather than a
@@ -596,4 +592,16 @@ button.missingValue:focus-visible {
   margin: 2px 0 0;
   font-size: 11px;
   line-height: 1.35;
+}
+
+/* Served in the armed forces (2026-11): its own full-width line under the
+   identifying details, so the label never wraps into a narrow column. */
+.grid > .veteranCell {
+  grid-column: 1 / -1;
+}
+
+.ssnLock {
+  display: inline-flex;
+  vertical-align: -1px;
+  color: var(--sx-muted);
 }

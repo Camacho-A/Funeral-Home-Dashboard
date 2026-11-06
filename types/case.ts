@@ -551,6 +551,10 @@ export type CaseCrematoryRecord = {
         when staff confirmed it (2026-10). */
     version?: number | null;
     displayedInSolis?: boolean;
+    /** 'automatic' (2026-11): recorded by SOLIS when this was the case's
+        only current state permit (a PDF) — staff no longer confirm it.
+        Absent on earlier records: staff confirmed them. */
+    source?: 'staff' | 'automatic';
   } | null;
   /** The decedent's last and first name(s) exactly as they appear in the
       package file name (LastName_FirstName_…), entered or confirmed by

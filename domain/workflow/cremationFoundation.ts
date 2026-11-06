@@ -87,6 +87,7 @@ export const CREMATION_STEPS = {
   paymentCollected: 'cremation.payment.collected',
   arrangementFormCompleted: 'cremation.arrangement_form.completed',
   edrsSubmitted: 'cremation.edrs.submitted',
+  causeOfDeath: 'cremation.edrs.cause_of_death',
   attestation: 'cremation.edrs.attestation',
   permitSent: 'cremation.crematory.permit_sent',
   authorizationSent: 'cremation.crematory.authorization_sent',

@@ -39,7 +39,13 @@ export function CaseSsnField({
       <div className={`${styles.fieldValue} ${styles.ssnLine}`}>
         {ssnOnFile ? (
           <span title={`${CASE_SSN_SOURCE_LABEL[ssnOnFile.source]} · locked — corrections by an administrator only`}>
-            •••-••-{ssnOnFile.last4} <span className="sx-status">Locked</span>
+            •••-••-{ssnOnFile.last4}{' '}
+            {/* A lock icon rather than the word (2026-11), so "Correct…" fits on this line in a half-width column. */}
+            <span className={styles.ssnLock} role="img" aria-label="Locked">
+              <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <path fill="currentColor" d="M5 7V5a3 3 0 0 1 6 0v2h.5A1.5 1.5 0 0 1 13 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 3 13.5v-5A1.5 1.5 0 0 1 4.5 7H5Zm1.5 0h3V5a1.5 1.5 0 0 0-3 0v2Z" />
+              </svg>
+            </span>
           </span>
         ) : (
           <span title="Saved from the Arrangement Form when it arrives">Not on file</span>

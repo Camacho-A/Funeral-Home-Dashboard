@@ -256,7 +256,7 @@ describe('automatic Crematory Form (2026-10)', () => {
     expect(form).toMatchObject({ fileName: 'Crematory Form.pdf', version: 1, generatedBy: 'staff-lee' });
     expect(await sourcePageOf(blobs.get(form.storageKey)!.buffer, sourceBytes)).toBe(3);
     expect(events().find((e) => e.eventType === 'document.page_extracted')!.description).toBe(
-      'Crematory Form v1 extracted from page 3 of the Arrangement Forms (permit: "Attestation Received / Hard Saved" checked)',
+      'Crematory Form v1 extracted from page 3 of the Arrangement Forms (permit: "Hard Saved" checked)',
     );
   });
 

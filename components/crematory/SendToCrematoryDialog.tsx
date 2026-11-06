@@ -48,7 +48,10 @@ const PERMIT_TYPE = 'cremation_form.state_permit';
 function needsPreparation(c: CrematoryCaseSummary, extractsPage3: boolean): boolean {
   if (c.lastSubmission?.status === 'submitted' || c.lastSubmission?.status === 'uncertain') return false;
   const form = c.readiness.requirements.find((r) => r.key === 'crematory_form');
-  return (extractsPage3 && form !== undefined && !form.ok) || (c.readiness.readyToBuild && !c.package?.current);
+  const ok = (key: string) => c.readiness.requirements.find((r) => r.key === key)?.ok === true;
+  // An uploaded permit not yet recorded (2026-11): SOLIS records it while preparing.
+  const permitToRecord = ok('permit_uploaded') && !ok('permit_verified');
+  return (extractsPage3 && form !== undefined && !form.ok) || permitToRecord || (c.readiness.readyToBuild && !c.package?.current);
 }
 
 type Step = 'prepare' | 'review' | 'done';
@@ -95,9 +98,6 @@ export function SendToCrematoryDialog({
   const [caseError, setCaseError] = useState<{ caseId: string; message: string } | null>(null);
   const [dates, setDates] = useState<Record<string, string>>({});
   const [names, setNames] = useState<Record<string, { first: string; last: string }>>({});
-  const [permitPrompt, setPermitPrompt] = useState<CrematoryCaseSummary | null>(null);
-  /** The checksum of the permit PDF shown in the Confirm window, once drawn (2026-10). */
-  const [shownPermitChecksum, setShownPermitChecksum] = useState<string | null>(null);
   const [correctingPreviousSend, setCorrectingPreviousSend] = useState<CrematoryCaseSummary | null>(null);
 
   const [to, setTo] = useState('');
@@ -308,17 +308,16 @@ export function SendToCrematoryDialog({
       onConfirmName={(value) => act(c, () => crematoryCaseAction(organizationId, c.caseId, { action: 'confirm_package_name', ...value }))}
       canPrepare={overview.data!.canPrepare}
       organizationId={organizationId}
-      onUploadPermit={(file) => act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE }))}
-      onConfirmPermit={() => {
-        setShownPermitChecksum(null);
-        setPermitPrompt(c);
-      }}
+      onUploadPermit={(file) =>
+        // The uploaded permit is recorded as the case's permit by SOLIS (2026-11) — preparing right away shows it, and builds the package.
+        act(c, () => uploadCaseDocument({ organizationId, caseId: c.caseId, file, documentTypeKey: PERMIT_TYPE })).then(() => prepareCase(c.caseId))
+      }
       onExtract={() => void prepareCase(c.caseId)}
       preparing={preparingIds.includes(c.caseId)}
       prepareError={prepareErrors[c.caseId] ?? null}
       onRetryPrepare={() => void prepareCase(c.caseId)}
       onChooseDocument={(kind, documentId) => setChooser({ summary: c, kind, documentId })}
-      onPermitReplaced={() => void Promise.all([refresh(), queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, c.caseId) })])}
+      onPermitReplaced={() => void prepareCase(c.caseId)}
       canSend={overview.data!.canSend}
       onResolveWorkflow={() => resolveWorkflow(c)}
       onVerifyPreviousSend={() => setPreviousSendFor(c)}
@@ -636,45 +635,6 @@ export function SendToCrematoryDialog({
         />
       )}
 
-      {permitPrompt && permitPrompt.permit && (
-        <Modal open onClose={() => setPermitPrompt(null)} title="Confirm the state permit" size="lg">
-          <div className="sx-modal-header">
-            <h2 className="sx-modal-title">Confirm the state permit</h2>
-          </div>
-          <div className="sx-modal-body">
-            <p>
-              Is <strong>{permitPrompt.permit.fileName}</strong>
-              {permitPrompt.permit.uploadedBy ? ` (uploaded by ${permitPrompt.permit.uploadedBy}, ${formatTimestamp(permitPrompt.permit.createdAt)})` : ''} the <strong>approved</strong> state cremation permit for{' '}
-              <strong>{permitPrompt.decedentDisplayName}</strong> ({permitPrompt.caseNumber})? Check the permit below.
-            </p>
-            {/* The stored PDF itself (2026-10): confirming is possible only once it is shown. */}
-            <PermitPdfPreview
-              source={{ kind: 'stored', url: buildCaseDocumentViewUrl(organizationId, permitPrompt.caseId, permitPrompt.permit.documentId), expectedChecksumSha256: permitPrompt.permit.checksumSha256 }}
-              fileName={permitPrompt.permit.fileName}
-              onVerified={setShownPermitChecksum}
-              onFailed={() => setShownPermitChecksum(null)}
-            />
-          </div>
-          <div className="sx-modal-footer">
-            <button type="button" className="sx-btn sx-btn-ghost" onClick={() => setPermitPrompt(null)}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="sx-btn sx-btn-primary"
-              disabled={!shownPermitChecksum}
-              onClick={() => {
-                const target = permitPrompt;
-                const displayedChecksumSha256 = shownPermitChecksum!;
-                setPermitPrompt(null);
-                void act(target, () => crematoryCaseAction(organizationId, target.caseId, { action: 'confirm_permit', documentId: target.permit!.documentId, displayedChecksumSha256 }));
-              }}
-            >
-              Yes, this is the approved permit
-            </button>
-          </div>
-        </Modal>
-      )}
     </Modal>
   );
 }
@@ -721,7 +681,6 @@ function CaseRow({
   onDateChange,
   organizationId,
   onUploadPermit,
-  onConfirmPermit,
   onExtract,
   onConfirmDate,
   onBuild,
@@ -752,7 +711,6 @@ function CaseRow({
   onDateChange: (value: string) => void;
   organizationId: string;
   onUploadPermit: (file: File) => void;
-  onConfirmPermit: () => void;
   onExtract: () => void;
   onConfirmDate: (value: string) => void;
   onBuild: () => void;
@@ -933,11 +891,8 @@ function CaseRow({
           </>
         );
       case 'permit_verified':
-        return (
-          <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" disabled={busy} onClick={onConfirmPermit}>
-            Confirm permit
-          </button>
-        );
+        // Recorded by SOLIS from the uploaded permit (2026-11) — nothing for staff to confirm.
+        return <span className={styles.hint}>Recorded automatically from the uploaded permit</span>;
       case 'crematory_form':
         // No authorization document source set up for this organization
         // (2026-11): explain, never offer Manors' page-3 extraction.
@@ -1178,7 +1133,7 @@ function ChooseDocumentDialog({
             onFailed={() => setShown(null)}
           />
         )}
-        {kind === 'state_permit' && <p className={styles.hint}>Check the PDF above. Next you&rsquo;ll confirm the permit is this decedent&rsquo;s.</p>}
+        {kind === 'state_permit' && <p className={styles.hint}>Check the PDF above — it will be used as this decedent&rsquo;s permit.</p>}
       </div>
       <div className="sx-modal-footer">
         <button type="button" className="sx-btn sx-btn-ghost" onClick={onClose}>

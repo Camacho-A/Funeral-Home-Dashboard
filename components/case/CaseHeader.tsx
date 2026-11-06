@@ -39,6 +39,7 @@ export function CaseHeader({
   stages,
   onStepClick,
   sla,
+  slaDetails,
   actions,
   serviceName,
 }: {
@@ -65,6 +66,8 @@ export function CaseHeader({
   /** SLA tracking (2026-10): when present, the header shows business days
       in stage and the current SLA in place of the old per-stage target. */
   sla?: CaseSlaEvaluation | null;
+  /** The SLA details toggle, under the Current SLA line (2026-11). */
+  slaDetails?: React.ReactNode;
   /** Case-level actions shown under the case's identity (Print Label,
       2026-10). Omitted → nothing renders. */
   actions?: React.ReactNode;
@@ -84,8 +87,20 @@ export function CaseHeader({
         <div className={styles.identity}>
           <div className={styles.name}>{toDisplayName(decedentName)}</div>
           <div className={styles.meta}>
-            {serviceName ? `${serviceName} · ` : ''}DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
-            {tagNumber ? ` · Tag #${tagNumber}` : ''}
+            {/* Each fact stays whole when the line wraps (2026-11): never "B2026-" / "007". */}
+            {serviceName ? (
+              <>
+                <span className={styles.metaPart}>{serviceName}</span> ·{' '}
+              </>
+            ) : null}
+            <span className={styles.metaPart}>DOB {dateOfBirth}</span> · <span className={styles.metaPart}>DOD {dateOfDeath}</span> ·{' '}
+            <span className={styles.metaPart}>Case #{caseNumber}</span>
+            {tagNumber ? (
+              <>
+                {' '}
+                · <span className={styles.metaPart}>Tag #{tagNumber}</span>
+              </>
+            ) : null}
           </div>
           {/* The facts line carries handling flags, so it appears when there
               is any flag to carry — not only when a weight was recorded. An
@@ -128,7 +143,10 @@ export function CaseHeader({
             />
           )}
           {sla ? (
-            <CurrentSlaLine sla={sla} />
+            <>
+              <CurrentSlaLine sla={sla} />
+              {slaDetails}
+            </>
           ) : (
             <span className={`${styles.slaLine} ${isOverdue ? styles.slaOverdue : styles.slaNeutral}`}>
               {daysWaitingInStage}d in stage{slaTargetLabel !== NO_SLA_TARGET_LABEL && ` · target ${slaTargetLabel}`}

@@ -397,6 +397,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
         onStepClick={(index) => viewPresentedStage(index)}
         sla={viewModel.sla}
         serviceName={serviceTypeName(case_.workflowSnapshot?.serviceTypeCode)}
+        // SLA details (2026-11): collapsed under the Current SLA line.
+        slaDetails={viewModel.sla?.enabled ? <CaseSlaPanel case_={case_} sla={viewModel.sla} compact /> : undefined}
         actions={
           getRegisteredOrganizationProfile(organizationId).features.dymoCaseLabel || (sendToCrematoryConfig(organizationId) && case_.caseType === 'cremation') ? (
             <>
@@ -415,18 +417,6 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
       )}
       {printLabelOpen && (
         <PrintLabelDialog open onClose={() => setPrintLabelOpen(false)} caseId={case_.id} organizationId={organizationId} />
-      )}
-
-      {/* SLA tracking (2026-10): details collapsed under the header. */}
-      {viewModel.sla?.enabled && (
-        <CaseSlaPanel
-          case_={case_}
-          sla={viewModel.sla}
-          organizationId={organizationId}
-          // Same convention as the Schedule tab: unknown permissions show the
-          // controls and the server decides (the SLA route checks case edit).
-          canEdit={!permissionsQuery.isSuccess || permissionsQuery.data.permissions.includes('case.update')}
-        />
       )}
 
       {/* Case concurrency (2026-10): a save refused because the case changed

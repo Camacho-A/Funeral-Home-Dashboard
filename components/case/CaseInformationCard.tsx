@@ -354,7 +354,7 @@ function EditableField({
           ) : (
             <button
               type="button"
-              className={`${styles.editableValue} ${trailingBadge ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
+              className={`${styles.editableValue} ${trailingBadge || clear ? styles.editableValueCompact : ''} ${valueClassName ?? ''}`}
               onClick={startEditing}
             >
               {presentedValue || emptyLabel || '—'}

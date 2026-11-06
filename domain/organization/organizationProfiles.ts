@@ -565,15 +565,23 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
       { displayStage: 0, index: 9, expectedLabel: 'Credit card payment collected by phone' },
     ],
     relabeledChecklistItems: [
-      // "EDRS & Doctor / Cause of Death", item 2 — wording requested by
-      // Manors (2026-10). Every template version (v1-v6) and every frozen
-      // snapshot carries the old label, so it is matched here rather than
-      // rewritten; the ME config below still matches the stored label.
+      // "EDRS & Doctor / Cause of Death" (2026-11, Manors): the doctor's
+      // attestation and the cause of death are one task — item 1 — and
+      // the Hard Save follows as item 2. Every template version and every
+      // frozen snapshot carries the old labels, so they are matched here
+      // rather than rewritten; the ME config below and the SLA checklist
+      // events still match the stored labels.
+      {
+        displayStage: 2,
+        index: 1,
+        expectedLabels: ['Cause of death entered'],
+        label: 'Attestation received / Cause of death entered',
+      },
       {
         displayStage: 2,
         index: 2,
         expectedLabels: ['Hardsave for state approval if not an online doctor'],
-        label: 'Attestation Received / Hard Saved',
+        label: 'Hard Saved',
       },
     ],
     medicalExaminerStages: [

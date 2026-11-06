@@ -5,7 +5,7 @@ import { ManateeApplicationDialog } from './ManateeApplicationDialog';
 import type { ManateeDraft } from '@/domain/documents/manateeDeathCertificateApplication';
 
 /** Fictional. The SSN on file never reaches this window — only its last four. */
-const client = vi.hoisted(() => ({ fetchManateeDraft: vi.fn(), previewManateeApplication: vi.fn(), saveManateeApplication: vi.fn() }));
+const client = vi.hoisted(() => ({ fetchManateeDraft: vi.fn(), saveManateeApplication: vi.fn() }));
 vi.mock('@/lib/manateeApplicationClient', () => client);
 const printer = vi.hoisted(() => ({ printFile: vi.fn() }));
 vi.mock('@/utils/print', () => printer);
@@ -27,6 +27,8 @@ const draft = (overrides: Partial<ManateeDraft> = {}): ManateeDraft => ({
   ...overrides,
 });
 
+const savedPdf = new Blob(['%PDF'], { type: 'application/pdf' });
+
 const renderDialog = () =>
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -38,16 +40,17 @@ beforeEach(() => {
   vi.clearAllMocks();
   globalThis.URL.createObjectURL = vi.fn(() => 'blob:preview');
   globalThis.URL.revokeObjectURL = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(savedPdf)));
 });
 
 describe('ManateeApplicationDialog', () => {
-  it('shows what was found, the SSN only as its last four, and blocks Preview until certificates are chosen', async () => {
+  it('shows what was found, the SSN only as its last four, and blocks Create & Save until certificates are chosen', async () => {
     client.fetchManateeDraft.mockResolvedValue(draft());
     renderDialog();
     expect(await screen.findByDisplayValue('Mary Ann')).toBeTruthy();
     expect(screen.getByText(/On file: •••-••-3456/)).toBeTruthy();
     expect(screen.getByText('From the Arrangement Form')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Create & Save' }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText('Order at least one death certificate.')).toBeTruthy();
   });
 
@@ -62,46 +65,56 @@ describe('ManateeApplicationDialog', () => {
     expect(screen.getByText('$55.00')).toBeTruthy();
   });
 
-  it('previews, then saves the reviewed values — sending an SSN only when staff typed one', async () => {
+  it('Create & Save saves the reviewed values in one click and shows the saved form — sending an SSN only when staff typed one (2026-11)', async () => {
     client.fetchManateeDraft.mockResolvedValue(draft());
-    client.previewManateeApplication.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
     client.saveManateeApplication.mockResolvedValue({ id: 'doc-1' });
     renderDialog();
     await screen.findByDisplayValue('Mary Ann');
+    expect(screen.queryByRole('button', { name: 'Preview' })).toBeNull();
     fireEvent.change(screen.getByLabelText('With cause of death'), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    expect(await screen.findByText('PDF preview')).toBeTruthy();
-    expect(client.previewManateeApplication.mock.calls[0][2]).toMatchObject({ withCause: 1, ssn: null, decedentLast: 'Salas Rueda' });
-    fireEvent.click(screen.getByRole('button', { name: 'Save to Documents' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create & Save' }));
     expect(await screen.findByText(/It has not been sent anywhere/)).toBeTruthy();
+    expect(await screen.findByText('PDF preview')).toBeTruthy();
     expect(client.saveManateeApplication).toHaveBeenCalledTimes(1);
+    expect(client.saveManateeApplication.mock.calls[0][2]).toMatchObject({ withCause: 1, ssn: null, decedentLast: 'Salas Rueda' });
+    // The form shown is the saved document itself.
+    expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain('doc-1');
   });
 
-  it('prints the previewed form without saving it, and can print again after saving', async () => {
+  it('prints the saved form; Back to edit lets staff correct it and save a new version', async () => {
     client.fetchManateeDraft.mockResolvedValue(draft());
-    const pdf = new Blob(['%PDF'], { type: 'application/pdf' });
-    client.previewManateeApplication.mockResolvedValue(pdf);
     client.saveManateeApplication.mockResolvedValue({ id: 'doc-1' });
     renderDialog();
     await screen.findByDisplayValue('Mary Ann');
     expect(screen.queryByRole('button', { name: 'Print' })).toBeNull();
     fireEvent.change(screen.getByLabelText('With cause of death'), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create & Save' }));
     await screen.findByText('PDF preview');
-
     fireEvent.click(screen.getByRole('button', { name: 'Print' }));
-    expect(printer.printFile).toHaveBeenCalledWith(pdf, 'Manatee County Death Certificate Application', '', '');
-    expect(client.saveManateeApplication).not.toHaveBeenCalled();
+    expect(printer.printFile).toHaveBeenCalledWith(savedPdf, 'Manatee County Death Certificate Application', '', '');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save to Documents' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to edit' }));
+    fireEvent.change(screen.getByLabelText('With cause of death'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create & Save' }));
     await screen.findByText(/It has not been sent anywhere/);
-    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
-    expect(printer.printFile).toHaveBeenCalledTimes(2);
+    expect(client.saveManateeApplication).toHaveBeenCalledTimes(2);
+    expect(client.saveManateeApplication.mock.calls[1][2]).toMatchObject({ withCause: 2 });
+  });
+
+  it('a failed save says nothing was saved and stays on the form', async () => {
+    client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, withCause: 1 } }));
+    client.saveManateeApplication.mockRejectedValue(new Error('Document storage is unavailable.'));
+    renderDialog();
+    await screen.findByDisplayValue('Mary Ann');
+    fireEvent.click(screen.getByRole('button', { name: 'Create & Save' }));
+    expect(await screen.findByText('Document storage is unavailable.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create & Save' })).toBeTruthy();
+    expect(screen.queryByText(/It has not been sent anywhere/)).toBeNull();
   });
 
   it('shows the sex from the forms as F / M, and sends what staff chose', async () => {
     client.fetchManateeDraft.mockResolvedValue(draft({ sources: { decedentSex: 'vital_statistics' } }));
-    client.previewManateeApplication.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    client.saveManateeApplication.mockResolvedValue({ id: 'doc-1' });
     renderDialog();
     await screen.findByDisplayValue('Mary Ann');
     const sex = screen.getByLabelText('Sex') as HTMLSelectElement;
@@ -109,9 +122,9 @@ describe('ManateeApplicationDialog', () => {
     expect(screen.getByText('From the Vital Statistics form')).toBeTruthy();
     fireEvent.change(sex, { target: { value: 'M' } });
     fireEvent.change(screen.getByLabelText('With cause of death'), { target: { value: '1' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create & Save' }));
     await screen.findByText('PDF preview');
-    expect(client.previewManateeApplication.mock.calls[0][2]).toMatchObject({ decedentSex: 'M' });
+    expect(client.saveManateeApplication.mock.calls[0][2]).toMatchObject({ decedentSex: 'M' });
   });
 
   it('missing values must be entered here; a typed SSN must have 9 digits', async () => {
@@ -122,9 +135,9 @@ describe('ManateeApplicationDialog', () => {
     fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Salas Rueda' } });
     fireEvent.change(screen.getByLabelText('Social Security number'), { target: { value: '12345' } });
     expect(screen.getByText('A Social Security number has 9 digits.')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: 'Create & Save' }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Social Security number'), { target: { value: '000-12-3456' } });
-    await waitFor(() => expect((screen.getByRole('button', { name: 'Preview' }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByRole('button', { name: 'Create & Save' }) as HTMLButtonElement).disabled).toBe(false));
   });
 
   it('has no manual Request ___ of ___ numbering — fax bundles number applications themselves', async () => {
@@ -137,14 +150,14 @@ describe('ManateeApplicationDialog', () => {
 
   it('a locked SSN is shown as its last four, locked — with nothing to type and no "not known"', async () => {
     client.fetchManateeDraft.mockResolvedValue(draft({ values: { ...draft().values, withCause: 1 }, ssn: { onFile: true, masked: '•••-••-3456', source: 'case', locked: true } }));
-    client.previewManateeApplication.mockResolvedValue(new Blob(['%PDF'], { type: 'application/pdf' }));
+    client.saveManateeApplication.mockResolvedValue({ id: 'doc-1' });
     renderDialog();
     expect(await screen.findByText('Locked on the case')).toBeTruthy();
     expect(screen.queryByLabelText('Social Security number')).toBeNull();
     expect(screen.queryByText('Not known — leave the box blank')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-    await waitFor(() => expect(client.previewManateeApplication).toHaveBeenCalled());
-    expect(client.previewManateeApplication.mock.calls[0][2]).toMatchObject({ ssn: null, ssnNotKnown: false });
+    fireEvent.click(screen.getByRole('button', { name: 'Create & Save' }));
+    await waitFor(() => expect(client.saveManateeApplication).toHaveBeenCalled());
+    expect(client.saveManateeApplication.mock.calls[0][2]).toMatchObject({ ssn: null, ssnNotKnown: false });
   });
 
   it('says plainly when the form is not set up', async () => {

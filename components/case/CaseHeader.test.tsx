@@ -127,7 +127,7 @@ describe('CaseHeader — SLA tracking (2026-10)', () => {
     expect(screen.getByText('Overdue')).toBeInTheDocument();
     unmount();
     render(<CaseHeader {...baseProps} sla={sla(milestone({ state: 'start_date_needed', status: 'start_date_needed', deadline: null, businessDaysRemaining: null }))} />);
-    expect(screen.getByText('Start Date Needed')).toBeInTheDocument();
+    expect(screen.getByText('Start Unknown')).toBeInTheDocument();
   });
 
   it('says so when nothing is due, and keeps the old line for organizations without SLA tracking', () => {

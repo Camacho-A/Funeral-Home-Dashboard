@@ -101,7 +101,7 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
     input.permitVerification.documentId === input.permit.documentId &&
     input.permitVerification.checksumSha256 === input.permit.checksumSha256;
   add('permit_verified', 'Permit confirmed for this decedent', verifiedCurrent,
-    input.permit === null ? 'Upload the permit first.' : input.permitVerification ? 'A different permit was uploaded since it was confirmed. Confirm the new one.' : 'Confirm the uploaded permit is the approved permit for this decedent.');
+    input.permit === null ? 'Upload the permit first.' : 'SOLIS records the uploaded permit automatically. Refresh if this does not clear.');
 
   // The requirement is a valid authorization document; where it comes from
   // is the organization's own (2026-11). Without a configured source nothing

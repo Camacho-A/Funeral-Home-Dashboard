@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CaseSlaPanel } from './CaseSlaPanel';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
@@ -17,90 +17,63 @@ const base: Case = {
   },
 };
 
-function renderPanel(case_: Case = base, canEdit = true) {
+function renderPanel(case_: Case = base) {
   const sla = evaluateCaseSla(case_, normalizeSlaSettings({}, true), '2026-10-20T15:00:00.000Z');
   return render(
     <QueryClientProvider client={new QueryClient()}>
-      <CaseSlaPanel case_={case_} sla={sla} organizationId="managed-cremations" canEdit={canEdit} />
+      <CaseSlaPanel case_={case_} sla={sla} />
     </QueryClientProvider>,
   );
 }
 
-afterEach(() => vi.unstubAllGlobals());
-
 describe('CaseSlaPanel', () => {
-  it('is collapsed until opened, then lists each milestone with its status and delay history', () => {
+  it('is collapsed until opened; then only what needs attention is a card, and the rest is one line each (2026-11)', () => {
     renderPanel();
     expect(screen.queryByText('Hard Save')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
     expect(screen.getByText('Hard Save')).toBeInTheDocument();
     expect(screen.getByText('Due Today')).toBeInTheDocument();
-    expect(screen.getByText(/Called twice/)).toBeInTheDocument();
-    expect(screen.getByText(/resolved/)).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').filter((li) => li.className.includes('milestone'))).toHaveLength(1);
+    expect(screen.getByText(/✓ Done:/).parentElement).toHaveTextContent('Doctor attestation (Oct 20, 2026, 9:00 AM)');
+    expect(screen.queryByText(/Called twice/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Later:/).parentElement).toHaveTextContent('State approval');
+    expect(screen.queryByText('Recorded times', { selector: 'h4' })).not.toBeInTheDocument();
   });
 
-  it('records an event through the SLA route', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ case: base, changed: true }), { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-    renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'hard_saved' } });
-    fireEvent.change(screen.getByLabelText('When'), { target: { value: '2026-10-20T11:00' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Record' }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
-    expect(url).toBe('/api/cases/1042/sla');
-    expect(JSON.parse(init.body as string)).toMatchObject({ organizationId: 'managed-cremations', action: 'record_event', event: 'hard_saved' });
+  it('is read-only (2026-11): nothing to record — no times, no delays, no forms', () => {
+    const existing: Case = { ...caseFixtures.find((c) => c.id === '1042')!, rawStage: 3, checklistState: {}, slaEvents: undefined, slaDelays: undefined };
+    for (const case_ of [base, existing]) {
+      const { unmount, container } = renderPanel(case_);
+      fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+      fireEvent.click(screen.getByRole('button', { name: 'Recorded times' }));
+      for (const name of ['Record', 'Record start', 'Record completion', 'Record delay', 'Save delay', 'Resolve']) {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+      }
+      expect(container.querySelectorAll('input, select, textarea, form')).toHaveLength(0);
+      unmount();
+    }
   });
 
-  it('records a delay on a milestone', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ case: base, changed: true }), { status: 200 }));
-    vi.stubGlobal('fetch', fetchMock);
-    renderPanel();
-    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Record delay' })[0]);
-    fireEvent.change(screen.getByLabelText('Notes (optional)'), { target: { value: 'Family traveling' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save delay' }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toMatchObject({ action: 'record_delay', notes: 'Family traveling' });
-  });
-
-  it('is read-only for staff who cannot edit the case, and for an archived case', () => {
-    const { unmount } = renderPanel(base, false);
-    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    expect(screen.queryByRole('button', { name: 'Record' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Record delay' })).not.toBeInTheDocument();
-    unmount();
-    renderPanel({ ...base, isDeleted: true }, true);
-    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    expect(screen.queryByRole('button', { name: 'Record' })).not.toBeInTheDocument();
-  });
-});
-
-describe('CaseSlaPanel — recording dates for existing cases (final review)', () => {
-  it('"Record start" on a Start Date Needed milestone picks its start event in one click', async () => {
+  it('a case that started before SOLIS kept the time says so, without asking for anything', () => {
     const existing: Case = { ...caseFixtures.find((c) => c.id === '1042')!, rawStage: 3, checklistState: {}, slaEvents: undefined, slaDelays: undefined };
     renderPanel(existing);
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    fireEvent.click(screen.getByRole('button', { name: 'Record start' }));
-    expect(screen.getByLabelText('Event')).toHaveValue('case_received');
-    await waitFor(() => expect(screen.getByLabelText('When')).toHaveFocus());
+    expect(screen.getAllByText('Start Unknown').length).toBeGreaterThan(0);
   });
 
-  it('"Record completion" picks the milestone\'s stop event — the Hard Save, never the attestation', () => {
-    renderPanel();
+  it('an open delay keeps its milestone as a card, with its history', () => {
+    renderPanel({ ...base, slaDelays: { d1: { ...base.slaDelays!.d1, milestone: 'hard_save', resolvedAt: null, resolvedBy: null, resolution: null } } } as Case);
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    const hardSave = screen.getByText('Hard Save').closest('li')!;
-    fireEvent.click(within(hardSave).getByRole('button', { name: 'Record completion' }));
-    expect(screen.getByLabelText('Event')).toHaveValue('hard_saved');
+    expect(screen.getByText(/Called twice/)).toBeInTheDocument();
   });
 
-  it('lists every recorded time with where it came from', () => {
+  it('lists the recorded times with where they came from — never rows of "time not recorded"', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
-    const timeline = screen.getByText('Recorded times').parentElement!;
+    fireEvent.click(screen.getByRole('button', { name: 'Recorded times' }));
+    const timeline = screen.getByText('Recorded times', { selector: 'h4' }).parentElement!;
     expect(timeline).toHaveTextContent('Doctor attestation received');
-    expect(timeline).toHaveTextContent('recorded');
-    expect(timeline).toHaveTextContent('implied — time not recorded');
+    expect(timeline).not.toHaveTextContent('Time not recorded');
+    expect(timeline).not.toHaveTextContent('implied — time not recorded');
   });
 });

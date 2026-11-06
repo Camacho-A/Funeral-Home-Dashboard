@@ -105,7 +105,7 @@ describe('SendToCrematoryDialog', () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([notReady]));
     client.crematoryCaseAction.mockResolvedValue({});
     open();
-    expect(await screen.findByRole('button', { name: 'Confirm permit' })).toBeInTheDocument();
+    expect(await screen.findByText('Recorded automatically from the uploaded permit')).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Select Walter Boone' })).toBeDisabled();
     expect(screen.getByText('1 of 7 done')).toBeInTheDocument();
     // Steps that wait on earlier ones say so instead of offering an action —
@@ -118,14 +118,8 @@ describe('SendToCrematoryDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirm date' }));
     await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_ready_date', date: '2026-11-06' }));
 
-    // The permit is confirmed only after an explicit yes naming the decedent.
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm permit' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm permit' }));
-    const question = screen.getByText((_, element) => element?.tagName === 'P' && /approved state cremation permit for/.test(element.textContent ?? ''));
-    expect(question).toHaveTextContent('Is State Permit.pdf (uploaded by Dana');
-    expect(question).toHaveTextContent('the approved state cremation permit for Walter Boone (B2026-903)?');
-    fireEvent.click(screen.getByRole('button', { name: 'Yes, this is the approved permit' }));
-    await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'confirm_permit', documentId: 'permit-1050', displayedChecksumSha256: 'sha-permit-1050' }));
+    // The permit is not confirmed by staff (2026-11): there is no Confirm permit button.
+    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Review & send' })).toBeDisabled();
   });
 
@@ -140,12 +134,12 @@ describe('SendToCrematoryDialog', () => {
     const needs = screen.getByRole('region', { name: 'Needs attention' });
     expect(within(needs).getAllByRole('listitem')).toHaveLength(3);
     // Collapsed: the missing steps on one line, no actions yet.
-    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm date' })).toBeNull();
     expect(within(needs).getAllByText('Permit confirmed')).toHaveLength(3);
     fireEvent.click(screen.getByRole('button', { name: 'Show checklist for Ada Lowe' }));
-    expect(screen.getAllByRole('button', { name: 'Confirm permit' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Confirm date' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Hide checklist for Ada Lowe' }));
-    expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm date' })).toBeNull();
     // The email summary lists what is ticked.
     fireEvent.click(screen.getByRole('checkbox', { name: 'Select Richard Reynolds' }));
     expect(screen.getByRole('complementary', { name: 'In this email' })).toHaveTextContent('Richard Reynolds');
@@ -443,21 +437,13 @@ describe('SendToCrematoryDialog', () => {
   });
 
   describe('the permit PDF is shown before it is confirmed or chosen (2026-10)', () => {
-    it('Confirm stays disabled until the stored PDF is shown; a preview that fails never allows confirming', async () => {
+    it('an uploaded permit needs no confirmation (2026-11): opening the window has SOLIS record it — no confirmation window, no confirm_permit', async () => {
       client.fetchCrematoryOverview.mockResolvedValue(overview([notReady]));
-      preview.result = 'pending';
-      const { unmount } = open();
-      fireEvent.click(await screen.findByRole('button', { name: 'Confirm permit' }));
-      expect(screen.getByTestId('permit-preview')).toHaveAttribute('data-url', expect.stringContaining('permit-1050'));
-      expect(screen.queryByRole('link', { name: /Open the permit/ })).toBeNull();
-      expect(screen.getByRole('button', { name: 'Yes, this is the approved permit' })).toBeDisabled();
-      unmount();
-
-      preview.result = 'failed';
+      client.crematoryCaseAction.mockResolvedValue({});
       open();
-      fireEvent.click(await screen.findByRole('button', { name: 'Confirm permit' }));
-      expect(screen.getByText('The permit could not be shown.')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Yes, this is the approved permit' })).toBeDisabled();
+      await waitFor(() => expect(client.crematoryCaseAction).toHaveBeenCalledWith('managed-cremations', '1050', { action: 'prepare' }));
+      expect(screen.queryByRole('button', { name: 'Confirm permit' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Yes, this is the approved permit' })).toBeNull();
       expect(client.crematoryCaseAction).not.toHaveBeenCalledWith('managed-cremations', '1050', expect.objectContaining({ action: 'confirm_permit' }));
     });
 
