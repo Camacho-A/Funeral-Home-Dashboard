@@ -170,7 +170,7 @@ describe('readiness — what needs attention', () => {
     expect(docsOf('1042', 'cremation_form.crematory_package')).toHaveLength(0);
   });
 
-  it('uploading a permit does nothing by itself — it must be confirmed', async () => {
+  it('uploading a permit records nothing until SOLIS prepares the case (2026-11: then it is recorded automatically)', async () => {
     await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-x');
     const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.requirements.find((r) => r.key === 'permit_verified')).toMatchObject({ ok: false });
@@ -542,6 +542,36 @@ describe('the Crematory Package — one PDF per decedent', () => {
     appointmentFixtures.find((a) => a.id === 'cremains-pickup-1042')!.startAt = '2026-11-10T05:00:00.000Z';
     const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
     expect(summary.readiness.requirements.find((r) => r.key === 'ready_date')).toMatchObject({ ok: false, detail: expect.stringContaining('Expected Pickup changed') });
+  });
+
+  it('the only current permit is recorded automatically — no staff confirmation — and the package is built from it (2026-11)', async () => {
+    await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-auto');
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    const permit = caseDocumentFixtures.find((d) => d.id === 'permit-auto')!;
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toMatchObject({
+      documentId: 'permit-auto',
+      checksumSha256: permit.checksumSha256,
+      source: 'automatic',
+      displayedInSolis: false,
+      verifiedBy: null,
+    });
+    const [event] = eventsOf('1042', 'crematory.permit_confirmed');
+    expect(event.description).toContain('recorded automatically');
+    const summary = await pkg.getCrematoryCaseSummary(ORG, '1042', true, 'mock');
+    expect(summary.readiness.requirements.find((r) => r.key === 'permit_verified')!.ok).toBe(true);
+    // Recorded once: preparing again writes nothing new.
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect(eventsOf('1042', 'crematory.permit_confirmed')).toHaveLength(1);
+  });
+
+  it('a replaced permit clears the record; its replacement is recorded the same way (2026-11)', async () => {
+    await uploadAs('1042', 'State Permit.pdf', 'cremation_form.state_permit', await pdf('PERMIT', 1), 'permit-first');
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const { document } = await pkg.addPermit(ctx(), '1042', { fileName: 'State Permit 2.pdf', mimeType: 'application/pdf', bytes: await pdf('PERMIT-B', 1) }, { replacesDocumentId: 'permit-first', mayReplace: true }, 'mock');
+    await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toMatchObject({ documentId: document.id, source: 'automatic' });
+    expect(eventsOf('1042', 'crematory.permit_confirmed')).toHaveLength(2);
   });
 
   it('a permit confirmation is for one file: confirming a replaced permit is refused', async () => {
@@ -1507,6 +1537,8 @@ describe('one current State Cremation Permit per case (2026-10)', () => {
     });
     await pkg.prepareCrematoryDocuments(ctx(), '1042', 'mock');
     expect(current('1042')).toHaveLength(2);
+    // Neither is recorded automatically while both are current (2026-11).
+    expect(caseFixtures[index('1042')].crematory?.permitVerification ?? null).toBeNull();
     await expect(pkg.confirmPermit(ctx(), '1042', shown('permit-b'), 'mock')).rejects.toMatchObject({ status: 409 });
     await expect(pkg.addPermit(ctx(), '1042', file('C.pdf', await pdf('PERMIT-C', 1)), { replacesDocumentId: 'permit-b', mayReplace: true }, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('Choose the one to use') });
 
@@ -1514,7 +1546,9 @@ describe('one current State Cremation Permit per case (2026-10)', () => {
     expect(current('1042').map((d) => d.id)).toEqual(['permit-a']);
     expect(caseDocumentFixtures.find((d) => d.id === 'permit-b')!.status).toBe('superseded');
     expect(summary.permit).toMatchObject({ documentId: 'permit-a' });
-    expect(summary.readiness.requirements.find((r) => r.key === 'permit_verified')!.ok).toBe(false);
+    // Once it is the only current permit, SOLIS records it (2026-11).
+    expect(summary.readiness.requirements.find((r) => r.key === 'permit_verified')!.ok).toBe(true);
+    expect(caseFixtures[index('1042')].crematory!.permitVerification).toMatchObject({ documentId: 'permit-a', source: 'automatic', displayedInSolis: false, verifiedBy: null });
     expect(eventsOf('1042', 'crematory.current_permit_chosen')[0].description).toBe('"Permit A.pdf" chosen as the current State Cremation Permit; "Permit B.pdf" kept as earlier versions');
     await expect(pkg.chooseCurrentPermit(ctx(), '1042', 'permit-a', 'mock')).rejects.toMatchObject({ status: 409 });
   });

@@ -28,11 +28,11 @@ describe('evaluateCrematoryReadiness', () => {
     expect(failing({ ...ready, isArchived: true })).toEqual([['cremation', 'This case is archived.']]);
   });
 
-  it('the permit must be uploaded as a PDF and confirmed — and re-confirmed if a different file replaces it', () => {
+  it('the permit must be uploaded as a PDF and recorded — and recorded again if a different file replaces it (automatic since 2026-11)', () => {
     expect(failing({ ...ready, permit: null, permitVerification: null }).map(([k]) => k)).toEqual(['permit_uploaded', 'permit_verified']);
-    expect(failing({ ...ready, permitVerification: null })).toEqual([['permit_verified', 'Confirm the uploaded permit is the approved permit for this decedent.']]);
+    expect(failing({ ...ready, permitVerification: null })).toEqual([['permit_verified', 'SOLIS records the uploaded permit automatically. Refresh if this does not clear.']]);
     expect(failing({ ...ready, permit: { ...ready.permit!, documentId: 'permit-2', checksumSha256: 'b'.repeat(64) } })).toEqual([
-      ['permit_verified', 'A different permit was uploaded since it was confirmed. Confirm the new one.'],
+      ['permit_verified', 'SOLIS records the uploaded permit automatically. Refresh if this does not clear.'],
     ]);
     expect(failing({ ...ready, permit: { ...ready.permit!, mimeType: 'image/jpeg' } })).toEqual([['permit_uploaded', 'The state permit must be a PDF.']]);
   });

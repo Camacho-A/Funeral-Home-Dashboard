@@ -217,6 +217,22 @@ async function automaticDetails(organizationId: string, case_: Case, mode: DataA
   return { name, date };
 }
 
+/**
+ * The state permit SOLIS records as the case's permit by itself (2026-11 —
+ * staff no longer confirm it): only when it is the one current permit, a
+ * PDF with a known checksum, and not already recorded as is. Never with two
+ * current permits — staff choose between them. A replaced permit clears
+ * the record, so its replacement is recorded the same way.
+ */
+function automaticPermit(facts: Facts): CaseDocument | null {
+  const permit = facts.permit;
+  if (!permit || facts.currentPermits.length !== 1 || facts.currentPermits[0].id !== permit.id) return null;
+  if (permit.mimeType !== 'application/pdf' || !permit.checksumSha256) return null;
+  const recorded = facts.case_.crematory?.permitVerification;
+  if (recorded && recorded.documentId === permit.id && recorded.checksumSha256 === permit.checksumSha256) return null;
+  return permit;
+}
+
 /** The confirmed package name on the case, if valid. */
 function confirmedPackageName(case_: Case): PackageName | null {
   const stored = case_.crematory?.packageName;
@@ -511,7 +527,7 @@ export async function confirmPermit(ctx: ActivityContext, caseId: string, displa
     (current) => (
       refuseArchived(current),
       refuseSent(current),
-      { permitVerification: { documentId, checksumSha256: facts.permit!.checksumSha256, version, displayedInSolis: true, verifiedBy: ctx.actorIdentityId, verifiedAt } }
+      { permitVerification: { documentId, checksumSha256: facts.permit!.checksumSha256, version, displayedInSolis: true, verifiedBy: ctx.actorIdentityId, verifiedAt, source: 'staff' } }
     ),
     mode,
   );
@@ -1046,7 +1062,7 @@ const PREPARATION_LEASE_MS = 120_000;
  *      Form — nothing new when that page is already saved, a new version
  *      when the Arrangement Form changed; the original is only read;
  *   2. the package is built when every requirement is met (the permit
- *      staff confirmed, page 3, workflow 2, the confirmed name and date) —
+ *      recorded automatically — see automaticPermit — page 3, workflow 2, the confirmed name and date) —
  *      nothing new when the saved package is still current, the next
  *      version when a source changed. Otherwise the case keeps showing what
  *      needs attention.
@@ -1094,7 +1110,7 @@ async function pendingWork(organizationId: string, caseId: string, mode: DataAda
   const page3 = facts.arrangementForm !== null && (facts.crematoryForm === null || facts.crematoryForm.createdAt < facts.arrangementForm.createdAt);
   const build = readinessOf(facts, false).readyToBuild && !packageIsCurrent(facts);
   const automatic = await automaticDetails(organizationId, case_, mode);
-  return { page3, build, details: automatic.name !== null || automatic.date !== null };
+  return { page3, build, details: automatic.name !== null || automatic.date !== null || automaticPermit(facts) !== null };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1180,15 +1196,17 @@ async function recordAutomaticDetails(ctx: ActivityContext, caseId: string, mode
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
   if (case_.isDeleted || isSentOrSending(case_)) return;
   const want = await automaticDetails(ctx.organizationId, case_, mode);
-  if (!want.name && !want.date) return;
+  const permit = automaticPermit(await loadFacts(ctx.organizationId, case_, mode));
+  if (!want.name && !want.date && !permit) return;
   const at = new Date().toISOString();
-  const wrote: { name: PackageName | null; date: { date: string; previous: string | null } | null } = { name: null, date: null };
+  const wrote: { name: PackageName | null; date: { date: string; previous: string | null } | null; permit: CaseDocument | null } = { name: null, date: null, permit: null };
   await applyCrematoryRecord(
     ctx.organizationId,
     caseId,
     (current) => {
       wrote.name = null;
       wrote.date = null;
+      wrote.permit = null;
       if (current.isDeleted || isSentOrSending(current)) return null;
       const change: Partial<CaseCrematoryRecord> = {};
       if (want.name && !current.crematory?.packageName) {
@@ -1200,7 +1218,12 @@ async function recordAutomaticDetails(ctx: ActivityContext, caseId: string, mode
         change.readyDate = { date: want.date, suggestedAtConfirmation: want.date, confirmedBy: null, confirmedAt: at, source: 'expected_pickup' };
         wrote.date = { date: want.date, previous: date?.date ?? null };
       }
-      return change.packageName || change.readyDate ? change : null;
+      const recorded = current.crematory?.permitVerification;
+      if (permit && !(recorded && recorded.documentId === permit.id && recorded.checksumSha256 === permit.checksumSha256)) {
+        change.permitVerification = { documentId: permit.id, checksumSha256: permit.checksumSha256!, version: permit.version ?? null, displayedInSolis: false, verifiedBy: null, verifiedAt: at, source: 'automatic' };
+        wrote.permit = permit;
+      }
+      return change.packageName || change.readyDate || change.permitVerification ? change : null;
     },
     mode,
   );
@@ -1209,6 +1232,14 @@ async function recordAutomaticDetails(ctx: ActivityContext, caseId: string, mode
       resourceId: null,
       description: `Name for the Crematory Package recorded from the intake form: ${wrote.name.last}, ${wrote.name.first}`,
       record: { first: wrote.name.first, last: wrote.name.last, source: 'intake_form', automatic: true },
+    }, mode);
+  }
+  if (wrote.permit) {
+    const p = wrote.permit;
+    await audit(ctx, caseId, ACTIVITY_EVENT_TYPES.CREMATORY_PERMIT_CONFIRMED, {
+      resourceId: p.id,
+      description: `State permit "${p.fileName}"${p.version ? ` (v${p.version})` : ''} recorded automatically as the permit for ${decedentDisplayName(case_)} — the only current permit on the case`,
+      record: { documentId: p.id, version: p.version ?? null, checksumSha256: p.checksumSha256, displayedInSolis: false, automatic: true },
     }, mode);
   }
   if (wrote.date) {
