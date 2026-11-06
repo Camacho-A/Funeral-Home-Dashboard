@@ -597,3 +597,9 @@ button.missingValue:focus-visible {
   font-size: 11px;
   line-height: 1.35;
 }
+
+/* Served in the armed forces (2026-11): its own full-width line under the
+   identifying details, so the label never wraps into a narrow column. */
+.grid > .veteranCell {
+  grid-column: 1 / -1;
+}

@@ -39,7 +39,8 @@
    not just the Dashboard. */
 @media (max-width: 560px) {
   .content {
-    padding: var(--space-8) var(--space-6) var(--space-12);
+    /* 16px at the sides (2026-11): 12px put headings too close to the edge on a phone. */
+    padding: var(--space-8) var(--space-8) var(--space-12);
   }
 }
 

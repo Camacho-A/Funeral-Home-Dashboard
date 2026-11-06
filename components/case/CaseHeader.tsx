@@ -82,8 +82,15 @@ export function CaseHeader({
         <div className={styles.identity}>
           <div className={styles.name}>{toDisplayName(decedentName)}</div>
           <div className={styles.meta}>
-            DOB {dateOfBirth} · DOD {dateOfDeath} · Case #{caseNumber}
-            {tagNumber ? ` · Tag #${tagNumber}` : ''}
+            {/* Each fact stays whole when the line wraps (2026-11): never "B2026-" / "007". */}
+            <span className={styles.metaPart}>DOB {dateOfBirth}</span> · <span className={styles.metaPart}>DOD {dateOfDeath}</span> ·{' '}
+            <span className={styles.metaPart}>Case #{caseNumber}</span>
+            {tagNumber ? (
+              <>
+                {' '}
+                · <span className={styles.metaPart}>Tag #{tagNumber}</span>
+              </>
+            ) : null}
           </div>
           {/* The facts line carries handling flags, so it appears when there
               is any flag to carry — not only when a weight was recorded. An

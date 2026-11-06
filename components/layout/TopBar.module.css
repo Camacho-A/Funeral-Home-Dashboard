@@ -185,7 +185,8 @@
   .topBar {
     height: auto;
     flex-wrap: wrap;
-    padding: var(--space-5) var(--space-6);
+    /* Same 16px side gutter as the page content (2026-11). */
+    padding: var(--space-5) var(--space-8);
     row-gap: var(--space-4);
     column-gap: var(--space-3);
   }
