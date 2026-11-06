@@ -132,8 +132,10 @@
   min-width: 0;
 }
 
-/* Stage shown as plain text, not a pill. */
-.badgeRow > :last-child {
+/* Stage shown as plain text, not a pill — for every stage. The doubled
+   class outranks the Badge variants (e.g. `.neutral.neutral`, 2026-11), so
+   no stage keeps a tinted background whichever stylesheet loads last. */
+.badgeRow.badgeRow > :last-child {
   background: none;
   border: none;
   padding: 0;
