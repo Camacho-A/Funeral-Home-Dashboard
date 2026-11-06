@@ -1,12 +1,17 @@
 .columns {
   display: grid;
-  grid-template-columns: 260px 1fr;
+  grid-template-columns: 260px minmax(0, 1fr);
   gap: var(--space-8);
   align-items: start;
 }
 
-@media (max-width: 720px) {
+.columns > * {
+  min-width: 0;
+}
+
+/* Tablet and phone (2026-11): the template list sits above the editor. */
+@media (max-width: 1100px) {
   .columns {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }

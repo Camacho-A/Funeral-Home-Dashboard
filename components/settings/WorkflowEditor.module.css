@@ -8,6 +8,13 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
+  min-width: 0;
+}
+
+/* Narrow screens (2026-11): the editor never grows past its column — long
+   names wrap, and the save row wraps instead of pushing the page wider. */
+.editor :global(.sx-save-row) {
+  flex-wrap: wrap;
 }
 
 .header {
@@ -200,6 +207,19 @@
   font-weight: var(--font-weight-semibold);
 }
 
+/* The field's name keeps most of the row; its type menu a fixed share
+   (2026-11 — the full-width menu used to squeeze the name to nothing). */
+.intakeFieldRowTop > .intakeFieldLabelInput {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.intakeFieldRowTop > select {
+  flex: 0 1 200px;
+  width: auto;
+  min-width: 0;
+}
+
 .intakeFieldRowBottom {
   display: flex;
   align-items: center;
@@ -215,6 +235,37 @@
   color: var(--color-text-secondary);
   cursor: pointer;
   white-space: nowrap;
+}
+
+.intakeFieldToggle.serviceToggle {
+  align-items: flex-start;
+  white-space: normal;
+  min-width: 0;
+}
+
+.serviceText {
+  min-width: 0;
+  padding-top: 1px;
+  overflow-wrap: anywhere;
+}
+
+/* Phones (2026-11): a stage's or item's name takes the whole line; its
+   move and remove buttons sit beneath it. */
+@media (max-width: 560px) {
+  .stageHeader,
+  .intakeFieldRowTop {
+    flex-wrap: wrap;
+  }
+
+  .stageHeader > :first-child,
+  .intakeFieldRowTop > :first-child {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .intakeFieldRowTop > select {
+    flex: 1 1 auto;
+  }
 }
 
 .intakeFieldOptionsInput {

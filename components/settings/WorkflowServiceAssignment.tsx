@@ -50,22 +50,26 @@ export function WorkflowServiceAssignment({
       {services.map((item) => {
         const holder = otherHolder(item.serviceCode);
         return (
-          <div key={item.serviceCode} className={styles.intakeFieldToggle} onClick={() => toggle(item.serviceCode)}>
+          <div key={item.serviceCode} className={`${styles.intakeFieldToggle} ${styles.serviceToggle}`} onClick={() => toggle(item.serviceCode)}>
             <Checkbox
               checked={selected.includes(item.serviceCode)}
               onChange={() => toggle(item.serviceCode)}
               aria-label={`Serves ${item.displayName}`}
             />
-            <span>{item.displayName}</span>
-            {holder && <span className={styles.mutedNote}>— served by &ldquo;{holder.name}&rdquo;</span>}
+            <span className={styles.serviceText}>
+              {item.displayName}
+              {holder && <span className={styles.mutedNote}> — served by &ldquo;{holder.name}&rdquo;</span>}
+            </span>
           </div>
         );
       })}
       {inactiveAssigned.map((item) => (
-        <div key={item.serviceCode} className={styles.intakeFieldToggle} onClick={() => toggle(item.serviceCode)}>
+        <div key={item.serviceCode} className={`${styles.intakeFieldToggle} ${styles.serviceToggle}`} onClick={() => toggle(item.serviceCode)}>
           <Checkbox checked onChange={() => toggle(item.serviceCode)} aria-label={`Serves ${item.displayName} (inactive)`} />
-          <span>{item.displayName}</span>
-          <span className={styles.mutedNote}>— inactive service: kept on this workflow; reactivate it in Settings › Price Catalog before approving</span>
+          <span className={styles.serviceText}>
+            {item.displayName}
+            <span className={styles.mutedNote}> — inactive service: kept on this workflow; reactivate it in Settings › Price Catalog before approving</span>
+          </span>
         </div>
       ))}
       {unknown.length > 0 && (
