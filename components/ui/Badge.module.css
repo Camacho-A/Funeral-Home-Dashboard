@@ -51,3 +51,11 @@
   background: var(--color-warning-bg);
   color: var(--color-warning-text);
 }
+
+/* UI refresh (2026-11): the neutral pill was nearly invisible on a white
+   card; a slightly stronger tint keeps it readable as a pill. */
+.neutral.neutral {
+  background: oklch(0.945 0.01 255);
+  color: var(--sx-text-2);
+  font-weight: 600;
+}

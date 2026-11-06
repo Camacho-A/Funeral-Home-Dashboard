@@ -211,6 +211,16 @@ export function canSendToCrematory(params: ResolvePermissionsParams, dataAdapter
   return hasPermission(params, dataAdapterMode, 'crematory.send');
 }
 
+/** Manatee DC application fax bundles (2026-11): prepare, preview and send. */
+export function canSendFax(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'fax.send');
+}
+
+/** …and record whether a sent bundle was delivered or failed. */
+export function canConfirmFax(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  return hasPermission(params, dataAdapterMode, 'fax.confirm');
+}
+
 export function canSendNotification(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'notification.send');
 }

@@ -53,6 +53,96 @@
   cursor: default;
 }
 
+/* Review variant (2026-11, fax bundle preview): controls above the page,
+   always in view. Sticky so they stay put while the surrounding dialog
+   scrolls; --pdf-toolbar-sticky-top lets a caller pin it to its own
+   scroll box's edge (e.g. minus that box's padding). */
+.toolbar {
+  position: sticky;
+  top: var(--pdf-toolbar-sticky-top, 0);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface, #fff);
+}
+
+.toolbarPager,
+.toolbarTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+
+.jump {
+  max-width: min(320px, 100%);
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 7px;
+  border: 1px solid var(--sx-border, #d8dde5);
+  background: var(--sx-surface, #fff);
+  color: var(--sx-text, #16202c);
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+
+.sectionLabel {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sx-text, #16202c);
+  overflow-wrap: anywhere;
+}
+
+/* Phones: pager on one row, Go to + Whole page on the next — two rows
+   instead of five, so the page keeps most of the height. */
+@media (max-width: 560px) {
+  .toolbar {
+    padding: 8px;
+    gap: 6px;
+  }
+
+  .toolbarPager,
+  .toolbarTools {
+    flex-wrap: nowrap;
+    width: 100%;
+    gap: 6px;
+  }
+
+  .toolbarPager {
+    justify-content: space-between;
+  }
+
+  .toolbar .pagerButton {
+    padding: 5px 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  .toolbar .pagerLabel {
+    font-size: 12.5px;
+    white-space: nowrap;
+  }
+
+  .jump {
+    flex: 1;
+    max-width: none;
+  }
+}
+
+.pagerButton:focus-visible,
+.jump:focus-visible {
+  outline: 2px solid var(--sx-navy, #1f3a5f);
+  outline-offset: 1px;
+}
+
 .pagerLabel {
   font-size: 13px;
   color: var(--sx-text-muted, #5b6675);

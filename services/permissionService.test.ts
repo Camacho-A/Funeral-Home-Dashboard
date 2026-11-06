@@ -77,7 +77,7 @@ describe('permissionService', () => {
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'mock');
       expect(permissions.has('organization.manage')).toBe(true);
       expect(permissions.has('case.delete')).toBe(true);
-      expect(permissions.size).toBe(74); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage; Send to Crematory (2026-10): + crematory.send; price catalog (2026-11): + serviceCatalog.price/.deactivate, caseOrder.customItems/.reprice
+      expect(permissions.size).toBe(76); // Manors launch-prep: 64 + pickup.read/pickup.update; Manors go-live fix: + case.reassign; Manors go-live hardening: + user.read; Manors RBAC restriction (2026-09): + caseNumber.manage; Send to Crematory (2026-10): + crematory.send; fax bundles (2026-11): + fax.send/fax.confirm; price catalog (2026-11): + serviceCatalog.price/.deactivate, caseOrder.customItems/.reprice
     });
 
     it('resolves readOnly to only read/view permissions', async () => {
@@ -177,7 +177,7 @@ describe('permissionService', () => {
         }
 
         if (dataCollectionId === 'rolePermissions') {
-          const pageIndex = query.paging?.cursor ? Number(query.paging.cursor.replace('page-', '')) : 0;
+          const pageIndex = query.cursorPaging?.cursor ? Number(query.cursorPaging.cursor.replace('page-', '')) : 0;
           const permissionKeys = options.grantPages[pageIndex] ?? [];
           const hasNext = pageIndex + 1 < options.grantPages.length;
           return {
@@ -226,12 +226,12 @@ describe('permissionService', () => {
     it("resolves Administrator's full real permission set across two pages (50 + the rest) — the exact shape of the live incident, including organization.manage, which was silently dropped by the unpaginated read", async () => {
       const page1 = PERMISSION_KEYS.slice(0, 50);
       const page2 = PERMISSION_KEYS.slice(50);
-      expect(page2.length).toBe(24); // 74 permissions since the price catalog keys (2026-11)
+      expect(page2.length).toBe(26); // 76 permissions since fax.send/fax.confirm and the price catalog keys (2026-11)
       stubWixRbacFetch({ roleKey: 'administrator', grantPages: [page1, page2] });
 
       const permissions = await resolvePermissionKeysForRole('administrator', DEFAULT_ORGANIZATION_ID, 'wix');
 
-      expect(permissions.size).toBe(74);
+      expect(permissions.size).toBe(76);
       expect(permissions.has('organization.manage')).toBe(true);
       for (const key of PERMISSION_KEYS) expect(permissions.has(key)).toBe(true);
     });

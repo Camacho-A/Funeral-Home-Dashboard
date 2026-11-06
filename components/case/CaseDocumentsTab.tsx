@@ -42,6 +42,8 @@ import { GenerateDocumentDialog } from './GenerateDocumentDialog';
 import { RequestSignatureDialog } from './RequestSignatureDialog';
 import { CaseFormsSection } from './CaseFormsSection';
 import { CrematoryPackageStatus } from './CrematoryPackageStatus';
+import { CaseFaxStatus } from '@/components/faxBundles/CaseFaxStatus';
+import { deathCertificateFaxSettings } from '@/domain/faxBundles/faxSettings';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { Modal } from '@/components/ui/Modal';
 import { DocumentPreview } from '@/components/documents/DocumentPreview';
@@ -390,23 +392,26 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             {extDisplay}
           </span>
           <div className="sx-doc-id">
-            <span className="sx-doc-name" title={doc.fileName}>
-              {doc.fileName}
-            </span>
+            {/* Case documents panel (2026-11): the status sits on the name's line. */}
+            <div className="sx-doc-title">
+              <span className="sx-doc-name" title={doc.fileName}>
+                {doc.fileName}
+              </span>
+              <span className="sx-doc-status">
+                <span className={`sx-status ${statusModifier}${doc.status === 'active' ? ' sx-doc-status-quiet' : ''}`}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</span>
+                {hasSignatureBadge && (
+                  <span className={`sx-status ${doc.signatureStatus === 'signed' ? 'sx-status-ok' : 'sx-status-warn'}`}>
+                    {doc.signatureStatus === 'signed' ? 'Signed' : 'Awaiting signature'}
+                  </span>
+                )}
+              </span>
+            </div>
             <span className="sx-doc-meta">
               {typeLabel}
               {doc.version !== null ? ` · v${doc.version}` : ''} · {doc.origin === 'generated' ? 'Generated' : 'Uploaded'} by {doc.actorDisplayName ?? 'Unknown'} ·{' '}
               {formatTimestamp(doc.createdAt)}
             </span>
           </div>
-          <span className="sx-doc-status">
-            <span className={`sx-status ${statusModifier}${doc.status === 'active' ? ' sx-doc-status-quiet' : ''}`}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</span>
-            {hasSignatureBadge && (
-              <span className={`sx-status ${doc.signatureStatus === 'signed' ? 'sx-status-ok' : 'sx-status-warn'}`}>
-                {doc.signatureStatus === 'signed' ? 'Signed' : 'Awaiting signature'}
-              </span>
-            )}
-          </span>
           <div className="sx-doc-actions">
             {canDownload && (
               <button
@@ -493,8 +498,26 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
         ))}
 
       {subTab === 'documents' && (
-        <>
-          {sendToCrematoryConfig(organizationId) && <CrematoryPackageStatus organizationId={organizationId} caseId={caseId} />}
+        // Crematory Package in a right-hand rail (2026-11), like Case
+        // Information on Overview; the documents keep the main column.
+        <div className="sx-docs-layout">
+          <div className="sx-docs-main">
+          {deathCertificateFaxSettings(organizationId) && (
+            <CaseFaxStatus
+              organizationId={organizationId}
+              caseId={caseId}
+              canRecordOutcome={permissions?.includes('fax.confirm') ?? false}
+            />
+          )}
+          <section className="sx-panel sx-docs-panel" aria-label="Case documents">
+          <div className="sx-panel-head sx-docs-panel-head">
+            <div className="sx-panel-heading">
+              <h3 className="sx-panel-title">
+                Case Documents {currentDocuments.length > 0 && <span className="sx-panel-count">{currentDocuments.length}</span>}
+              </h3>
+              <p className="sx-panel-sub">Generated and uploaded files for this case.</p>
+            </div>
+          </div>
           <div className="sx-docs-toolbar">
             {/* Toolbar (2026-10): one primary action, every "create a
                 document" action in one menu, and the bulk actions together
@@ -594,23 +617,24 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
             </div>
           )}
 
+          <div className="sx-docs-panel-body">
           {currentDocuments.length === 0 ? (
             <EmptyState message="No documents for this case yet." helperText="Upload a file or generate a document from a template." />
           ) : (
             <>
               {generatedDocuments.length > 0 && (
                 <section className="sx-docs-group">
-                  <h3 className="sx-section-title">
-                    Case documents<span className="sx-section-meta">{generatedDocuments.length} file(s)</span>
-                  </h3>
+                  <h4 className="sx-docs-group-title">
+                    Generated<span className="sx-section-meta">{generatedDocuments.length} file(s)</span>
+                  </h4>
                   {generatedDocuments.map(renderDocumentRow)}
                 </section>
               )}
               {(uploadedDocuments.length > 0 || uploadingFileName) && (
                 <section className="sx-docs-group">
-                  <h3 className="sx-section-title">
-                    Uploaded files<span className="sx-section-meta">{uploadedDocuments.length} file(s)</span>
-                  </h3>
+                  <h4 className="sx-docs-group-title">
+                    Uploaded<span className="sx-section-meta">{uploadedDocuments.length} file(s)</span>
+                  </h4>
                   {uploadingFileName && (
                     <div className="sx-doc-progress">
                       <span className="sx-doc-type" aria-hidden="true">
@@ -629,6 +653,8 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               )}
             </>
           )}
+          </div>
+          </section>
 
           <GenerateDocumentDialog open={generateOpen} onClose={() => setGenerateOpen(false)} organizationId={organizationId} caseId={caseId} regenerating={regeneratingDoc} />
 
@@ -660,7 +686,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               onConfirm={() => archive.mutateAsync({ documentId: archivingDoc.id })}
             />
           )}
-        </>
+          </div>
+          <aside className="sx-docs-rail" aria-label="Crematory Package status">
+            {sendToCrematoryConfig(organizationId) && <CrematoryPackageStatus organizationId={organizationId} caseId={caseId} />}
+          </aside>
+        </div>
       )}
     </div>
   );

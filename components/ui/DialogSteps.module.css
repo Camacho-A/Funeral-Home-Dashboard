@@ -1,0 +1,92 @@
+/* UI refresh (2026-11): see DialogSteps.tsx. */
+.steps {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 24px;
+  list-style: none;
+  border-bottom: 1px solid var(--sx-border);
+  background: var(--sx-subtle);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--sx-muted);
+}
+
+.item + .item::before {
+  content: '';
+  width: 28px;
+  height: 1px;
+  background: var(--sx-border-input);
+}
+
+.number {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--sx-border-input);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+}
+
+.current {
+  color: var(--sx-text);
+  font-weight: 600;
+}
+
+.current .number {
+  border-color: var(--sx-navy);
+  background: var(--sx-navy);
+  color: #fff;
+}
+
+.done .number {
+  border-color: var(--sx-navy-tint);
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+}
+
+.label {
+  white-space: nowrap;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+  .steps {
+    padding: 8px 16px;
+    gap: 6px;
+  }
+
+  .item + .item::before {
+    width: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .item:not(.current) .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+}

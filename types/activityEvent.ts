@@ -295,6 +295,38 @@ export const ACTIVITY_EVENT_TYPES = {
       administrator with a reason. Never carries any digit of the number. */
   CASE_SSN_CAPTURED: 'case.ssn_captured',
   CASE_SSN_CORRECTED: 'case.ssn_corrected',
+  /** Manatee County DC application fax bundles (2026-11). One bundle = one
+      PDF = one email = one fax; each event names the bundle (resourceId)
+      and, on a case, that case's place in it. SUBMITTED means Outlook
+      accepted the email for NuSo — never that the fax was delivered; only
+      DELIVERED (recorded by an Administrator or Manager) says that. */
+  FAX_BUNDLE_PREVIEWED: 'fax_bundle.previewed',
+  FAX_BUNDLE_SUBMITTED: 'fax_bundle.submitted',
+  FAX_BUNDLE_SEND_FAILED: 'fax_bundle.send_failed',
+  FAX_BUNDLE_NEEDS_REVIEW: 'fax_bundle.needs_review',
+  FAX_BUNDLE_DELIVERED: 'fax_bundle.delivered',
+  FAX_BUNDLE_NOT_DELIVERED: 'fax_bundle.not_delivered',
+  /** Fax Settings (2026-11). Every change an administrator makes to the
+      organization's fax configuration — category `administration`,
+      resourceType `faxSettings` / `faxDestination`. previousValue/newValue
+      carry only the fields that changed. These are the Fax Configuration
+      History; there is no other log. */
+  FAX_SETTINGS_UPDATED: 'fax_settings.updated',
+  FAX_DESTINATION_CREATED: 'fax_destination.created',
+  FAX_DESTINATION_UPDATED: 'fax_destination.updated',
+  FAX_DESTINATION_ARCHIVED: 'fax_destination.archived',
+  FAX_DESTINATION_RESTORED: 'fax_destination.restored',
+  /** Fax test transmissions (2026-11): a FICTIONAL test PDF sent to an
+      approved test recipient (docs/FAX_TEST_TRANSMISSIONS.md). Category
+      `administration`, resourceType `faxTestTransmission`, never a case.
+      attempted is written BEFORE Outlook is contacted; then exactly one
+      of submitted / not_sent / needs_review; then each recorded outcome. */
+  FAX_TEST_ATTEMPTED: 'fax_test.attempted',
+  FAX_TEST_SUBMITTED: 'fax_test.submitted',
+  FAX_TEST_NOT_SENT: 'fax_test.not_sent',
+  FAX_TEST_NEEDS_REVIEW: 'fax_test.needs_review',
+  FAX_TEST_OUTCOME_RECORDED: 'fax_test.outcome_recorded',
+  FAX_DESTINATION_DEFAULT_CHANGED: 'fax_destination.default_changed',
   /** A regeneration is its own event, distinct from DOCUMENT_GENERATED —
       the prior document row is superseded, never edited (see this
       phase's Invariants). */

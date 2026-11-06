@@ -256,3 +256,25 @@
     min-height: 44px;
   }
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): the panel is a card. */
+.panel.panel {
+  padding: 18px 20px 14px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+  min-width: 0;
+}
+
+.panel.panel .title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+@media (max-width: 560px) {
+  .panel.panel {
+    padding: 14px 14px 10px;
+  }
+}

@@ -62,33 +62,41 @@ function ledgerOf(count: number, organizationId = ORG, amount = 1_000) {
 }
 
 /**
- * A Wix Data endpoint that pages exactly like the real one: it honours
- * `paging.limit`, defaults to 50 when none is given, and only advertises
- * `hasNext` while more remain. A caller that ignores the cursor gets a
- * silently truncated answer here, precisely as in production.
+ * A Wix Data endpoint that pages exactly like the real one (as verified
+ * live 2026-11-04): the first page honours `cursorPaging.limit`, defaulting
+ * to 50; a later page is `cursorPaging: { cursor, limit }` — the cursor
+ * carries the first page's filter, a filter sent with a cursor is rejected
+ * (HTTP 400, WDE0080), and a cursor page without a limit falls back to 50.
+ * `hasNext` is only advertised while more remain. A caller that ignores
+ * the cursor gets a silently truncated answer here, precisely as in
+ * production.
  */
 function stubWix(collections: Record<string, unknown[]>) {
   const requests: Array<{ collection: string; limit: number | undefined; cursor: string | undefined }> = [];
+  const cursors = new Map<string, { offset: number; filter: Record<string, unknown> }>();
   vi.stubGlobal(
     'fetch',
     vi.fn(async (_url: string, init: { body: string }) => {
       const { dataCollectionId, query } = JSON.parse(init.body);
+      const cursor: string | undefined = query?.cursorPaging?.cursor;
+      requests.push({ collection: dataCollectionId, limit: query?.cursorPaging?.limit, cursor });
+      if (cursor && (query.filter || query.sort)) return { ok: false, status: 400, json: async () => ({ message: 'WDE0080' }) };
+      const state = cursor ? cursors.get(cursor)! : { offset: 0, filter: (query?.filter ?? {}) as Record<string, unknown> };
       const rows = collections[dataCollectionId] ?? [];
-      const filter = (query?.filter ?? {}) as Record<string, unknown>;
       const matching = rows.filter((row) =>
-        Object.entries(filter).every(([key, value]) => (row as Record<string, unknown>)[key] === value),
+        Object.entries(state.filter).every(([key, value]) => (row as Record<string, unknown>)[key] === value),
       );
-      const limit: number = query?.paging?.limit ?? WIX_DEFAULT_PAGE_SIZE;
-      const offset = query?.paging?.cursor ? Number(query.paging.cursor) : 0;
-      requests.push({ collection: dataCollectionId, limit: query?.paging?.limit, cursor: query?.paging?.cursor });
-      const page = matching.slice(offset, offset + limit);
-      const nextOffset = offset + page.length;
+      const limit: number = query?.cursorPaging?.limit ?? WIX_DEFAULT_PAGE_SIZE;
+      const page = matching.slice(state.offset, state.offset + limit);
+      const nextOffset = state.offset + page.length;
       const hasNext = nextOffset < matching.length;
+      const next = hasNext ? `cursor-${cursors.size}` : undefined;
+      if (next) cursors.set(next, { offset: nextOffset, filter: state.filter });
       return {
         ok: true,
         json: async () => ({
           dataItems: page.map((data) => ({ id: (data as { _id: string })._id, dataCollectionId, data })),
-          pagingMetadata: { hasNext, cursors: hasNext ? { next: String(nextOffset) } : {} },
+          pagingMetadata: { hasNext, cursors: next ? { next } : {} },
         }),
       };
     }),

@@ -13,17 +13,27 @@ export type BarChartRow = { label: string; value: number };
 export function BarChart({ rows, unit = '', title }: { rows: BarChartRow[]; unit?: string; title: string }) {
   const max = Math.max(1, ...rows.map((r) => r.value));
 
+  // UI refresh (2026-11): one row per category — label, bar, value — so
+  // each bar is read next to what it measures (it used to be a block of
+  // unlabelled bars above a separate list of labels).
   return (
     <div className={styles.chart}>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className={styles.barSvg} aria-hidden="true">
-        {rows.map((row, index) => {
-          const rowHeight = 100 / rows.length;
-          const barHeight = rowHeight * 0.6;
-          const y = index * rowHeight + (rowHeight - barHeight) / 2;
-          const width = (row.value / max) * 100;
-          return <rect key={row.label} x={0} y={y} width={width} height={barHeight} className={styles.bar} />;
-        })}
-      </svg>
+      <div className={styles.barRows} aria-hidden="true">
+        {rows.map((row) => (
+          <div key={row.label} className={styles.barRow}>
+            <span className={styles.barRowLabel}>{row.label}</span>
+            <span className={styles.barTrack}>
+              <svg viewBox="0 0 100 10" preserveAspectRatio="none" className={styles.barSvg} aria-hidden="true">
+                <rect x={0} y={0} width={Math.max(row.value > 0 ? 1.5 : 0, (row.value / max) * 100)} height={10} className={styles.bar} />
+              </svg>
+            </span>
+            <span className={styles.barRowValue}>
+              {row.value}
+              {unit ? ` ${unit}` : ''}
+            </span>
+          </div>
+        ))}
+      </div>
       <table className={styles.srOnlyTable}>
         <caption>{title}</caption>
         <thead>
@@ -41,17 +51,6 @@ export function BarChart({ rows, unit = '', title }: { rows: BarChartRow[]; unit
           ))}
         </tbody>
       </table>
-      <div className={styles.barLabels} aria-hidden="true">
-        {rows.map((row) => (
-          <div key={row.label} className={styles.barLabelRow}>
-            <span className={styles.barLabel}>{row.label}</span>
-            <span className={styles.barValue}>
-              {row.value}
-              {unit ? ` ${unit}` : ''}
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

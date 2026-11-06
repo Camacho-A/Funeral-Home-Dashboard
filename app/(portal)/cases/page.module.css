@@ -229,3 +229,8 @@
   margin-left: auto;
   align-self: center;
 }
+
+/* Fax DC Applications (2026-11): beside Send to Crematory. */
+.faxAction {
+  align-self: center;
+}

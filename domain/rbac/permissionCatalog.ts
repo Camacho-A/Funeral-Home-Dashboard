@@ -60,6 +60,15 @@ export const PERMISSION_KEYS = [
       Staff by default; administrators change it in Settings > Roles. */
   'crematory.send',
 
+  /** Manatee County DC application fax bundles (2026-11). `fax.send`:
+      prepare, preview and send a bundle (one combined PDF, one fax) —
+      Administrator, Manager, Funeral Director, Office Staff and Arranger by
+      default. `fax.confirm`: record whether NuSo delivered it (and with it
+      complete "Sent day before ashes arrive") — the same roles except
+      Arranger. Separate from `crematory.send`, which is unchanged. */
+  'fax.send',
+  'fax.confirm',
+
   /** Phase 25 (Document Generation & Template Management). Gate the
       org-wide Document Template Library — distinct from
       `document.view`/`document.generate` above, which gate a single
@@ -330,6 +339,8 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionKey, string> = {
   'document.upload': 'Upload a file to a case',
   'document.archive': 'Archive a case document',
   'crematory.send': 'Send Crematory Packages to the crematory by email (once per case)',
+  'fax.send': 'Prepare, preview and send Manatee DC application fax bundles',
+  'fax.confirm': 'Record whether a fax bundle was delivered or failed',
 
   'document.template.read': 'View the organization-wide document template library',
   'document.template.manage': 'Create, edit, duplicate, and archive document templates',

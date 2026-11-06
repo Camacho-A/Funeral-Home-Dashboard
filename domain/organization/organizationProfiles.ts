@@ -1,3 +1,4 @@
+import type { DeathCertificateFaxSettings } from '../faxBundles/faxSettings';
 import type { Organization } from '../../types/organization';
 import type { ChecklistItemTemplate } from '../../types/workflowTemplate';
 import type { HideableModuleKey } from './moduleVisibility';
@@ -332,6 +333,11 @@ export type OrganizationFeaturePreferences = {
       Platform default: false — every version is usable as soon as it is
       saved, exactly as before. */
   workflowApprovalRequired: boolean;
+  /** Manatee County DC application fax bundles (2026-11): where saved
+      applications are faxed, through the connected mailbox and NuSo's
+      email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
+      offered. */
+  deathCertificateFax: DeathCertificateFaxSettings | null;
 };
 
 export type CrematoryAuthorizationDocumentSource = 'arrangement_form_page' | 'not_configured';
@@ -420,6 +426,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   dymoCaseLabel: false,
   arrangementPageExtracts: false,
   sendToCrematory: null,
+  deathCertificateFax: null,
   manateeDeathCertificateApplication: false,
   caseSsn: false,
   workflowByServiceType: false,
@@ -516,6 +523,21 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
     officialDocuments: ['envelope', 'certificate_of_cremation'],
     // Its JotForm rows read with the original key, exactly as today.
     jotformLegacyDefaultApiKey: true,
+    // Manatee County Vital Statistics' fax (also printed on form DH 1961).
+    // Sending stays off until the NuSo sender, account requirements and a
+    // controlled test delivery are verified (docs/MANATEE_FAX_BUNDLES.md).
+    deathCertificateFax: {
+      destinationName: 'Manatee County Vital Statistics',
+      faxNumber: '9415545490',
+      gatewayDomain: 'fax.nuso.io',
+      emailOrganizationName: 'Manors Cremation',
+      maxAttachmentBytes: 10 * 1024 * 1024,
+      sendingEnabled: false,
+      // Test transmissions: ON for ONE fax number the business approved for
+      // testing (2026-11-05) — never Manatee County's. No dry-run email.
+      // Remove it again after testing (empty list = off).
+      testRecipients: { faxNumbers: ['646-370-3249'], emailAddresses: [] },
+    },
     manateeDeathCertificateApplication: true,
     caseSsn: true,
     // Tuesdays and Fridays, seven calendar days — confirmed with the

@@ -148,15 +148,19 @@ export function CaseOrderCard({
   if (!canReadCaseOrder) return null;
 
   return (
-    <div className={styles.card}>
-      <div className={styles.header}>
-        <div className={styles.title}>Case Order</div>
+    <section className={`sx-panel ${styles.card}`} aria-label="Case Order">
+      <div className={`sx-panel-head ${styles.header}`}>
+        <div className="sx-panel-heading">
+          <h2 className="sx-panel-title">Case Order</h2>
+          <p className="sx-panel-sub">Services and charges, payments and the balance due.</p>
+        </div>
         {order && canReadPayment && (
           <Badge variant={overpaymentCents > 0 ? 'warning' : caseOrderBalanceStatusVariant(order.balanceDue)}>
             {overpaymentCents > 0 ? 'Overpaid' : caseOrderBalanceStatusLabel(order.balanceDue)}
           </Badge>
         )}
       </div>
+      <div className={`sx-panel-body ${styles.orderBody}`}>
 
       {interruption && (
         <div className={styles.error} role="alert">
@@ -291,9 +295,11 @@ export function CaseOrderCard({
         </>
       )}
 
+      </div>
+
       {canReadPayment && (
-        <>
-          <div className={styles.historyTitle}>Payment history</div>
+        <div className="sx-panel-section">
+          <h3 className={`sx-panel-section-title ${styles.historyTitle}`}>Payment history</h3>
           {payments.length === 0 ? (
             <EmptyState message="No payments recorded yet." />
           ) : (
@@ -321,7 +327,7 @@ export function CaseOrderCard({
               ))}
             </ul>
           )}
-        </>
+        </div>
       )}
 
       {canEditCaseOrder && (
@@ -333,6 +339,6 @@ export function CaseOrderCard({
           onClose={() => setEditOpen(false)}
         />
       )}
-    </div>
+    </section>
   );
 }

@@ -21,19 +21,33 @@ export function SettingsShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isHub = pathname === '/settings';
 
+  // UI refresh (2026-11): the hub has the page header once; a Settings page
+  // has a breadcrumb and its own title inside one white card — no repeated
+  // "Settings" heading above it.
   return (
     <div>
-      <h1 className="sx-page-title" style={{ marginBottom: 24 }}>
-        Settings
-      </h1>
+      {isHub && (
+        <div className="sx-page-header">
+          <div>
+            <h1 className="sx-page-title">Settings</h1>
+            <p className="sx-page-desc">Configure your organization, team, workflows and security.</p>
+          </div>
+        </div>
+      )}
       <div className={isHub ? 'sx-settings sx-settings-hub' : 'sx-settings'}>
         <div className="sx-settings-main">
-          {!isHub && (
-            <Link href="/settings" className="sx-back sx-settings-back">
-              ← Settings
-            </Link>
+          {isHub ? (
+            children
+          ) : (
+            <>
+              <nav className="sx-crumbs" aria-label="Breadcrumb">
+                <Link href="/settings" className="sx-settings-back">
+                  ← Settings
+                </Link>
+              </nav>
+              <div className="sx-settings-card">{children}</div>
+            </>
           )}
-          {children}
         </div>
       </div>
     </div>

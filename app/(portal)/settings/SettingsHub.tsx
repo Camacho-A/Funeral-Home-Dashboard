@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { AuthAdapterMode } from '@/lib/env';
 import { ImportHistoricalCaseModal } from '@/components/modals/ImportHistoricalCaseModal';
 import { useSettingsAreas, type AdminArea } from './settingsAreas';
+import { SettingsAreaIcon } from '@/components/settings/settingsIcons';
 
 /**
  * Item #5 (2026-09, navigation cleanup). "Settings" is now the app's one
@@ -39,9 +40,15 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
         <span className="sx-dir-desc">{area.description}</span>
       </>
     );
+    const icon = (
+      <span className="sx-settings-icon" aria-hidden="true">
+        <SettingsAreaIcon areaKey={area.key} />
+      </span>
+    );
     if ('href' in area) {
       return (
         <Link key={area.key} href={area.href} className="sx-dir-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) 16px' }}>
+          {icon}
           <span>{content}</span>
           <span className="sx-dir-arrow" aria-hidden="true">
             ›
@@ -50,7 +57,8 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
       );
     }
     return (
-      <button key={area.key} type="button" className="sx-dir-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) 16px', width: '100%', border: 'none', background: 'none', cursor: 'pointer', font: 'inherit', textAlign: 'left' }} onClick={area.onClick}>
+      <button key={area.key} type="button" className="sx-dir-row" style={{ gridTemplateColumns: 'minmax(0, 1fr) 16px', width: '100%', cursor: 'pointer', font: 'inherit', textAlign: 'left' }} onClick={area.onClick}>
+        {icon}
         <span>{content}</span>
         <span className="sx-dir-arrow" aria-hidden="true">
           ›
@@ -64,11 +72,6 @@ export function SettingsHub({ authAdapterMode }: { authAdapterMode: AuthAdapterM
 
   return (
     <div>
-      <div className="sx-settings-head">
-        <h2 className="sx-settings-title">Overview</h2>
-        <p className="sx-settings-desc">Configure your organization, team and security.</p>
-      </div>
-
       {visibleAdministration.length > 0 && (
         <section>
           <h3 className="sx-section-title">Administration</h3>

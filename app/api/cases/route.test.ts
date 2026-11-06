@@ -468,36 +468,39 @@ describe('GET /api/cases — wix mode pagination (Case list scalability, Phase 1
     };
   }
 
-  /** A paging-aware 'cases' mock: honors `paging.limit`/`paging.cursor`
-      against a fixed, caller-supplied (already correctly-ordered) item
-      array — a call with NO `paging` at all (the legacy/queryAllWixDataItems
-      shape) gets everything in one shot, matching that path's real,
-      independently-tested looping behavior. */
+  /** A paging-aware 'cases' mock following Wix's real cursor paging
+      (pagination correction, 2026-11): the first page is `cursorPaging:
+      { limit }`; a later page is `cursorPaging: { cursor }` ALONE (a
+      filter or sort sent with a cursor is rejected, as live Wix does) and
+      continues at the limit sent with the cursor (50 if none). A call with no
+      cursorPaging at all (the legacy shape) gets everything in one shot,
+      matching that path's real, independently-tested looping behavior. */
   function mockPagedCasesListQuery(allCaseItems: ReturnType<typeof caseItem>[]) {
-    let pageSize = 0;
+    const cursors = new Map<string, { offset: number; pageSize: number }>();
     mockQueryWixDataItems.mockImplementation(
-      (collectionId: string, options?: { filter?: Record<string, unknown>; paging?: { limit?: number; cursor?: string } }) => {
+      (collectionId: string, options?: { filter?: Record<string, unknown>; sort?: unknown; cursorPaging?: { limit?: number; cursor?: string } }) => {
         if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
         if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
         if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
 
-        if (!options?.paging) {
+        if (!options?.cursorPaging) {
           return Promise.resolve({ dataItems: allCaseItems, pagingMetadata: { hasNext: false, cursors: { next: null } } });
         }
 
-        const { limit, cursor } = options.paging;
-        let offset = 0;
-        if (typeof limit === 'number') {
-          pageSize = limit;
-        } else if (typeof cursor === 'string') {
-          offset = Number(cursor);
+        const { limit, cursor } = options.cursorPaging;
+        let state = { offset: 0, pageSize: limit ?? 50 };
+        if (typeof cursor === 'string') {
+          if (options.filter || options.sort) return Promise.reject(new Error('WDE0080: filter can not be set when using cursor pagination'));
+          state = { ...cursors.get(cursor)!, pageSize: limit ?? 50 };
         }
-        const slice = allCaseItems.slice(offset, offset + pageSize);
-        const nextOffset = offset + slice.length;
+        const slice = allCaseItems.slice(state.offset, state.offset + state.pageSize);
+        const nextOffset = state.offset + slice.length;
         const hasNext = nextOffset < allCaseItems.length;
+        const next = hasNext ? `wix-cursor-${cursors.size}` : null;
+        if (next) cursors.set(next, { offset: nextOffset, pageSize: state.pageSize });
         return Promise.resolve({
           dataItems: slice,
-          pagingMetadata: { hasNext, cursors: { next: hasNext ? String(nextOffset) : null } },
+          pagingMetadata: { hasNext, cursors: { next } },
         });
       },
     );
@@ -544,6 +547,38 @@ describe('GET /api/cases — wix mode pagination (Case list scalability, Phase 1
     expect(page2.cases.map((c: { id: string }) => c.id)).toEqual(['c3']);
     expect(page2.hasMore).toBe(false);
     expect(page2.nextCursor).toBeNull();
+  });
+
+  it('pagination correction (2026-11): 153 cases at 50 per page — four requests, every case exactly once, in order, and page 2+ sends only the Wix cursor and the page size', async () => {
+    const items = Array.from({ length: 153 }, (_, i) => caseItem(`c${String(i).padStart(3, '0')}`, `B2026-${String(i).padStart(3, '0')}`, '2026-01-01T00:00:00.000Z'));
+    mockPagedCasesListQuery(items);
+
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    let requests = 0;
+    do {
+      const params: Record<string, string> = { limit: '50', ...(cursor ? { cursor } : {}) };
+      const page = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, params))).json();
+      seen.push(...page.cases.map((c: { id: string }) => c.id));
+      cursor = page.nextCursor;
+      requests++;
+    } while (cursor && requests < 10);
+
+    expect(requests).toBe(4);
+    expect(seen).toEqual(items.map((i) => i.id));
+    const casesCalls = mockQueryWixDataItems.mock.calls.filter((c) => c[0] === 'cases');
+    expect(casesCalls.slice(1).every((c) => JSON.stringify(Object.keys(c[1])) === '["cursorPaging"]' && c[1].cursorPaging.limit === 50)).toBe(true);
+  });
+
+  it('pagination correction (2026-11): a page that holds another organization\'s case is refused, never shown', async () => {
+    const foreign = caseItem('x1', 'B2026-900', '2026-01-01T00:00:00.000Z');
+    foreign.data.organizationId = SECOND_MOCK_ORGANIZATION_ID;
+    mockPagedCasesListQuery([caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z'), foreign]);
+
+    const page1 = await (await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '1' }))).json();
+    const response = await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '1', cursor: page1.nextCursor }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).cases).toEqual([]);
   });
 
   it('4/5. no duplicate or skipped cases across a full pagination run', async () => {
@@ -630,7 +665,7 @@ describe('GET /api/cases — wix mode pagination (Case list scalability, Phase 1
     mockPagedCasesListQuery([caseItem('c1', 'B2026-001', '2026-01-01T00:00:00.000Z')]);
     await GET(requestWithPaging(DEFAULT_ORGANIZATION_ID, { limit: '999999' }));
 
-    expect(mockQueryWixDataItems).toHaveBeenCalledWith('cases', expect.objectContaining({ paging: { limit: 200 } }));
+    expect(mockQueryWixDataItems).toHaveBeenCalledWith('cases', expect.objectContaining({ cursorPaging: { limit: 200 } }));
   });
 });
 
@@ -1980,30 +2015,36 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
       arbitrary page and filters afterward, because there IS no
       unfiltered page to fetch — filtering always happens first. */
   function mockWixCasesCollection(allCaseItems: ReturnType<typeof caseItem>[]) {
-    let pageSize = 0;
+    // Wix's real cursor paging (2026-11): a cursor carries its first page's
+    // filter; the limit is resent with it (50 if not); a filter or sort sent
+    // with a cursor is rejected.
+    const cursors = new Map<string, { offset: number; pageSize: number; filter: Record<string, unknown> }>();
     mockQueryWixDataItems.mockImplementation(
-      (collectionId: string, options?: { filter?: Record<string, unknown>; paging?: { limit?: number; cursor?: string } }) => {
+      (collectionId: string, options?: { filter?: Record<string, unknown>; sort?: unknown; cursorPaging?: { limit?: number; cursor?: string } }) => {
         if (collectionId === 'roles') return Promise.resolve({ dataItems: [ADMINISTRATOR_ROLE_ITEM] });
         if (collectionId === 'rolePermissions') return Promise.resolve({ dataItems: ADMINISTRATOR_ROLE_PERMISSION_ITEMS });
         if (collectionId !== 'cases') return Promise.resolve({ dataItems: [] });
 
-        const filter = options?.filter ?? {};
-        const matched = allCaseItems.filter((item) => matchesWixFilter(item.data, filter));
-
-        if (!options?.paging) {
+        if (!options?.cursorPaging) {
+          const matched = allCaseItems.filter((item) => matchesWixFilter(item.data, options?.filter ?? {}));
           return Promise.resolve({ dataItems: matched, pagingMetadata: { hasNext: false, cursors: { next: null } } });
         }
 
-        const { limit, cursor } = options.paging;
-        let offset = 0;
-        if (typeof limit === 'number') pageSize = limit;
-        else if (typeof cursor === 'string') offset = Number(cursor);
-        const slice = matched.slice(offset, offset + pageSize);
-        const nextOffset = offset + slice.length;
+        const { limit, cursor } = options.cursorPaging;
+        let state = { offset: 0, pageSize: limit ?? 50, filter: options.filter ?? {} };
+        if (typeof cursor === 'string') {
+          if (options.filter || options.sort) return Promise.reject(new Error('WDE0080: filter can not be set when using cursor pagination'));
+          state = { ...cursors.get(cursor)!, pageSize: limit ?? 50 };
+        }
+        const matched = allCaseItems.filter((item) => matchesWixFilter(item.data, state.filter));
+        const slice = matched.slice(state.offset, state.offset + state.pageSize);
+        const nextOffset = state.offset + slice.length;
         const hasNext = nextOffset < matched.length;
+        const next = hasNext ? `wix-cursor-${cursors.size}` : null;
+        if (next) cursors.set(next, { ...state, offset: nextOffset });
         return Promise.resolve({
           dataItems: slice,
-          pagingMetadata: { hasNext, cursors: { next: hasNext ? String(nextOffset) : null } },
+          pagingMetadata: { hasNext, cursors: { next } },
         });
       },
     );
@@ -2208,7 +2249,7 @@ describe('GET /api/cases — stage filtering + server-side search (Case list sca
       mockWixCasesCollection([caseItem({ id: 'c1', caseNumber: 'B2026-001', createdAt: '2026-01-01T00:00:00.000Z' })]);
       await GET(requestWith(DEFAULT_ORGANIZATION_ID, { searchQuery: 'x', limit: '10' }));
 
-      const call = mockQueryWixDataItems.mock.calls.find((c) => c[0] === 'cases' && c[1]?.paging?.limit);
+      const call = mockQueryWixDataItems.mock.calls.find((c) => c[0] === 'cases' && c[1]?.cursorPaging?.limit);
       const filter = call?.[1]?.filter as { $and: Record<string, unknown>[] };
       const orClause = filter.$and[1] as { $or: Record<string, unknown>[] };
       const fieldsSearched = orClause.$or.map((clause) => Object.keys(clause)[0]);

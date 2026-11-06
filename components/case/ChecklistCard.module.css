@@ -449,3 +449,220 @@
 .releaseStepTitle + .terminalRecord {
   margin-left: 0;
 }
+
+/* ---------- Guided steps (2026-11 refresh) ----------
+   The stage as a card: a progress ring and the stage's name in the
+   header, then each step as a full-width row — done, up next, to do, or
+   waiting on the step above. Doubled selectors win over the rules above
+   without editing them. */
+.card.card {
+  padding: 0;
+  overflow: hidden;
+  border-color: var(--sx-card-border, var(--color-border));
+  border-radius: var(--sx-card-radius, 14px);
+  box-shadow: var(--sx-card-shadow, var(--shadow-card));
+}
+
+.headerRow.headerRow {
+  gap: 14px;
+  margin: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sx-border-soft, var(--color-border));
+}
+
+.headerText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.headerRow .title {
+  font-size: 15.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.headerRow .subtitle {
+  margin: 0;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ring {
+  position: relative;
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+
+.ringTrack {
+  fill: none;
+  stroke: var(--sx-border, #e5e7eb);
+  stroke-width: 4;
+}
+
+.ringValue {
+  fill: none;
+  stroke: var(--sx-navy, #1e3a5f);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 300ms ease;
+}
+
+.ring[data-complete] .ringValue {
+  stroke: var(--sx-green, #2f855a);
+}
+
+.ringText {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--sx-text, inherit);
+}
+
+.card .viewingBanner {
+  margin: 12px 20px 0;
+}
+
+.list.list {
+  gap: 0;
+}
+
+.item.item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 20px;
+  border-radius: 0;
+  border-top: 1px solid var(--sx-border-soft, var(--color-border));
+  transition: background-color var(--sx-ease, 120ms ease);
+}
+
+.item.item:first-child {
+  border-top: 0;
+}
+
+.item[data-state='todo']:hover,
+.item[data-state='next']:hover {
+  background: var(--sx-subtle, #f7f8fa);
+}
+
+/* Up next: a navy edge and a soft tint, so the eye lands on it. */
+.item[data-state='next'] {
+  background: var(--sx-selected, #f3f6fb);
+  box-shadow: inset 3px 0 0 var(--sx-navy, #1e3a5f);
+}
+
+.itemRow.itemRow {
+  gap: 12px;
+  min-height: 24px;
+}
+
+.itemLabel.itemLabel {
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+.itemLabelDone.itemLabelDone {
+  text-decoration: none;
+  color: var(--sx-text-2, var(--color-text-muted));
+}
+
+.itemLabelClickable {
+  cursor: pointer;
+}
+
+.upNext {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--sx-navy, #1e3a5f);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.itemMeta {
+  padding-left: 30px; /* the box's 18px footprint + the row's 12px gap */
+  color: var(--sx-muted, var(--color-text-muted));
+  font-size: 12px;
+  line-height: 16px;
+}
+
+/* Fields and actions line up under the label, not under the box. */
+.item.item > :not(.itemRow):not(.itemMeta) {
+  margin-left: 30px;
+}
+
+.allDone {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--sx-border-soft, var(--color-border));
+  background: var(--sx-green-bg);
+  color: var(--sx-green-text);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+.allDoneMark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--sx-green);
+  color: #fff;
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .headerRow.headerRow {
+    flex-wrap: wrap;
+    padding: 14px 16px;
+  }
+
+  .item.item {
+    padding: 12px 16px;
+  }
+
+  /* The Medical Examiner control gets its own line under the stage's name. */
+  .headerRow .meControl {
+    flex-basis: 100%;
+    padding-left: 58px;
+  }
+
+  /* A long name stays beside its box; tags and notes wrap below it. */
+  .itemRow.itemRow {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .itemRow .itemLabel {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .itemRow .completionNote {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-left: 30px;
+  }
+
+  .item.item > :not(.itemRow):not(.itemMeta),
+  .itemMeta {
+    margin-left: 0;
+    padding-left: 0;
+  }
+}

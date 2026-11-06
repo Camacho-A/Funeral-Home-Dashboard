@@ -31,6 +31,8 @@ const TRIGGER_DESCRIPTION: Record<string, string> = {
   'crematory.package_submitted': 'sent to the crematory through SOLIS',
   'external_form.arrangement_received': 'Arrangement Form received',
   'sla.event_recorded': 'workflow event recorded',
+  'manatee.application_saved': 'Manatee County DC application saved',
+  'fax.dc_application_delivered': 'DC application fax delivery confirmed',
 };
 
 function itemLabel(case_: Case, location: ChecklistItemLocation): string {

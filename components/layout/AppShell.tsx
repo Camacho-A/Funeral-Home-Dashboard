@@ -69,7 +69,8 @@ export function AppShell({
           authAdapterMode={authAdapterMode}
           onMenuClick={() => setMobileNavOpen(true)}
         />
-        <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''}`}>
+        {/* UI refresh (2026-11, styles/solis-refresh.css): every page uses the canvas-and-cards design. */}
+        <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''} sx-refresh`}>
           <SandboxBanner />
           {children}
         </main>

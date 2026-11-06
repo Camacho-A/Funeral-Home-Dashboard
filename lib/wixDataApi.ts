@@ -17,13 +17,16 @@ import { invalidateRequestScoped } from './requestMemo';
 
 type WixDataQueryRequest = {
   filter?: Record<string, unknown>;
-  /** `cursor`, added for `queryAllWixDataItems` below: Wix Data's own
-      cursor-paging contract requires the *first* page be requested via
-      `limit` alone and every subsequent page via `cursor` alone (never
-      both together) — verified empirically against the live site (not
-      merely assumed) while diagnosing the `rolePermissions` 50-item
-      silent-cap incident this type change fixes. */
-  paging?: { limit?: number; offset?: number; cursor?: string };
+  /** Offset paging. Wix has no cursor here: a `paging.cursor` is silently
+      ignored (see queryAllWixDataItems). */
+  paging?: { limit?: number; offset?: number };
+  /** Cursor paging (2026-11), mutually exclusive with `paging`. The first
+      page sends `{ limit }` with the filter and sort; every later page
+      sends `{ cursor, limit }` and NO filter or sort — the cursor carries
+      them, and Wix rejects a `filter` sent with one (HTTP 400, `WDE0080`).
+      The limit must be resent: a cursor page without one falls back to
+      Wix's default of 50. Verified live. */
+  cursorPaging?: { limit?: number; cursor?: string };
   /** Phase 24 (Case Activity Timeline & Audit Center): the first caller in
       this codebase to need ordering — every prior query either fetched a
       single row (`paging: { limit: 1 }`) or filtered/sorted an already-small
@@ -132,15 +135,23 @@ export async function countWixDataItems(
     started reading only the first 50, dropping `organization.manage`
     (Manors go-live incident, 2026-09).
     `queryAllWixDataItems` is the general-purpose fix: pages through
-    Wix's cursor-based pagination (first page via `paging: { limit }`,
-    every subsequent page via `paging: { cursor } }` alone — the two are
-    mutually exclusive per Wix's own contract, confirmed empirically) until
-    `pagingMetadata.hasNext` is false, returning every matching row
-    regardless of collection size. `MAX_PAGES` is a safety backstop against
-    an unbounded loop (e.g. a Wix response that never sets `hasNext:
-    false`) — 200 pages * the default 100-item page size is 20,000 rows,
-    far beyond any realistic single-filter query in this codebase today;
-    hitting it throws rather than looping forever. */
+    Wix's cursor-based pagination until `pagingMetadata.hasNext` is false,
+    returning every matching row regardless of collection size.
+
+    Pagination correction (2026-11): this used to ask for later pages with
+    `paging: { cursor }`. Wix ignores a cursor there and returns the first
+    page again (50 rows, `hasNext: true`), so any query matching more than
+    one page looped until MAX_PAGES and threw (seen live: 242 unfiltered
+    `rolePermissions` rows). It now uses `cursorPaging` — first page
+    `{ limit }` with the filter and sort, later pages `{ cursor, limit }`
+    with no filter or sort (the cursor carries both). A page that repeats a
+    row already read throws rather than returning duplicates.
+
+    `MAX_PAGES` is a safety backstop against an unbounded loop (e.g. a Wix
+    response that never sets `hasNext: false`) — 200 pages * the default
+    100-item page size is 20,000 rows, far beyond any realistic
+    single-filter query in this codebase today; hitting it throws rather
+    than looping forever. */
 const MAX_PAGES = 200;
 
 export async function queryAllWixDataItems<Item = Record<string, unknown>>(
@@ -150,15 +161,24 @@ export async function queryAllWixDataItems<Item = Record<string, unknown>>(
 ): Promise<Array<{ id: string; dataCollectionId: string; data: Item }>> {
   const limit = options?.limit ?? 100;
   const all: Array<{ id: string; dataCollectionId: string; data: Item }> = [];
+  const seen = new Set<string>();
   let cursor: string | undefined;
 
   for (let page = 0; page < MAX_PAGES; page++) {
-    const response = await queryWixDataItems<Item>(dataCollectionId, {
-      filter,
-      sort: options?.sort,
-      paging: cursor ? { cursor } : { limit },
-    });
-    all.push(...response.dataItems);
+    const response = await queryWixDataItems<Item>(
+      dataCollectionId,
+      cursor ? { cursorPaging: { cursor, limit } } : { filter, sort: options?.sort, cursorPaging: { limit } },
+    );
+    for (const item of response.dataItems) {
+      if (seen.has(item.id)) {
+        throw new WixDataApiError(
+          `Wix Data query for collection "${dataCollectionId}" returned an item it had already returned (page ${page + 1}) — aborting rather than returning duplicates.`,
+          599,
+        );
+      }
+      seen.add(item.id);
+      all.push(item);
+    }
 
     if (!response.pagingMetadata?.hasNext) return all;
     cursor = response.pagingMetadata.cursors?.next ?? undefined;

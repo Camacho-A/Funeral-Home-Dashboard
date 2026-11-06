@@ -1,11 +1,12 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchCrematoryCaseSummary, type CrematoryCaseSummary } from '@/lib/crematoryClient';
 import { ReplacePermitButton } from '@/components/crematory/ReplacePermitButton';
 import { caseDocumentsKey } from '@/hooks/useCaseDocumentLibrary';
 import { formatTimestamp } from '@/utils/format';
+import { buildCaseDocumentViewUrl } from '@/lib/caseDocumentsClient';
 import styles from './CrematoryPackageStatus.module.css';
 
 /**
@@ -64,6 +65,7 @@ export function packageHeadline(s: CrematoryCaseSummary): { text: string; tone: 
 
 export function CrematoryPackageStatus({ organizationId, caseId }: { organizationId: string; caseId: string }) {
   const queryClient = useQueryClient();
+  const [showDetails, setShowDetails] = useState(false);
   // SOLIS prepares page 3 and the package after an upload or a change
   // (2026-10): while that is due, check again every few seconds — for up
   // to two minutes — so the panel updates without reopening the case.
@@ -93,44 +95,80 @@ export function CrematoryPackageStatus({ organizationId, caseId }: { organizatio
       queryClient.invalidateQueries({ queryKey: ['crematory', organizationId] }),
       queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organizationId, caseId) }),
     ]);
+  const rows = ROWS.map(({ key, label }) => ({ key, label, r: requirement(key) })).filter((row) => row.r !== undefined);
+  const readyCount = rows.filter((row) => row.r!.ok).length;
+  const pct = rows.length > 0 ? Math.round((readyCount / rows.length) * 100) : 0;
+  const sent = s.lastSubmission?.status === 'submitted';
+  // Once sent, the rows fold away (2026-11): nothing on them can change.
+  const folded = sent && !showDetails;
   return (
-    <section className={styles.panel} aria-label="Crematory Package">
-      <div className={styles.head}>
-        <h3 className={styles.title}>Crematory Package</h3>
-        <span className={`sx-status ${headline.tone === 'ok' ? 'sx-status-ok' : headline.tone === 'warn' ? 'sx-status-warn' : ''}`}>{headline.text}</span>
-      </div>
-      {s.package && (
-        <p className={styles.file}>
-          {s.package.fileName}
-          {s.package.version !== null ? ` · v${s.package.version}` : ''}
-        </p>
-      )}
-      {s.previousSend?.indicated && (
-        <p className={styles.detail} role="alert">
-          This case indicates that documents may already have been sent to the crematory outside SOLIS. Verify the previous send in Send to Crematory before continuing.
-        </p>
-      )}
-      <ul className={styles.list}>
-        {ROWS.map(({ key, label }) => {
-          const r = requirement(key);
-          if (!r) return null;
-          return (
-            <li key={key}>
-              <span className={r.ok ? styles.ok : styles.todo} aria-hidden="true">
-                {r.ok ? '✓' : '●'}
+    <section className={`sx-panel ${styles.panel}`} aria-label="Crematory Package">
+      <div className="sx-panel-head">
+        <div className="sx-panel-heading">
+          <h3 className="sx-panel-title">Crematory Package</h3>
+          {s.package ? (
+            <p className={`sx-panel-sub ${styles.file}`}>
+              <span className={styles.fileName}>
+                {s.package.fileName}
+                {s.package.version !== null ? ` · v${s.package.version}` : ''}
               </span>{' '}
-              {label}
-              {!r.ok && r.detail ? <span className={styles.detail}> — {r.detail}</span> : null}
-              {key === 'permit_uploaded' && s.permit && (
-                <>
-                  <span className={styles.detail}> — {s.permit.fileName}</span>{' '}
-                  {canReplace && r.ok && <ReplacePermitButton organizationId={organizationId} caseId={caseId} decedentDisplayName={s.decedentDisplayName} permit={s.permit} onReplaced={replaced} />}
-                </>
-              )}
-            </li>
-          );
-        })}
+              <a href={buildCaseDocumentViewUrl(organizationId, caseId, s.package.documentId)} target="_blank" rel="noreferrer" className={styles.open}>
+                Open
+              </a>
+            </p>
+          ) : (
+            <p className="sx-panel-sub">Made from page 3 of the Arrangement Form and the state permit. Sent from Send to Crematory.</p>
+          )}
+        </div>
+        <span className={`sx-status ${styles.status} ${headline.tone === 'ok' ? 'sx-status-ok' : headline.tone === 'warn' ? 'sx-status-warn' : ''}`}>{headline.text}</span>
+      </div>
+      {s.previousSend?.indicated && (
+        <div className={`sx-form-banner ${styles.banner}`} role="alert">
+          This case indicates that documents may already have been sent to the crematory outside SOLIS. Verify the previous send in Send to Crematory before continuing.
+        </div>
+      )}
+      {!sent && !folded && rows.length > 0 && (
+        <div className={styles.progress}>
+          <span>
+            {readyCount} of {rows.length} ready
+          </span>
+          <span className={styles.bar} role="progressbar" aria-label="Crematory Package progress" aria-valuemin={0} aria-valuemax={rows.length} aria-valuenow={readyCount}>
+            <span style={{ width: `${pct}%` }} />
+          </span>
+        </div>
+      )}
+      {sent && rows.length > 0 && (
+        <div className={styles.foldBar}>
+          <span>Sent — what it was made from:</span>
+          <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" aria-expanded={!folded} onClick={() => setShowDetails(!showDetails)}>
+            {folded ? 'Show details' : 'Hide details'}
+          </button>
+        </div>
+      )}
+      {!folded && (
+      <ul className={styles.list}>
+        {rows.map(({ key, label, r }) => (
+          <li key={key} className={styles.row} data-ok={r!.ok || undefined}>
+            <span className={styles.mark} aria-label={r!.ok ? 'Done' : 'To do'}>
+              {r!.ok ? '✓' : ''}
+            </span>
+            <span className={styles.rowText}>
+              <span className={styles.rowLabel}>{label}</span>
+              {key === 'permit_uploaded' && s.permit ? (
+                <span className={styles.detail}>{s.permit.fileName}</span>
+              ) : !r!.ok && r!.detail ? (
+                <span className={styles.detail}>{r!.detail}</span>
+              ) : null}
+            </span>
+            {key === 'permit_uploaded' && s.permit && canReplace && r!.ok && (
+              <span className={styles.rowAction}>
+                <ReplacePermitButton organizationId={organizationId} caseId={caseId} decedentDisplayName={s.decedentDisplayName} permit={s.permit} onReplaced={replaced} />
+              </span>
+            )}
+          </li>
+        ))}
       </ul>
+      )}
     </section>
   );
 }

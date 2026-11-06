@@ -1416,6 +1416,107 @@ export function recordCrematorySendAcknowledgment(
   );
 }
 
+/**
+ * Manatee County DC application fax bundles (2026-11). `caseId` null: the
+ * bundle-level event (every case listed in its record); otherwise that
+ * case's own entry, naming the bundle and its position in it.
+ */
+export function recordFaxBundleEvent(
+  ctx: ActivityContext,
+  caseId: string | null,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_PREVIEWED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_SUBMITTED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_SEND_FAILED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_NEEDS_REVIEW
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_DELIVERED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_BUNDLE_NOT_DELIVERED,
+  details: { bundleId: string; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'documents',
+      eventType,
+      resourceType: 'faxBundle',
+      resourceId: details.bundleId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: details.severity ?? 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/**
+ * Fax test transmissions (2026-11) — every attempt and outcome of a
+ * fictional test PDF sent to an approved test recipient. Never a case.
+ */
+export function recordFaxTestEvent(
+  ctx: ActivityContext,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_ATTEMPTED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_SUBMITTED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_NOT_SENT
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_NEEDS_REVIEW
+    | typeof ACTIVITY_EVENT_TYPES.FAX_TEST_OUTCOME_RECORDED,
+  details: { transmissionId: string; description: string; record: Record<string, unknown>; severity?: 'info' | 'warning' },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType,
+      resourceType: 'faxTestTransmission',
+      resourceId: details.transmissionId,
+      previousValue: null,
+      newValue: JSON.stringify(details.record),
+      description: details.description,
+      metadata: null,
+      severity: details.severity ?? 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/**
+ * Fax Settings (2026-11) — one administrator change to the organization's
+ * fax configuration. `previous` / `next` hold only the changed fields.
+ * Category `administration`; resourceType names which record changed.
+ */
+export function recordFaxConfigurationEvent(
+  ctx: ActivityContext,
+  eventType:
+    | typeof ACTIVITY_EVENT_TYPES.FAX_SETTINGS_UPDATED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_CREATED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_UPDATED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_ARCHIVED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_RESTORED
+    | typeof ACTIVITY_EVENT_TYPES.FAX_DESTINATION_DEFAULT_CHANGED,
+  details: { resourceType: 'faxSettings' | 'faxDestination'; resourceId: string; description: string; previous: Record<string, unknown> | null; next: Record<string, unknown> | null },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType,
+      resourceType: details.resourceType,
+      resourceId: details.resourceId,
+      previousValue: details.previous ? JSON.stringify(details.previous) : null,
+      newValue: details.next ? JSON.stringify(details.next) : null,
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

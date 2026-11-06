@@ -235,3 +235,47 @@
   font-size: 12px;
   color: var(--color-text-muted-cool);
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): the panel is a card. */
+.panel.panel {
+  padding: 18px 20px 14px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+  min-width: 0;
+}
+
+.panel.panel .title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+@media (max-width: 560px) {
+  .panel.panel {
+    padding: 14px 14px 10px;
+  }
+}
+
+/* UI refresh (2026-11): the SLA counts as soft, tinted tiles. */
+.panel.panel .slaCount {
+  padding: 8px 12px 9px;
+  border: none;
+  border-radius: 10px;
+  background: var(--sx-subtle);
+}
+
+.panel.panel .slaCount[data-tone='ok'] { background: var(--sx-green-bg); }
+.panel.panel .slaCount[data-tone='warn'] { background: var(--sx-amber-bg); }
+.panel.panel .slaCount[data-tone='bad'] { background: var(--sx-red-bg); }
+
+.panel.panel .slaCount dt {
+  font-size: 12px;
+  color: var(--sx-text-2);
+}
+
+.panel.panel .slaCount dd {
+  font-size: 20px;
+  line-height: 26px;
+}

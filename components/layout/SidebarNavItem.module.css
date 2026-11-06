@@ -44,3 +44,47 @@
   color: var(--color-brand-text-cool);
   font-weight: var(--font-weight-semibold);
 }
+
+/* UI refresh (2026-11): a little taller, quieter at rest, and the current
+   page marked by a navy accent bar as well as its tint. */
+.item.item {
+  position: relative;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--sx-text-2);
+}
+
+.item.item .icon {
+  color: var(--sx-muted);
+}
+
+.item.item:hover:not(.itemActive) {
+  background: var(--sx-hover);
+  color: var(--sx-text);
+}
+
+.item.itemActive {
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+  font-weight: 600;
+}
+
+.item.itemActive .icon {
+  color: var(--sx-navy);
+}
+
+.item.itemActive::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--sx-navy);
+}
+
+.item.item:focus-visible {
+  outline: none;
+  box-shadow: var(--sx-focus);
+}

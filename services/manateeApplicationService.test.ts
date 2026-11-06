@@ -274,7 +274,7 @@ describe('preview and save', () => {
     });
   });
 
-  it('saves to the case documents, versioned and audited — and leaves the case unchanged', async () => {
+  it('saves to the case documents, versioned and audited — and changes nothing on the case but "DC application filled out"', async () => {
     const before = structuredClone(caseFixtures[index]);
     const first = await saveManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed(), ctx, 'mock');
     const second = await saveManateeApplication(DEFAULT_ORGANIZATION_ID, CASE_ID, reviewed({ withoutCause: 1, fedexFee: true }), ctx, 'mock');
@@ -289,7 +289,16 @@ describe('preview and save', () => {
     expect(activityEventFixtures.some((e) => e.resourceId === second.id)).toBe(true);
     // Nothing about the SSN in the file name or the audit trail.
     expect(JSON.stringify(activityEventFixtures)).not.toMatch(/000-?12-?3456/);
-    expect(caseFixtures[index]).toEqual(before);
+    // 2026-11: saving a valid application completes "DC application filled out"
+    // (stage 4, item 0) automatically — and nothing else on the case.
+    const { checklistState, checklistCompletions, revision: _revision, ...rest } = caseFixtures[index];
+    const { checklistState: beforeState, checklistCompletions: beforeCompletions, revision: _beforeRevision, ...beforeRest } = before;
+    void _revision;
+    void _beforeRevision;
+    expect(rest).toEqual(beforeRest);
+    expect(checklistState).toEqual({ ...beforeState, '4:0': true });
+    expect(checklistCompletions?.['4:0']).toMatchObject({ done: true, method: 'automatic', source: 'document_generated', eventType: 'manatee.application_saved' });
+    expect(Object.keys(checklistCompletions ?? {})).toEqual([...Object.keys(beforeCompletions ?? {}), '4:0']);
 
     // The saved file is locked (flattened) and carries the corrected values:
     // 2 + 1 certificates, FedEx 1 × 15.00, grand total 39.00.

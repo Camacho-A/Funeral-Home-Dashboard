@@ -1,0 +1,48 @@
+/* Fax test transmissions (2026-11). */
+.panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.lead { margin: 0; font-size: 13px; color: var(--sx-text-2); line-height: 19px; }
+.success { border: 1px solid oklch(0.88 0.05 150); background: var(--sx-green-bg); color: var(--sx-green-text); margin: 0; }
+.off { margin: 0; border: 1px solid var(--sx-border-input); background: var(--sx-subtle); color: var(--sx-text-2); }
+.warn { color: var(--sx-amber-text); }
+.facts { display: grid; gap: 6px; margin: 0; font-size: 13px; }
+.facts > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px; }
+.facts dt { color: var(--sx-muted); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.steps { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.step { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 12px 14px; border: 1px solid var(--sx-border); border-radius: 10px; min-width: 0; }
+.stepPassed { border-color: oklch(0.85 0.06 150); background: var(--sx-green-bg); }
+.stepText { display: flex; flex: 1 1 260px; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.stepTitle { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; font-weight: 600; }
+.passTag, .failTag { display: inline-block; margin-left: 6px; padding: 0 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600; line-height: 20px; }
+.passTag { background: var(--sx-green-bg); color: var(--sx-green-text); border: 1px solid oklch(0.85 0.06 150); }
+.failTag { background: var(--sx-red-bg); color: var(--sx-red); }
+.subTitle { margin: 0; font-size: 13.5px; font-weight: 600; }
+.open { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--sx-navy); border-radius: 10px; background: var(--sx-selected); min-width: 0; }
+.openReview { border-color: oklch(0.7 0.14 65); background: var(--sx-amber-bg); }
+.openStatus { margin: 0; font-size: 13px; overflow-wrap: anywhere; }
+.stages { display: grid; gap: 4px; margin: 0; font-size: 12.5px; }
+.stages > div { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px; }
+.stages dt { color: var(--sx-muted); }
+.stages dd { margin: 0; min-width: 0; }
+.break { overflow-wrap: anywhere; }
+.record { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 10px 0 0; border: 0; border-top: 1px solid var(--sx-border); min-width: 0; }
+.choices, .checks { display: flex; flex-direction: column; gap: 6px; }
+.choice { display: flex; align-items: flex-start; gap: 8px; font-size: 13.5px; cursor: pointer; }
+.choice input { margin-top: 2px; accent-color: var(--sx-navy); }
+.history { display: flex; flex-direction: column; gap: 8px; }
+.historyList { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.historyList li { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--sx-border-soft); font-size: 13px; overflow-wrap: anywhere; }
+.confirm { display: flex; flex-direction: column; gap: 12px; }
+.confirmTitle { margin: 0; font-size: 17px; line-height: 24px; font-weight: 600; }
+.confirmFacts { display: grid; gap: 8px; margin: 0; font-size: 13.5px; }
+.confirmFacts > div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 8px; }
+.confirmFacts dt { color: var(--sx-muted); }
+.confirmFacts dd { display: flex; flex-direction: column; gap: 2px; margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--sx-text-2); overflow-wrap: anywhere; }
+.ack { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--sx-navy); border-radius: 10px; background: var(--sx-selected); font-size: 13.5px; font-weight: 500; cursor: pointer; }
+.ack input { margin-top: 2px; accent-color: var(--sx-navy); }
+.confirmActions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 560px) {
+  .facts > div, .stages > div, .confirmFacts > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}

@@ -38,6 +38,7 @@ export function CaseTasksCard({
   onAddTask: (text: string) => void;
 }) {
   const [draft, setDraft] = useState('');
+  const openCount = tasks.filter((task) => !task.isDone).length;
 
   function handleAdd() {
     const text = draft.trim();
@@ -47,8 +48,15 @@ export function CaseTasksCard({
   }
 
   return (
-    <div className={styles.card}>
-      <div className={styles.title}>Tasks for this case</div>
+    <section className={`sx-panel ${styles.card}`} aria-label="Tasks for this case">
+      <div className="sx-panel-head">
+        <div className="sx-panel-heading">
+          <h2 className="sx-panel-title">
+            Tasks for this case {openCount > 0 && <span className="sx-panel-count">{openCount} open</span>}
+          </h2>
+        </div>
+      </div>
+      <div className="sx-panel-body">
       {tasks.length === 0 ? (
         <EmptyState message="No tasks for this case yet — add one below." />
       ) : (
@@ -85,7 +93,8 @@ export function CaseTasksCard({
           ))}
         </div>
       )}
-      <div className={styles.composer}>
+      </div>
+      <div className={`sx-panel-foot ${styles.composer}`}>
         <TextField
           value={draft}
           // SOLIS-wide ALL-CAPS data standard (2026-09): UX-only — the
@@ -95,6 +104,6 @@ export function CaseTasksCard({
         />
         <Button onClick={handleAdd}>Add</Button>
       </div>
-    </div>
+    </section>
   );
 }

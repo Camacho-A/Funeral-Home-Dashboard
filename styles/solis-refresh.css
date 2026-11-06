@@ -1,0 +1,803 @@
+/*
+ * SOLIS UI refresh (2026-11) — the design language of the Fax DC
+ * Applications dialog, applied to the whole app area by area: a soft grey
+ * canvas, white rounded cards with a hairline border and a whisper of
+ * shadow, a clear title → section → detail hierarchy, status chips, and
+ * one primary action. Presentation only — no behaviour lives here.
+ *
+ * Every portal page: the shell's content area carries `sx-refresh`
+ * (components/layout/AppShell.tsx). Rules here are scoped under it, so
+ * pages outside the portal shell (login, family portal, signing) are
+ * unchanged.
+ *
+ * Imported last from styles/globals.css.
+ */
+
+:root {
+  --sx-canvas: oklch(0.972 0.004 255);
+  --sx-card: #fff;
+  --sx-card-border: oklch(0.915 0.005 255);
+  --sx-card-radius: 14px;
+  --sx-card-shadow: 0 1px 2px oklch(0.2 0.02 255 / 0.04), 0 1px 3px oklch(0.2 0.02 255 / 0.04);
+  --sx-card-shadow-hover: 0 2px 4px oklch(0.2 0.02 255 / 0.05), 0 8px 24px oklch(0.2 0.02 255 / 0.07);
+  --sx-card-pad: 20px;
+  --sx-title-xl: 26px;
+  --sx-title-lg: 18px;
+  --sx-title-md: 15px;
+}
+
+/* ---------- Canvas ---------- */
+.sx-refresh {
+  background: var(--sx-canvas) !important;
+}
+
+/* ---------- Card ---------- */
+.sx-card {
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  padding: var(--sx-card-pad);
+  min-width: 0;
+}
+
+/* ---------- Page header (refreshed pages) ---------- */
+.sx-refresh .sx-page-title {
+  font-size: var(--sx-title-xl);
+  line-height: 34px;
+  letter-spacing: -0.02em;
+}
+
+.sx-refresh .sx-page-desc {
+  font-size: 14px;
+  color: var(--sx-text-2);
+}
+
+/* ---------- Shared building blocks on refreshed pages ---------- */
+/* Section labels between cards: small caps-style, like the Settings hub.
+   Inside a card they keep their normal look (reset further below). */
+.sx-refresh .sx-section-title {
+  border-bottom: none;
+  padding: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-refresh .sx-section-title .sx-section-meta {
+  letter-spacing: normal;
+  text-transform: none;
+  font-weight: 400;
+}
+
+/* Figures: one card each. */
+.sx-refresh .sx-kpis {
+  gap: 14px;
+  border: none;
+  margin: 0 0 24px;
+}
+
+.sx-refresh .sx-kpi,
+.sx-refresh .sx-kpi:first-child {
+  padding: 16px 20px 18px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-kpi + .sx-kpi {
+  border-left: 1px solid var(--sx-card-border);
+}
+
+.sx-refresh a.sx-kpi:hover {
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+.sx-refresh .sx-kpi-label {
+  font-size: 13px;
+}
+
+.sx-refresh .sx-kpi-value {
+  font-size: 26px;
+  line-height: 32px;
+  letter-spacing: -0.02em;
+}
+
+/* Tables: inside a card, with a quiet header row. */
+.sx-refresh .sx-table-wrap {
+  padding: 4px 12px 6px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-table-wrap .sx-table th {
+  background: transparent;
+}
+
+.sx-refresh .sx-table-wrap .sx-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* A featured link (e.g. Reports → All Case Data). */
+.sx-refresh .sx-feature {
+  background: var(--sx-card);
+  border-color: var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-feature:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+/* A directory (e.g. the Reports list): a grid of cards. */
+.sx-refresh .sx-dir {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+  margin: 0 0 32px;
+}
+
+.sx-refresh .sx-dir-row {
+  margin: 0;
+  padding: 14px 16px;
+  min-height: 64px;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: 12px;
+  box-shadow: var(--sx-card-shadow);
+  transition: box-shadow var(--sx-ease), border-color var(--sx-ease);
+}
+
+.sx-refresh .sx-dir-row:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+}
+
+.sx-refresh .sx-dir-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--sx-navy-tint);
+}
+
+.sx-refresh .sx-dir-name {
+  font-weight: 600;
+}
+
+.sx-refresh .sx-dir-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+}
+
+.sx-refresh .sx-feature .sx-dir-icon {
+  width: 36px;
+  height: 36px;
+  background: var(--sx-navy);
+  color: #fff;
+}
+
+/* Tasks: the composer and each group as cards. */
+.sx-refresh .sx-tasks {
+  max-width: 1080px;
+}
+
+.sx-refresh .sx-composer {
+  border-color: var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  margin: 0 0 20px;
+}
+
+.sx-refresh .sx-task-group {
+  padding: 16px 16px 8px;
+  margin: 0 0 16px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-task-group .sx-task-row {
+  margin: 0;
+  padding: 6px 10px;
+}
+
+.sx-refresh .sx-task-group .sx-task-row:last-child {
+  border-bottom: none;
+}
+
+/* Segmented controls and sub-navigation sit on the canvas. */
+.sx-refresh .sx-seg {
+  background: oklch(0.945 0.006 255);
+}
+
+.sx-refresh .sx-subnav {
+  border-bottom-color: var(--sx-card-border);
+}
+
+/* A link or action inside a section label keeps its normal case. */
+.sx-refresh .sx-section-title a,
+.sx-refresh .sx-section-title button {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* Empty states on the canvas: a soft card, so a section never looks blank. */
+.sx-refresh .sx-empty {
+  padding: 22px 20px;
+  border: 1px dashed var(--sx-border-input);
+  border-radius: var(--sx-card-radius);
+  background: oklch(0.985 0.002 255);
+  text-align: center;
+}
+
+.sx-refresh :is(.sx-settings-card, .sx-card, .sx-task-group, .sx-table-wrap, .sx-modal) .sx-empty {
+  padding: 12px 0;
+  border: none;
+  background: transparent;
+  text-align: inherit;
+}
+
+/* A table placed straight on the canvas (no .sx-table-wrap) is its own card. */
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) {
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  overflow: hidden;
+}
+
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) th:first-child,
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) td:first-child {
+  padding-left: 16px;
+}
+
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) th:last-child,
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) td:last-child {
+  padding-right: 16px;
+}
+
+.sx-refresh .sx-table:not(:is(.sx-table-wrap, .sx-settings-card, .sx-card, .sx-modal) .sx-table) tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* A case's workflow timeline as a card. */
+.sx-refresh .sx-wf {
+  max-width: 880px;
+  padding: 18px 20px 12px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+/* Inside a card, a section title is a heading again, not a label. */
+.sx-refresh .sx-settings-card .sx-section-title,
+.sx-refresh .sx-card .sx-section-title,
+.sx-refresh .sx-task-group .sx-section-title,
+.sx-refresh .sx-wf > .sx-section-title {
+  padding: 0 0 10px;
+  font-size: 14px;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--sx-text);
+}
+
+.sx-refresh .sx-settings-card .sx-section-title {
+  border-bottom: 1px solid var(--sx-border);
+}
+
+@media (max-width: 560px) {
+  .sx-refresh .sx-dir {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sx-refresh .sx-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .sx-refresh .sx-kpi,
+  .sx-refresh .sx-kpi:first-child {
+    padding: 12px 14px 14px;
+  }
+
+  .sx-refresh .sx-kpi-value {
+    font-size: 21px;
+    line-height: 28px;
+  }
+}
+
+/* ---------- Settings ---------- */
+/* Hub: title + description once; areas as a grid of cards with an icon. */
+.sx-refresh .sx-settings-hub .sx-dir {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+  column-gap: 14px;
+  margin: 0 0 32px;
+}
+
+.sx-refresh .sx-settings-hub .sx-section-title {
+  border-bottom: none;
+  padding: 0 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) !important;
+  align-items: start;
+  column-gap: 14px;
+  min-height: 0;
+  margin: 0;
+  padding: 16px 16px 18px;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  transition: box-shadow var(--sx-ease), border-color var(--sx-ease), transform var(--sx-ease);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-row:hover {
+  background: var(--sx-card);
+  border-color: oklch(0.85 0.03 255);
+  box-shadow: var(--sx-card-shadow-hover);
+  transform: translateY(-1px);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-row:focus-visible {
+  box-shadow: var(--sx-focus), var(--sx-card-shadow);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-arrow {
+  display: none;
+}
+
+.sx-settings-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sx-navy-tint);
+  color: var(--sx-navy);
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-name {
+  font-size: 14.5px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.sx-refresh .sx-settings-hub .sx-dir-desc {
+  margin-top: 3px;
+  white-space: normal;
+  overflow: visible;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--sx-muted);
+}
+
+/* The hub is wide enough for three cards a row. */
+.sx-refresh .sx-settings-hub .sx-settings-main {
+  max-width: 1200px;
+}
+
+/* A Settings page: one white card on the canvas, with the breadcrumb above it. */
+.sx-refresh .sx-settings:not(.sx-settings-hub) .sx-settings-main {
+  max-width: 1120px;
+}
+
+.sx-refresh .sx-settings-card {
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  padding: 28px 32px 32px;
+  min-width: 0;
+}
+
+.sx-refresh .sx-settings-card > div > h1:first-child,
+.sx-refresh .sx-settings-card > h1:first-child {
+  margin: 0 0 20px;
+  font-size: 22px;
+  line-height: 30px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--sx-text);
+}
+
+/* The page already has its title (the h1); a panel that repeats it as its
+   own heading keeps only its description. */
+.sx-refresh .sx-settings-card h1 ~ * .sx-settings-head .sx-settings-title {
+  display: none;
+}
+
+.sx-refresh .sx-settings-card h1 ~ * .sx-settings-head .sx-settings-desc {
+  margin-top: 0;
+}
+
+.sx-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--sx-muted);
+}
+
+.sx-crumbs a {
+  color: var(--sx-muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.sx-crumbs a:hover {
+  color: var(--sx-text);
+}
+
+@media (max-width: 860px) {
+  .sx-refresh .sx-settings-card {
+    padding: 20px 18px 24px;
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .sx-refresh .sx-settings-hub .sx-dir {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sx-refresh .sx-settings-hub .sx-dir-row {
+    transition: none;
+  }
+
+  .sx-refresh .sx-settings-hub .sx-dir-row:hover {
+    transform: none;
+  }
+}
+
+/* Guided steps (2026-11): the Workflow tab's current stage matches the
+   Overview checklist — the first open step is marked, and a button opens it. */
+.sx-wf-item {
+  grid-template-columns: 18px auto 1fr;
+}
+
+.sx-wf-item .sx-wf-next {
+  justify-self: start;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--sx-navy);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.sx-wf-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+/* ---------- Case panels (2026-11) ----------
+   The case page's cards share one shape with the Next step checklist: a
+   header band (title, one-line description, actions), a body of divided
+   rows, and a soft footer band for adding or recording. */
+.sx-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--sx-card);
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+  overflow: hidden;
+}
+
+.sx-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sx-border-soft);
+}
+
+.sx-panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sx-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.sx-panel-sub {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 17px;
+  color: var(--sx-text-2);
+}
+
+.sx-panel-count {
+  min-width: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: var(--sx-subtle);
+  border: 1px solid var(--sx-border);
+  color: var(--sx-text-2);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sx-panel-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sx-panel-body {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 20px;
+}
+
+/* An empty body: the empty state sits in its own padding. */
+.sx-panel-body:has(> .sx-empty:only-child) {
+  padding: 16px 20px;
+}
+
+.sx-panel-section {
+  padding: 14px 20px;
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.sx-panel-section-title {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-panel-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--sx-border-soft);
+  background: var(--sx-subtle);
+}
+
+@media (max-width: 560px) {
+  .sx-panel-head,
+  .sx-panel-section,
+  .sx-panel-foot {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-panel-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
+
+.sx-seg > button[aria-pressed='true'] {
+  background: #fff;
+  color: var(--sx-text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.06);
+}
+
+.sx-panel-foot .sx-seg {
+  align-self: flex-start;
+}
+
+/* ---------- Documents tab rail (2026-11) ----------
+   The Crematory Package sits on the right, as Case Information does on
+   Overview (same column widths and gap); the documents keep the main
+   column. With nothing in the rail, one column as before. */
+.sx-docs:has(.sx-docs-rail > *) {
+  max-width: none;
+}
+
+.sx-docs-layout:has(.sx-docs-rail > *) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
+  /* Closer than Overview's 48px (2026-11): the list's status column ends at
+     its right edge, so a wide gap read as empty space. */
+  gap: 24px;
+  align-items: start;
+}
+
+.sx-docs-main {
+  min-width: 0;
+}
+
+.sx-docs-rail {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+}
+
+.sx-docs-rail:empty {
+  display: none;
+}
+
+/* In the rail the status gets its own line under the title. */
+.sx-docs-rail .sx-panel-head {
+  flex-wrap: wrap;
+}
+
+.sx-docs-rail .sx-panel-head > .sx-status {
+  max-width: 100%;
+  text-align: left;
+}
+
+@media (max-width: 1024px) {
+  .sx-docs-layout:has(.sx-docs-rail > *) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  /* Narrow: the status comes first, above the documents, as before. */
+  .sx-docs-rail {
+    position: static;
+    order: -1;
+  }
+}
+
+/* ---------- Case Documents panel (2026-11) ----------
+   The documents as one panel like the Crematory Package beside it: title
+   and count, the toolbar under them, then Generated / Uploaded groups of
+   rows — file icon, name with its status on the same line, one short
+   line of detail, View and the menu at the end. */
+.sx-docs-panel {
+  margin-bottom: 16px;
+}
+
+.sx-docs-panel .sx-docs-panel-head {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+
+.sx-docs-panel .sx-docs-toolbar {
+  margin: 0;
+  padding: 8px 20px 14px;
+  border-bottom: 1px solid var(--sx-border-soft);
+}
+
+.sx-docs-panel .sx-docs-bulk-note {
+  margin: 12px 20px 0;
+}
+
+.sx-docs-panel-body {
+  padding: 4px 20px 8px;
+}
+
+.sx-docs-panel-body > .sx-empty {
+  margin: 12px 0;
+}
+
+.sx-docs-panel .sx-docs-group {
+  margin: 0;
+}
+
+.sx-docs-panel .sx-docs-group + .sx-docs-group {
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.sx-docs-group-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  padding: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-docs-group-title .sx-section-meta {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sx-docs-panel .sx-doc-row {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  margin: 0 -8px;
+}
+
+.sx-docs-panel .sx-docs-group > div:last-child > .sx-doc-row {
+  border-bottom: 0;
+}
+
+/* Name, then any status (Generation Failed, Signed, Awaiting signature…)
+   on its own line under it. An active document's status is hidden, so it
+   adds no line. */
+.sx-doc-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sx-doc-title .sx-doc-name {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.sx-doc-title .sx-doc-status {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.sx-docs-panel .sx-doc-actions {
+  gap: 4px;
+}
+
+@media (max-width: 860px) {
+  .sx-docs-panel .sx-docs-toolbar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-docs-panel-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-docs-panel .sx-doc-row {
+    grid-template-columns: 32px minmax(0, 1fr) 44px;
+    margin: 0;
+  }
+}

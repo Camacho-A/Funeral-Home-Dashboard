@@ -10,6 +10,7 @@
 @import './solis-system.css';
 @import './solis-workspace.css';
 @import './solis-documents.css';
+@import './solis-refresh.css';
 
 *,
 *::before,

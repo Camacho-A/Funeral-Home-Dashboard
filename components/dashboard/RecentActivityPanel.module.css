@@ -218,3 +218,27 @@
     display: none;
   }
 }
+
+/* UI refresh (2026-11, styles/solis-refresh.css): the panel is a card. */
+.card.card {
+  padding: 18px 20px 10px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.card.card .title {
+  color: var(--sx-text);
+  border-bottom-color: var(--sx-border);
+}
+
+.card.card .list > :last-child {
+  border-bottom: none;
+}
+
+@media (max-width: 560px) {
+  .card.card {
+    padding: 14px 14px 6px;
+  }
+}

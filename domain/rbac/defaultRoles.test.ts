@@ -386,8 +386,8 @@ describe('defaultRoles', () => {
 
     it("funeralDirector's every other permission is unchanged from before this checkpoint (unrelated RBAC preserved)", () => {
       const funeralDirector = defaultRoleDefinition('funeralDirector');
-      // crematory.send was added later (Send to Crematory, 2026-10) and is pinned in its own test below.
-      const withoutNewGrant = funeralDirector.permissions.filter((p) => p !== 'caseNumber.manage' && p !== 'crematory.send');
+      // crematory.send (Send to Crematory, 2026-10) and fax.send/fax.confirm (fax bundles, 2026-11) were added later and are pinned in their own tests.
+      const withoutNewGrant = funeralDirector.permissions.filter((p) => p !== 'caseNumber.manage' && p !== 'crematory.send' && p !== 'fax.send' && p !== 'fax.confirm');
       expect(withoutNewGrant).toEqual([
         'case.read',
         'case.create',
@@ -436,5 +436,21 @@ describe('crematory.send (Send to Crematory, 2026-10)', () => {
   it('Administrator, Manager, Funeral Director and Office Staff can send; no other default role can', () => {
     const holders = DEFAULT_ROLE_DEFINITIONS.filter((role) => role.permissions.includes('crematory.send')).map((role) => role.key).sort();
     expect(holders).toEqual(['administrator', 'funeralDirector', 'manager', 'officeStaff']);
+  });
+});
+
+describe('fax.send / fax.confirm (Manatee DC application fax bundles, 2026-11)', () => {
+  const holders = (key: 'fax.send' | 'fax.confirm') => DEFAULT_ROLE_DEFINITIONS.filter((role) => role.permissions.includes(key)).map((role) => role.key).sort();
+
+  it('Administrator, Manager, Funeral Director, Office Staff and Arranger can prepare, preview and send', () => {
+    expect(holders('fax.send')).toEqual(['administrator', 'arranger', 'funeralDirector', 'manager', 'officeStaff']);
+  });
+
+  it('the same roles except Arranger can record delivered / failed', () => {
+    expect(holders('fax.confirm')).toEqual(['administrator', 'funeralDirector', 'manager', 'officeStaff']);
+  });
+
+  it('crematory.send is unchanged by the fax permissions', () => {
+    expect(DEFAULT_ROLE_DEFINITIONS.filter((role) => role.permissions.includes('crematory.send')).map((role) => role.key).sort()).toEqual(['administrator', 'funeralDirector', 'manager', 'officeStaff']);
   });
 });

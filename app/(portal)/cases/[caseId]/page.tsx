@@ -536,6 +536,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
               viewPresentedStage(index);
               setActiveTab('overview');
             }}
+            onOpenChecklist={() => {
+              setViewingDisplayStage(null);
+              setActiveTab('overview');
+            }}
           />
           <CaseWorkflowRepairPanel caseId={caseId} />
         </>
@@ -571,6 +575,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                         )
                       ] ?? null)
                     : null
+                }
+                stage={
+                  viewingDisplayStage == null && viewModel.stageLabels[viewModel.presentedDisplayStage]
+                    ? {
+                        label: viewModel.stageLabels[viewModel.presentedDisplayStage],
+                        step: viewModel.presentedDisplayStage + 1,
+                        count: viewModel.stageLabels.length,
+                        daysInStage: viewModel.daysWaitingInStage,
+                        targetLabel: viewModel.slaTargetLabel,
+                      }
+                    : undefined
                 }
                 onBackToCurrentStage={() => setViewingDisplayStage(null)}
                 onToggleItem={(index, newDone) => mutations.toggleChecklistItem(case_, index, newDone, viewingDisplayStage)}
