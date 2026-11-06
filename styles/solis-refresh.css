@@ -758,15 +758,19 @@
   border-bottom: 0;
 }
 
-/* Name, then its status on the same line. */
+/* Name, then any status (Generation Failed, Signed, Awaiting signature…)
+   on its own line under it. An active document's status is hidden, so it
+   adds no line. */
 .sx-doc-title {
   display: flex;
-  align-items: center;
-  gap: 4px 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
   min-width: 0;
 }
 
 .sx-doc-title .sx-doc-name {
+  max-width: 100%;
   min-width: 0;
 }
 
@@ -795,9 +799,5 @@
   .sx-docs-panel .sx-doc-row {
     grid-template-columns: 32px minmax(0, 1fr) 44px;
     margin: 0;
-  }
-
-  .sx-doc-title {
-    flex-wrap: wrap;
   }
 }
