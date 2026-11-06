@@ -801,3 +801,84 @@
     margin: 0;
   }
 }
+
+/* Tasks (2026-11): group headers with a count, an "All caught up" line,
+   completed tasks folded away and readable, and aligned columns. */
+.sx-refresh .sx-task-group {
+  padding: 6px 16px;
+}
+
+.sx-refresh .sx-task-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.sx-refresh .sx-task-group-toggle {
+  cursor: pointer;
+}
+
+.sx-refresh .sx-task-group-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.sx-refresh .sx-task-group-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: oklch(0.945 0.006 255);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--sx-text-2);
+}
+
+.sx-refresh .sx-task-group-action {
+  margin-left: auto;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sx-navy);
+}
+
+.sx-refresh .sx-task-caught-up {
+  margin: 0 0 10px;
+  padding: 14px 0 6px;
+  border-top: 1px solid var(--sx-border-soft);
+  font-size: 13.5px;
+  color: var(--sx-muted);
+}
+
+.sx-refresh .sx-task-group .sx-task-row:first-of-type {
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+/* Fixed columns: the linked case and the assignee line up row to row. */
+@media (min-width: 761px) {
+  .sx-refresh .sx-task-row {
+    grid-template-columns: 20px minmax(0, 1fr) 180px 260px 32px;
+  }
+  .sx-refresh .sx-task-row .sx-task-case {
+    justify-self: start;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* Completed: muted, but no line-through — struck-through capitals are hard to read. */
+.sx-refresh .sx-task-row[data-done] .sx-task-text {
+  text-decoration: none;
+  color: var(--sx-muted);
+}

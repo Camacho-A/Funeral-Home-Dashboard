@@ -73,6 +73,9 @@ describe('Tasks page — assignment (2026-10)', () => {
     render(<TasksPage />);
     expect(screen.getByRole('tab', { name: /Assigned to me/ })).toHaveAttribute('aria-selected', 'true');
     expect(openTaskTexts()).toEqual(['CALL THE HOSPITAL']);
+    // Completed tasks are folded away until shown (2026-11).
+    expect(screen.getByRole('region', { name: 'Completed tasks' })).not.toHaveTextContent('OLD TASK');
+    fireEvent.click(screen.getByRole('button', { name: /Completed/ }));
     expect(screen.getByRole('region', { name: 'Completed tasks' })).toHaveTextContent('OLD TASK');
   });
 
