@@ -389,7 +389,11 @@
   font-weight: 600;
 }
 
+/* The full description (2026-11): the two-line clamp above, with overflow
+   left visible here, showed "…" and then the third line anyway. */
 .sx-refresh .sx-settings-hub .sx-dir-desc {
+  display: block;
+  -webkit-line-clamp: unset;
   margin-top: 3px;
   white-space: normal;
   overflow: visible;
@@ -639,7 +643,9 @@
    The Crematory Package sits on the right, as Case Information does on
    Overview (same column widths and gap); the documents keep the main
    column. With nothing in the rail, one column as before. */
-.sx-docs:has(.sx-docs-rail > *) {
+/* The Documents tab uses the full width (2026-11) — with the Crematory
+   Package beside it or, for an organization without one, on its own. */
+.sx-refresh .sx-docs {
   max-width: none;
 }
 
@@ -800,4 +806,46 @@
     grid-template-columns: 32px minmax(0, 1fr) 44px;
     margin: 0;
   }
+}
+
+/* ---------- Settings panels (2026-11) ----------
+   Price Catalog's Items and Categories as case-style panels: the header
+   band carries the title, count and action; tables sit flush inside. */
+.sx-refresh .sx-catalog-panel {
+  margin: 0 0 24px;
+}
+
+.sx-refresh .sx-catalog-panel .sx-panel-body {
+  padding-top: 16px;
+  padding-bottom: 16px;
+}
+
+.sx-refresh .sx-catalog-panel .sx-table-wrap {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.sx-refresh .sx-catalog-panel .sx-filterbar {
+  margin-bottom: 4px;
+}
+
+.sx-catalog-group + .sx-catalog-group,
+.sx-filterbar + .sx-catalog-group {
+  margin-top: 16px;
+}
+
+.sx-catalog-group .sx-panel-section-title {
+  margin-bottom: 4px;
+}
+
+.sx-refresh .sx-catalog-panel .sx-panel-foot .sx-filterbar {
+  margin: 0;
+}
+
+.sx-catalog-title {
+  margin: 0;
+  font: inherit;
 }

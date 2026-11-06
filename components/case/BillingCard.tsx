@@ -106,10 +106,12 @@ export function BillingCard({ caseId }: { caseId: string }) {
   }
 
   return (
-    <section aria-labelledby="billing-heading" className="sx-bill">
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h2 id="billing-heading" style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>
+    <section aria-labelledby="billing-heading" className={`sx-panel sx-bill ${styles.panel}`}>
+      {/* 2026-11 refresh: one case panel — header band, then a section each
+          for cash advances and the Statement. */}
+      <div className={`sx-panel-head ${styles.head}`}>
+        <div className="sx-panel-heading">
+          <h2 id="billing-heading" className="sx-panel-title">
             Billing &amp; Statement
           </h2>
           {/* SOLIS Final Phase §8.2's literal copy says "FTC Statement" —
@@ -118,12 +120,10 @@ export function BillingCard({ caseId }: { caseId: string }) {
               facing 'FTC Statement' simplified to 'Statement'") removed
               that term from every staff-facing string here. Kept the
               description, dropped "FTC". */}
-          <p className="sx-page-desc" style={{ marginTop: 2 }}>
-            Live preview of the Statement for this case.
-          </p>
+          <p className="sx-panel-sub">Live preview of the Statement for this case.</p>
         </div>
         {model && (
-          <div className={styles.billingHeaderActions}>
+          <div className={`sx-panel-actions ${styles.billingHeaderActions}`}>
             <button type="button" className={`sx-btn sx-btn-primary ${styles.billingHeaderAction}`} onClick={() => generate.mutate({ existingDocumentId: activeStatement?.id })} disabled={generate.isPending}>
               {generate.isPending ? 'Generating…' : activeStatement ? 'Regenerate Statement PDF' : 'Generate Statement PDF'}
             </button>
@@ -142,8 +142,8 @@ export function BillingCard({ caseId }: { caseId: string }) {
           unless the case unexpectedly already has cash advance data (see
           the read-only fallback just below). */}
       {showCashAdvanceSection && (
-        <div className={styles.subsection}>
-          <h3 className="sx-section-title">Cash advance items</h3>
+        <div className={`sx-panel-section ${styles.subsection}`}>
+          <h3 className="sx-panel-section-title">Cash advance items</h3>
           <p className="sx-help">
             Third-party items obtained on the family&rsquo;s behalf. These appear on the Statement but are{' '}
             <strong>not</strong> part of the account balance owed to the funeral home.
@@ -209,7 +209,8 @@ export function BillingCard({ caseId }: { caseId: string }) {
           since this organization's normal workflow doesn't use this
           mechanism at all. */}
       {hasUnexpectedCashAdvances && (
-        <div className="sx-form-banner" style={{ background: 'var(--sx-amber-bg)', border: '1px solid oklch(0.88 0.06 75)', color: 'var(--sx-amber-text)', flexDirection: 'column' }}>
+        <div className="sx-panel-section">
+        <div className="sx-form-banner" style={{ background: 'var(--sx-amber-bg)', border: '1px solid oklch(0.88 0.06 75)', color: 'var(--sx-amber-text)', flexDirection: 'column', margin: 0 }}>
           <strong>Cash advance items on this case</strong>
           <p>
             This organization doesn&rsquo;t use Cash Advance Items in its normal workflow, but this case already has{' '}
@@ -224,10 +225,11 @@ export function BillingCard({ caseId }: { caseId: string }) {
             ))}
           </ul>
         </div>
+        </div>
       )}
 
       {/* Statement preview with the FTC-total vs AR-balance distinction */}
-      <div className={styles.subsection}>
+      <div className={`sx-panel-section ${styles.subsection}`}>
         {preview.isPending && (
           <div className="sx-loading" aria-busy="true">
             <span className="sx-skeleton" style={{ width: '90%' }} />
@@ -254,7 +256,7 @@ export function BillingCard({ caseId }: { caseId: string }) {
               </div>
             </div>
 
-            <h3 className="sx-section-title">
+            <h3 className="sx-panel-section-title">
               Statement line items<span className="sx-section-meta">{model.lineItems.length} items</span>
             </h3>
             <table className="sx-table">

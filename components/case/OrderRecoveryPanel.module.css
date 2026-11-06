@@ -1,26 +1,29 @@
 .panel {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-subtle);
-  padding: var(--space-6);
-  margin-bottom: var(--space-6);
-  font-size: var(--font-size-13);
+  border: 1px solid oklch(0.88 0.06 75);
+  border-radius: 10px;
+  background: var(--sx-amber-bg);
+  color: var(--sx-text);
+  padding: 14px 16px;
+  margin: 12px 0;
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .title {
-  font-size: var(--font-size-13);
-  font-weight: var(--font-weight-bold);
-  margin: 0 0 var(--space-2);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sx-amber-text);
+  margin: 0 0 4px;
 }
 
 .caseLine,
 .notice {
-  color: var(--color-text-secondary);
+  color: var(--sx-text-2);
   margin: 0 0 var(--space-4);
 }
 
 .item {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid oklch(0.88 0.06 75);
   padding-top: var(--space-5);
   margin-top: var(--space-5);
 }
@@ -33,7 +36,7 @@
 }
 
 .facts dt {
-  color: var(--color-text-secondary);
+  color: var(--sx-muted);
 }
 
 .facts dd {
@@ -68,10 +71,10 @@
 }
 
 .confirm {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-card);
-  padding: var(--space-5);
+  border: 1px solid var(--sx-card-border);
+  border-radius: 10px;
+  background: var(--sx-card);
+  padding: 12px 14px;
 }
 
 .confirm p {
@@ -87,9 +90,10 @@
 
 .field textarea {
   font: inherit;
-  padding: var(--space-3);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  border: 1px solid var(--sx-border-input);
+  border-radius: 8px;
+  background: #fff;
 }
 
 .check {

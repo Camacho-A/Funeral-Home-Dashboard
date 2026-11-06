@@ -33,3 +33,32 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+/* 2026-11 refresh: the Billing tab as one case panel. */
+.panel.panel {
+  max-width: 960px;
+}
+
+.head {
+  flex-wrap: wrap;
+}
+
+/* The header band already draws the line above the first section. */
+.head + :global(.sx-panel-section) {
+  border-top: 0;
+}
+
+.panel :global(.sx-panel-section) :global(.sx-table) {
+  margin: 0;
+}
+
+.panel :global(.sx-bill-actions) {
+  margin-top: 4px;
+}
+
+.panel :global(.sx-panel-section-title) :global(.sx-section-meta) {
+  margin-left: 8px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}

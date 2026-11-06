@@ -508,3 +508,38 @@
   flex-direction: column;
   gap: var(--space-3);
 }
+
+/* ---------- 2026-11 refresh: the SOLIS panel look ----------
+   Each part of a workflow (version history, service, stages, intake,
+   completion, preview) is a panel like the case page's: the shared card
+   surface, radius and shadow, and the quiet uppercase section label. */
+.versionHistory,
+.serviceAssignment,
+.stageCard,
+.intakeSection,
+.completionSection,
+.preview {
+  background: var(--sx-card);
+  border-color: var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.sectionLabel {
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: var(--sx-muted);
+}
+
+.templateName {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--sx-text);
+}
+
+.itemRow,
+.intakeFieldRow {
+  border-color: var(--sx-border-soft);
+  border-radius: 10px;
+  background: var(--sx-subtle);
+}

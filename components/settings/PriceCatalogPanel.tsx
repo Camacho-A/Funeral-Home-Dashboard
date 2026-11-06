@@ -175,8 +175,28 @@ export function PriceCatalogPanel() {
         </p>
       )}
 
-      <section className="sx-settings-section">
-        <h3 className="sx-settings-section-title">Items</h3>
+      {/* 2026-11 refresh: Items and Categories as panels — a header band
+          (title, count, what it is, the action), then the content. */}
+      <section className="sx-panel sx-catalog-panel" aria-labelledby="price-catalog-items">
+        <div className="sx-panel-head">
+          <div className="sx-panel-heading">
+            <div className="sx-panel-title">
+              <h3 id="price-catalog-items" className="sx-catalog-title">
+                Items
+              </h3>
+              <span className="sx-panel-count">{groups.reduce((count, group) => count + group.items.length, 0)}</span>
+            </div>
+            <p className="sx-panel-sub">What staff can add to a case order, by category.</p>
+          </div>
+          {canConfigure && (
+            <div className="sx-panel-actions">
+              <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" onClick={() => setEditor({ item: null })}>
+                Add item
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="sx-panel-body">
         <div className="sx-filterbar">
           <label className="sx-filter">
             <span className="sx-filter-label">Search</span>
@@ -202,12 +222,6 @@ export function PriceCatalogPanel() {
               <option value="all">All</option>
             </SelectField>
           </label>
-          <span className="sx-filterbar-spacer" />
-          {canConfigure && (
-            <button type="button" className="sx-btn sx-btn-primary sx-btn-sm" onClick={() => setEditor({ item: null })}>
-              Add item
-            </button>
-          )}
         </div>
 
         {groups.length === 0 ? (
@@ -216,10 +230,8 @@ export function PriceCatalogPanel() {
           </div>
         ) : (
           groups.map((group) => (
-            <div key={group.key} style={{ marginTop: 16 }}>
-              <h4 className="sx-cell-title" style={{ margin: '0 0 8px' }}>
-                {group.title}
-              </h4>
+            <div key={group.key} className="sx-catalog-group">
+              <h4 className="sx-panel-section-title">{group.title}</h4>
               <div className="sx-table-wrap">
                 <table className="sx-table sx-table-stack">
                   <thead>
@@ -243,6 +255,7 @@ export function PriceCatalogPanel() {
             </div>
           ))
         )}
+        </div>
       </section>
 
       <CategoriesSection categories={categories} catalog={catalog} canConfigure={canConfigure} />
@@ -412,9 +425,19 @@ function CategoriesSection({
   }
 
   return (
-    <section className="sx-settings-section">
-      <h3 className="sx-settings-section-title">Categories</h3>
-      <p className="sx-help">Categories organize the catalog and the item list on a case order. They never change a price.</p>
+    <section className="sx-panel sx-catalog-panel" aria-labelledby="price-catalog-categories">
+      <div className="sx-panel-head">
+        <div className="sx-panel-heading">
+          <div className="sx-panel-title">
+            <h3 id="price-catalog-categories" className="sx-catalog-title">
+              Categories
+            </h3>
+            <span className="sx-panel-count">{categories.length}</span>
+          </div>
+          <p className="sx-panel-sub">Categories organize the catalog and the item list on a case order. They never change a price.</p>
+        </div>
+      </div>
+      <div className="sx-panel-body">
       {categories.length === 0 ? (
         <div className="sx-empty">
           <div className="sx-empty-title">No categories yet.</div>
@@ -445,10 +468,11 @@ function CategoriesSection({
           </table>
         </div>
       )}
+      </div>
       {canConfigure && (
+        <div className="sx-panel-foot">
         <form
           className="sx-filterbar"
-          style={{ marginTop: 12 }}
           onSubmit={(event) => {
             event.preventDefault();
             void addCategory();
@@ -462,6 +486,7 @@ function CategoriesSection({
             Add category
           </button>
         </form>
+        </div>
       )}
       {error && (
         <div className="sx-form-banner sx-form-banner-error" role="alert">

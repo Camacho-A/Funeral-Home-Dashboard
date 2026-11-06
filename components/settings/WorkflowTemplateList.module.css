@@ -41,3 +41,21 @@
   font-size: var(--font-size-11);
   color: var(--color-text-muted);
 }
+
+/* 2026-11 refresh: the list as the case page's selectable rows. */
+.item {
+  border-color: var(--sx-card-border);
+  border-radius: 10px;
+  background: var(--sx-card);
+  transition: border-color var(--sx-ease), background-color var(--sx-ease);
+}
+
+.itemActive {
+  border-color: var(--sx-navy);
+  background: var(--sx-selected);
+}
+
+.item:hover:not(.itemActive) {
+  border-color: var(--sx-border-input);
+  background: var(--sx-card);
+}
