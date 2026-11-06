@@ -29,14 +29,28 @@ function renderPanel(case_: Case = base, canEdit = true) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('CaseSlaPanel', () => {
-  it('is collapsed until opened, then lists each milestone with its status and delay history', () => {
+  it('is collapsed until opened; then only what needs attention is a card, and the rest is one line each (2026-11)', () => {
     renderPanel();
     expect(screen.queryByText('Hard Save')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+    // The milestone in progress is the one card.
     expect(screen.getByText('Hard Save')).toBeInTheDocument();
     expect(screen.getByText('Due Today')).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem').filter((li) => li.className.includes('milestone'))).toHaveLength(1);
+    // Finished milestones are summarised, without their resolved delays.
+    expect(screen.getByText(/✓ Done:/).parentElement).toHaveTextContent('Doctor attestation (Oct 20, 2026, 9:00 AM)');
+    expect(screen.queryByText(/Called twice/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Later:/).parentElement).toHaveTextContent('State approval');
+    // Recorded times and the form stay closed until wanted.
+    expect(screen.queryByText('Recorded times')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Event')).not.toBeInTheDocument();
+    expect(screen.queryByText('Completed — date not recorded')).not.toBeInTheDocument();
+  });
+
+  it('an open delay keeps its milestone as a card, with its history', () => {
+    renderPanel({ ...base, slaDelays: { d1: { ...base.slaDelays!.d1, milestone: 'hard_save', resolvedAt: null, resolvedBy: null, resolution: null } } } as Case);
+    fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
     expect(screen.getByText(/Called twice/)).toBeInTheDocument();
-    expect(screen.getByText(/resolved/)).toBeInTheDocument();
   });
 
   it('records an event through the SLA route', async () => {
@@ -44,6 +58,7 @@ describe('CaseSlaPanel', () => {
     vi.stubGlobal('fetch', fetchMock);
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recorded times · record a time' }));
     fireEvent.change(screen.getByLabelText('Event'), { target: { value: 'hard_saved' } });
     fireEvent.change(screen.getByLabelText('When'), { target: { value: '2026-10-20T11:00' } });
     fireEvent.click(screen.getByRole('button', { name: 'Record' }));
@@ -95,12 +110,14 @@ describe('CaseSlaPanel — recording dates for existing cases (final review)', (
     expect(screen.getByLabelText('Event')).toHaveValue('hard_saved');
   });
 
-  it('lists every recorded time with where it came from', () => {
+  it('lists the recorded times with where they came from — never rows of "time not recorded" (2026-11)', () => {
     renderPanel();
     fireEvent.click(screen.getByRole('button', { name: /SLA details/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recorded times · record a time' }));
     const timeline = screen.getByText('Recorded times').parentElement!;
     expect(timeline).toHaveTextContent('Doctor attestation received');
     expect(timeline).toHaveTextContent('recorded');
-    expect(timeline).toHaveTextContent('implied — time not recorded');
+    expect(timeline).not.toHaveTextContent('Time not recorded');
+    expect(timeline).not.toHaveTextContent('implied — time not recorded');
   });
 });

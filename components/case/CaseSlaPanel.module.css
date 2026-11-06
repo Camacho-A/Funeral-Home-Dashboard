@@ -197,3 +197,20 @@
     padding-bottom: 4px;
   }
 }
+
+/* 2026-11: finished, never-recorded and later milestones as one line each. */
+.summaryLine {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.summaryDone {
+  color: var(--sx-green, #1f7a4d);
+  font-weight: 600;
+}
+
+.timesToggle {
+  margin-top: 12px;
+  padding-left: 0;
+}
