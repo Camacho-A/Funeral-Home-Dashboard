@@ -689,60 +689,115 @@
   }
 }
 
-/* ---------- Document rows (2026-11) ----------
-   The status sits right after the file name instead of across the row —
-   the wide gap between them read as empty space; actions stay at the end.
-   Each group of documents is a card, like the panels beside it. */
-@media (min-width: 861px) {
-  .sx-docs .sx-doc-row {
-    /* The name column has one width on every row, so the statuses line
-       up in a column of their own, close to the names. */
-    grid-template-columns: 32px minmax(0, 600px) minmax(0, max-content) minmax(0, 1fr) auto;
-  }
-
-  .sx-docs .sx-doc-row > .sx-doc-actions {
-    grid-column: 5;
-  }
-
-  .sx-docs .sx-doc-row > .sx-doc-error {
-    grid-column: 2 / -1;
-  }
+/* ---------- Case Documents panel (2026-11) ----------
+   The documents as one panel like the Crematory Package beside it: title
+   and count, the toolbar under them, then Generated / Uploaded groups of
+   rows — file icon, name with its status on the same line, one short
+   line of detail, View and the menu at the end. */
+.sx-docs-panel {
+  margin-bottom: 16px;
 }
 
-.sx-docs .sx-doc-status {
+.sx-docs-panel .sx-docs-panel-head {
+  border-bottom: 0;
+  padding-bottom: 4px;
+}
+
+.sx-docs-panel .sx-docs-toolbar {
+  margin: 0;
+  padding: 8px 20px 14px;
+  border-bottom: 1px solid var(--sx-border-soft);
+}
+
+.sx-docs-panel .sx-docs-bulk-note {
+  margin: 12px 20px 0;
+}
+
+.sx-docs-panel-body {
+  padding: 4px 20px 8px;
+}
+
+.sx-docs-panel-body > .sx-empty {
+  margin: 12px 0;
+}
+
+.sx-docs-panel .sx-docs-group {
+  margin: 0;
+}
+
+.sx-docs-panel .sx-docs-group + .sx-docs-group {
+  border-top: 1px solid var(--sx-border-soft);
+}
+
+.sx-docs-group-title {
   display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0;
+  padding: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--sx-muted);
+}
+
+.sx-docs-group-title .sx-section-meta {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.sx-docs-panel .sx-doc-row {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  margin: 0 -8px;
+}
+
+.sx-docs-panel .sx-docs-group > div:last-child > .sx-doc-row {
+  border-bottom: 0;
+}
+
+/* Name, then its status on the same line. */
+.sx-doc-title {
+  display: flex;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.sx-doc-title .sx-doc-name {
+  min-width: 0;
+}
+
+.sx-doc-title .sx-doc-status {
+  display: flex;
+  flex: none;
   flex-wrap: wrap;
   gap: 4px 8px;
 }
 
-.sx-docs .sx-docs-group {
-  padding: 4px 16px;
-  background: var(--sx-card);
-  border: 1px solid var(--sx-card-border);
-  border-radius: var(--sx-card-radius);
-  box-shadow: var(--sx-card-shadow);
-  margin-bottom: 16px;
+.sx-docs-panel .sx-doc-actions {
+  gap: 4px;
 }
-
-.sx-docs .sx-docs-group > .sx-section-title {
-  margin: 0;
-  padding: 12px 0 8px;
-  border-bottom: 1px solid var(--sx-border-soft);
-}
-
-.sx-docs .sx-docs-group > .sx-doc-row,
-.sx-docs .sx-docs-group > div > .sx-doc-row {
-  margin: 0 -8px;
-}
-
-.sx-docs .sx-docs-group > div:last-child > .sx-doc-row {
-  border-bottom: 0;
-}
-
 
 @media (max-width: 860px) {
-  .sx-docs .sx-docs-group > .sx-doc-row,
-  .sx-docs .sx-docs-group > div > .sx-doc-row {
+  .sx-docs-panel .sx-docs-toolbar {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-docs-panel-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .sx-docs-panel .sx-doc-row {
+    grid-template-columns: 32px minmax(0, 1fr) 44px;
     margin: 0;
+  }
+
+  .sx-doc-title {
+    flex-wrap: wrap;
   }
 }
