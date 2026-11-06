@@ -20,17 +20,21 @@ export function WorkflowStageOverview({
   slaTargetLabel,
   currentChecklist,
   onViewStage,
+  onOpenChecklist,
 }: {
   stages: StepperStage[];
   daysWaitingInStage: number;
   slaTargetLabel: string;
   currentChecklist: { label: string; done: boolean }[];
   onViewStage: (index: number) => void;
+  /** Guided steps (2026-11): opens the current stage's checklist on Overview. */
+  onOpenChecklist?: () => void;
 }) {
   const currentIndex = stages.findIndex((s) => s.current);
   const doneCount = currentChecklist.filter((item) => item.done).length;
   const total = currentChecklist.length;
   const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const upNext = currentChecklist.findIndex((item) => !item.done);
 
   return (
     <div className="sx-wf">
@@ -67,17 +71,23 @@ export function WorkflowStageOverview({
                         <span style={{ width: `${pct}%` }} />
                       </span>
                     </div>
-                    {currentChecklist.map((item) => (
+                    {currentChecklist.map((item, itemIndex) => (
                       <div key={item.label} className="sx-wf-item" data-done={item.done || undefined}>
                         <span className="sx-wf-box" aria-hidden="true">
                           {item.done ? '✓' : ''}
                         </span>
                         <span>{item.label}</span>
+                        {itemIndex === upNext && <span className="sx-wf-next">Up next</span>}
                         <span className="sr-only">{item.done ? 'Done' : 'Not done'}</span>
                       </div>
                     ))}
-                    <div className="sx-help" style={{ marginTop: 8 }}>
-                      Read-only here. Check items off in Overview → Next step.
+                    <div className="sx-wf-foot">
+                      <span className="sx-help">Read-only here. Check items off in Overview → Next step.</span>
+                      {onOpenChecklist && (
+                        <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={onOpenChecklist}>
+                          Open checklist →
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

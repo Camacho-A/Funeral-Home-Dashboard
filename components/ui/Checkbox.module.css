@@ -11,6 +11,9 @@
   font-weight: var(--font-weight-extrabold);
   cursor: pointer;
   padding: 0;
+  /* The painted square (::before) sits behind the ✓ glyph (2026-11): it
+     used to paint over it, so a checked box showed as a plain filled square. */
+  isolation: isolate;
 }
 
 .checkbox:disabled {
@@ -39,6 +42,7 @@
   border-width: 2px;
   border-style: solid;
   background: var(--color-surface-card);
+  z-index: -1;
 }
 
 /* Real hit/focus target grows to 24x24 (WCAG 2.5.5's minimum); the

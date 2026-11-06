@@ -926,7 +926,7 @@ describe('ChecklistCard — Medical Examiner classification (2026-10)', () => {
     const box = screen.getByLabelText('Medical Examiner Case');
     expect(box).toBeChecked();
     const title = screen.getByText('Checklist');
-    const header = title.parentElement!;
+    const header = title.closest('header')!;
     expect(header).toContainElement(box);
     // Title first, control after it (the row is space-between).
     expect(title.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -1188,5 +1188,51 @@ describe('ChecklistCard — administrator-only items (Send to Crematory, 2026-10
     renderChecklist(items(), { adminOnlyIndexes: [0, 1], isArchived: true });
     expect(screen.queryByText('Administrators only')).not.toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Permit sent to crematory' })).toBeDisabled();
+  });
+});
+
+describe('ChecklistCard — guided steps (2026-11)', () => {
+  const stage = { label: 'EDRS & Doctor / Cause of Death', step: 2, count: 6, daysInStage: 6, targetLabel: '3d' };
+  const steps = () => [
+    item({ index: 0, label: 'EDRS submitted & sent to doctor', done: true }),
+    item({ index: 1, label: 'Cause of death entered' }),
+    item({ index: 2, label: 'Attestation Received / Hard Saved', locked: true }),
+  ];
+
+  it('names the stage, where it sits and its time in stage, with the progress as a ring', () => {
+    renderChecklist(steps(), { stage });
+    expect(screen.getByText('EDRS & Doctor / Cause of Death')).toBeInTheDocument();
+    expect(screen.getByText('Step 2 of 6 · Day 6 · target 3d')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '1 of 3 steps done' })).toBeInTheDocument();
+  });
+
+  it('marks the first step that can be done now as up next, and a waiting step says what it waits on', () => {
+    renderChecklist(steps(), { stage });
+    const upNext = screen.getByText('Up next');
+    expect(upNext.closest('[data-state]')).toHaveAttribute('data-state', 'next');
+    expect(upNext.closest('[data-state]')).toHaveTextContent('Cause of death entered');
+    expect(screen.getByText('After the step above').closest('[data-state]')).toHaveAttribute('data-state', 'locked');
+  });
+
+  it('clicking a step\'s name checks it, once — but never a locked one', () => {
+    const { onToggleItem } = renderChecklist(steps(), { stage });
+    fireEvent.click(screen.getByText('Cause of death entered'));
+    expect(onToggleItem).toHaveBeenCalledTimes(1);
+    expect(onToggleItem).toHaveBeenCalledWith(1, true);
+    fireEvent.click(screen.getByText('Attestation Received / Hard Saved'));
+    expect(onToggleItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('read-only: no step is up next and names do nothing', () => {
+    const { onToggleItem } = renderChecklist(steps(), { stage, isArchived: true });
+    expect(screen.queryByText('Up next')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Cause of death entered'));
+    expect(onToggleItem).not.toHaveBeenCalled();
+  });
+
+  it('every step done: says so', () => {
+    renderChecklist(steps().map((s) => ({ ...s, done: true, locked: false })), { stage });
+    expect(screen.getByRole('status')).toHaveTextContent('Every step for this stage is done.');
+    expect(screen.getByRole('img', { name: '3 of 3 steps done' })).toBeInTheDocument();
   });
 });

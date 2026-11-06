@@ -417,6 +417,7 @@ export function ChecklistCard({
   releaseSuggestions,
   resolveActorName,
   adminOnlyIndexes,
+  stage,
 }: {
   checklist: ChecklistItemViewModel[];
   viewingStageLabel: string | null;
@@ -468,6 +469,10 @@ export function ChecklistCard({
       to everyone else; the server refuses the change regardless. Omit (or
       pass an empty list) for an administrator. */
   adminOnlyIndexes?: readonly number[];
+  /** Guided steps (2026-11): the stage the checklist belongs to, for the
+      card's header — its name, where it sits in the workflow, and its time
+      in stage. Omit for the plain "Checklist" header. Display only. */
+  stage?: { label: string; step: number; count: number; daysInStage?: number; targetLabel?: string };
 }) {
   const [openCompletion, setOpenCompletion] = useState<number | null>(null);
   // An earlier stage is editable (2026-10): staff complete or correct its
@@ -494,6 +499,14 @@ export function ChecklistCard({
    */
   const medicalExaminerLocked = isArchived === true;
 
+  // Guided steps (2026-11): progress counts what is shown (a recorded
+  // release is not), and the first open step that can be done now is
+  // marked "Up next".
+  const visible = checklist.filter((item) => !(item.returnRequirement && item.done));
+  const visibleDone = visible.filter((item) => item.done).length;
+  const upNextIndex = readOnly ? null : (visible.find((item) => !item.done && !item.locked)?.index ?? null);
+  const allDone = visible.length > 0 && visibleDone === visible.length;
+
   return (
     <div className={styles.card}>
       {/* Medical Examiner Case (2026-10) sits in the header, opposite the
@@ -501,8 +514,18 @@ export function ChecklistCard({
           without hunting for it, and it reads as case-level state rather
           than another item to tick. Rendered only when the caller supplies
           a handler (the intake step), locked on an archived case. */}
-      <div className={styles.headerRow}>
-        <div className={styles.title}>Checklist</div>
+      <header className={styles.headerRow}>
+        <ProgressRing done={visibleDone} total={visible.length} />
+        <div className={styles.headerText}>
+          <div className={styles.title}>{stage?.label ?? 'Checklist'}</div>
+          <div className={styles.subtitle}>
+            {stage
+              ? [`Step ${stage.step} of ${stage.count}`, stage.daysInStage != null ? `Day ${stage.daysInStage}` : null, stage.targetLabel ? `target ${stage.targetLabel}` : null]
+                  .filter(Boolean)
+                  .join(' · ')
+              : 'Required steps for this stage'}
+          </div>
+        </div>
         {onToggleMedicalExaminerCase && (
           <div
             className={`${styles.meControl} ${medicalExaminerLocked ? styles.meRowLocked : styles.meRowUnlocked}`}
@@ -522,8 +545,7 @@ export function ChecklistCard({
             <span className={styles.meLabel}>Medical Examiner Case</span>
           </div>
         )}
-      </div>
-      <div className={styles.subtitle}>Required steps for this stage</div>
+      </header>
 
       {viewingStageLabel && (
         <div className={styles.viewingBanner}>
@@ -573,9 +595,11 @@ export function ChecklistCard({
             : item.locked
               ? styles.itemLabelLocked
               : styles.itemLabelActive;
+          const state = item.done ? 'done' : item.locked ? 'locked' : item.index === upNextIndex ? 'next' : 'todo';
+          const doneBy = item.done ? completionByline(item, resolveActorName) : null;
 
           return (
-            <div key={item.index} className={styles.item}>
+            <div key={item.index} className={styles.item} data-state={state}>
               <div className={styles.itemRow}>
                 <Checkbox
                   checked={item.done}
@@ -584,7 +608,13 @@ export function ChecklistCard({
                   tone={item.done ? 'success' : 'brand'}
                   aria-label={item.label}
                 />
-                <span className={`${styles.itemLabel} ${labelClass}`}>{item.label}</span>
+                <span
+                  className={`${styles.itemLabel} ${labelClass} ${disabled ? '' : styles.itemLabelClickable}`}
+                  onClick={disabled ? undefined : () => onToggleItem(item.index, !item.done)}
+                >
+                  {item.label}
+                </span>
+                {state === 'next' && <span className={styles.upNext}>Up next</span>}
                 {adminOnly && !readOnly && (
                   <span className={styles.adminOnlyHint} title="SOLIS checks this automatically when the crematory email is sent. Only an administrator can change it by hand.">
                     Administrators only
@@ -594,6 +624,8 @@ export function ChecklistCard({
                   <CompletionNote item={item} expanded={openCompletion === item.index} onToggle={() => setOpenCompletion(openCompletion === item.index ? null : item.index)} />
                 )}
               </div>
+              {doneBy && <div className={styles.itemMeta}>{doneBy}</div>}
+              {state === 'locked' && <div className={styles.itemMeta}>After the step above</div>}
               {item.done && item.completion && openCompletion === item.index && (
                 <CompletionDetails item={item} resolveActorName={resolveActorName} />
               )}
@@ -626,8 +658,45 @@ export function ChecklistCard({
           );
         })}
       </div>
+      {allDone && !viewingStageLabel && (
+        <div className={styles.allDone} role="status">
+          <span className={styles.allDoneMark} aria-hidden="true">
+            ✓
+          </span>
+          Every step for this stage is done.
+        </div>
+      )}
     </div>
   );
+}
+
+/** Guided steps (2026-11): the card's progress, as a ring with the count inside. */
+function ProgressRing({ done, total }: { done: number; total: number }) {
+  const r = 17;
+  const c = 2 * Math.PI * r;
+  const fraction = total > 0 ? done / total : 0;
+  return (
+    <span className={styles.ring} role="img" aria-label={`${done} of ${total} steps done`} data-complete={total > 0 && done === total ? '' : undefined}>
+      <svg width="44" height="44" viewBox="0 0 44 44" aria-hidden="true" focusable="false">
+        <circle cx="22" cy="22" r={r} className={styles.ringTrack} />
+        <circle cx="22" cy="22" r={r} className={styles.ringValue} strokeDasharray={c} strokeDashoffset={c * (1 - fraction)} transform="rotate(-90 22 22)" />
+      </svg>
+      <span className={styles.ringText} aria-hidden="true">
+        {done}/{total}
+      </span>
+    </span>
+  );
+}
+
+/** Who completed a step and when, on one short line (2026-11) — the full record stays behind the "i". */
+function completionByline(item: ChecklistItemViewModel, resolveActorName?: (identityId: string) => string | null): string | null {
+  const completion = item.completion;
+  if (!completion || (completion.kind !== 'automatic' && completion.kind !== 'manual')) return null;
+  const record = completion.record;
+  const solis = record.method === 'automatic' || record.actorId === SOLIS_AUTOMATION_ID;
+  const who = solis ? 'SOLIS' : (record.actorId && resolveActorName?.(record.actorId)) || null;
+  const when = formatCompletionTime(record.at);
+  return who ? `${who} · ${when}` : when;
 }
 
 /**

@@ -478,3 +478,30 @@
     transform: none;
   }
 }
+
+/* Guided steps (2026-11): the Workflow tab's current stage matches the
+   Overview checklist — the first open step is marked, and a button opens it. */
+.sx-wf-item {
+  grid-template-columns: 18px auto 1fr;
+}
+
+.sx-wf-item .sx-wf-next {
+  justify-self: start;
+  padding: 0 8px;
+  border-radius: 10px;
+  background: var(--sx-navy);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+}
+
+.sx-wf-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
