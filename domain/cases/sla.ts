@@ -22,8 +22,12 @@ export function getSlaTargetDays(displayStage: number): number | null {
   return DEFAULT_SLA_TARGET_DAYS[label] ?? null;
 }
 
+/** What formatSlaTarget shows for a stage with no time target. Case screens
+    leave the target out instead of showing "target —" (2026-11). */
+export const NO_SLA_TARGET_LABEL = '—';
+
 export function formatSlaTarget(targetDays: number | null): string {
-  if (targetDays == null) return '—';
+  if (targetDays == null) return NO_SLA_TARGET_LABEL;
   return targetDays < 1 ? 'same day' : `${targetDays}d`;
 }
 

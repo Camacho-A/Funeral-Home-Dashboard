@@ -19,6 +19,8 @@ const GATES = [
   'requireIdentitySession',
   'authorizeCrematory', // wraps requireAuthorizedOrganization
   'authorizePriceCatalogWrite', // wraps requireAuthorizedOrganization
+  'authorizeFax', // fax bundles: wraps requireAuthorizedOrganization (lib/faxBundles/routeAuth.ts)
+  'authorizeFaxSettings', // Fax Settings: wraps requireAuthorizedOrganization (lib/faxSettings/routeAuth.ts)
   'requireFamilyAccess',
   'requireFamilySession',
   'resolveOnboardingSessionAccess',

@@ -7,8 +7,11 @@ import { describe, expect, it, vi } from 'vitest';
  */
 const outlook = vi.hoisted(() => ({ sendOutlookMessage: vi.fn() }));
 vi.mock('@/lib/microsoft/outlookMail', async (importOriginal) => ({ ...(await importOriginal<object>()), sendOutlookMessage: outlook.sendOutlookMessage }));
+const extract = vi.hoisted(() => ({ extractArrangementPage: vi.fn() }));
+vi.mock('../arrangementPageExtractService', async (importOriginal) => ({ ...(await importOriginal<object>()), extractArrangementPage: extract.extractArrangementPage }));
 
 const { sendCrematoryPackages } = await import('./crematorySendService');
+const { prepareCrematoryDocuments } = await import('./crematoryPackageService');
 const { crematoryAuthorizationDocumentSource, isCrematorySendingEnabled, sendToCrematoryConfig } = await import('@/domain/crematory/crematorySettings');
 const { caseFixtures } = await import('../__mocks__/fixtures');
 const { GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
@@ -49,5 +52,14 @@ describe('crematory sending switched off for an organization', () => {
     ).rejects.toMatchObject({ status: 409, message: expect.stringContaining('not switched on for this funeral home') });
     expect(outlook.sendOutlookMessage).not.toHaveBeenCalled();
     expect(caseFixtures).toEqual(before);
+  });
+
+  it('automatic preparation never extracts Manors\' Arrangement Form page 3 for Gus — it has no such source (2026-11)', async () => {
+    for (const gusCase of caseFixtures.filter((c) => c.organizationId === GUS_CAMACHO_ORGANIZATION_ID && c.caseType === 'cremation')) {
+      const result = await prepareCrematoryDocuments(gusCtx, gusCase.id, 'mock');
+      expect(result.crematoryForm).not.toBe('failed');
+      expect(result.crematoryForm).not.toBe('saved');
+    }
+    expect(extract.extractArrangementPage).not.toHaveBeenCalled();
   });
 });

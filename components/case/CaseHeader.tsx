@@ -12,6 +12,7 @@ import {
   type CaseSlaEvaluation,
 } from '@/domain/sla/slaMilestones';
 import type { SlaStatus } from '@/types/sla';
+import { NO_SLA_TARGET_LABEL } from '@/domain/cases/sla';
 
 /**
  * Case Detail header — SOLIS Phase 3 (presentation only). Meta text is
@@ -130,7 +131,7 @@ export function CaseHeader({
             <CurrentSlaLine sla={sla} />
           ) : (
             <span className={`${styles.slaLine} ${isOverdue ? styles.slaOverdue : styles.slaNeutral}`}>
-              {daysWaitingInStage}d in stage · target {slaTargetLabel}
+              {daysWaitingInStage}d in stage{slaTargetLabel !== NO_SLA_TARGET_LABEL && ` · target ${slaTargetLabel}`}
             </span>
           )}
         </div>

@@ -61,6 +61,7 @@ import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
 import { CaseSsnField } from '@/components/case/CaseSsnField';
+import { NO_SLA_TARGET_LABEL } from '@/domain/cases/sla';
 
 /** Intake is the first step of every workflow — named here rather than
     written as a bare 0 at the use site. */
@@ -583,7 +584,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
                         step: viewModel.presentedDisplayStage + 1,
                         count: viewModel.stageLabels.length,
                         daysInStage: viewModel.daysWaitingInStage,
-                        targetLabel: viewModel.slaTargetLabel,
+                        targetLabel: viewModel.slaTargetLabel !== NO_SLA_TARGET_LABEL ? viewModel.slaTargetLabel : undefined,
                       }
                     : undefined
                 }

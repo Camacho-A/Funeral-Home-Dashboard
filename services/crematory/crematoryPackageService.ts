@@ -1096,7 +1096,9 @@ async function pendingWork(organizationId: string, caseId: string, mode: DataAda
   if (!case_) return null;
   if (case_.caseType !== 'cremation' || case_.isDeleted || isSentOrSending(case_)) return null;
   const facts = await loadFacts(organizationId, case_, mode);
-  const page3 = facts.arrangementForm !== null && (facts.crematoryForm === null || facts.crematoryForm.createdAt < facts.arrangementForm.createdAt);
+  // Page 3 is extracted only where the authorization document comes from the
+  // Arrangement Form (Manors); an organization with no source has nothing to extract.
+  const page3 = crematoryAuthorizationDocumentSource(organizationId) === 'arrangement_form_page' && facts.arrangementForm !== null && (facts.crematoryForm === null || facts.crematoryForm.createdAt < facts.arrangementForm.createdAt);
   const build = readinessOf(facts, false).readyToBuild && !packageIsCurrent(facts);
   const automatic = await automaticDetails(organizationId, case_, mode);
   return { page3, build, details: automatic.name !== null || automatic.date !== null };
@@ -1242,11 +1244,16 @@ async function prepareOnce(ctx: ActivityContext, caseId: string, mode: DataAdapt
   } catch (error) {
     console.error(`[crematory-auto] Case ${caseId}: the name or date could not be recorded:`, error instanceof Error ? error.message : error);
   }
-  try {
-    result.crematoryForm = (await extractArrangementPage('crematory_form', caseId, { automatic: true }, ctx, mode)).outcome;
-  } catch (error) {
-    result.crematoryForm = error instanceof ArrangementExtractError && error.status === 422 ? 'no_arrangement_form' : 'failed';
-    if (result.crematoryForm === 'failed') console.error(`[crematory-auto] Case ${caseId}: page 3 could not be prepared:`, error instanceof Error ? error.message : error);
+  if (crematoryAuthorizationDocumentSource(ctx.organizationId) !== 'arrangement_form_page') {
+    // No authorization document source set up (2026-11, Gus): nothing to extract.
+    result.crematoryForm = 'not_needed';
+  } else {
+    try {
+      result.crematoryForm = (await extractArrangementPage('crematory_form', caseId, { automatic: true }, ctx, mode)).outcome;
+    } catch (error) {
+      result.crematoryForm = error instanceof ArrangementExtractError && error.status === 422 ? 'no_arrangement_form' : 'failed';
+      if (result.crematoryForm === 'failed') console.error(`[crematory-auto] Case ${caseId}: page 3 could not be prepared:`, error instanceof Error ? error.message : error);
+    }
   }
   try {
     const facts = await loadFacts(ctx.organizationId, await loadCase(ctx.organizationId, caseId, mode), mode);

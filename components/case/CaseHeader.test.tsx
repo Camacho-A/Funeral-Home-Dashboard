@@ -137,4 +137,10 @@ describe('CaseHeader — SLA tracking (2026-10)', () => {
     render(<CaseHeader {...baseProps} />);
     expect(screen.getByText('2d in stage · target 1d')).toBeInTheDocument();
   });
+
+  it('a stage with no time target (2026-11, e.g. a Gus service stage) leaves the target out — never "target —"', () => {
+    render(<CaseHeader {...baseProps} slaTargetLabel="—" />);
+    expect(screen.getByText('2d in stage')).toBeInTheDocument();
+    expect(screen.queryByText(/target/)).not.toBeInTheDocument();
+  });
 });

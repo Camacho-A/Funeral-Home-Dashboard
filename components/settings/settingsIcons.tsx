@@ -45,6 +45,12 @@ const PATHS: Record<string, React.ReactNode> = {
     </>
   ),
   'case-numbering': <path d="M9 4 7 20M17 4l-2 16M4 9h16M3.5 15h16" />,
+  'price-catalog': (
+    <>
+      <path d="M3 12V4.5A1.5 1.5 0 0 1 4.5 3H12l9 9-9 9z" />
+      <circle cx="7.5" cy="7.5" r="1.5" />
+    </>
+  ),
   'workflow-templates': (
     <>
       <rect x="3" y="4" width="6" height="5" rx="1.5" />

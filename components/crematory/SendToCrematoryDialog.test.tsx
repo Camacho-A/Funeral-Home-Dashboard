@@ -152,6 +152,39 @@ describe('SendToCrematoryDialog', () => {
     expect(screen.getByRole('button', { name: 'Review & send (1)' })).toBeEnabled();
   });
 
+  it('Gus (2026-11): no authorization document source — its steps are named for what they are, never Manors\' "Arrangement page 3" / "Workflow 2", and there is no page 3 to prepare', async () => {
+    const { GUS_CAMACHO_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
+    const gusCase = (id: string, name: string, number: string): CrematoryCaseSummary => ({
+      ...readyCase(id, name, number),
+      readiness: {
+        requirements: [requirement('permit_uploaded', true), requirement('permit_verified', true), requirement('crematory_form', false, 'No source set up.'), requirement('workflow_2', false), requirement('ready_date', true)] as never,
+        readyToBuild: false,
+        readyToSend: false,
+      },
+      package: null,
+      workflow2: { displayStage: 2, medicalExaminer: false, missing: ['Authorization signed'] },
+    });
+    client.fetchCrematoryOverview.mockResolvedValue(overview([gusCase('g1', 'Ada Lowe', 'M2026-901'), gusCase('g2', 'Iris Vance', 'M2026-902'), gusCase('g3', 'Walter Boone', 'M2026-903')], { organizationName: 'Gus Camacho Jr. Funeral Home' }));
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <SendToCrematoryDialog open onClose={onClose} organizationId={GUS_CAMACHO_ORGANIZATION_ID} />
+      </QueryClientProvider>,
+    );
+    const needs = await screen.findByRole('region', { name: 'Needs attention' });
+    // Collapsed (several need attention): the missing chips carry Gus' names.
+    expect(within(needs).getAllByText('Authorization document')).toHaveLength(3);
+    expect(within(needs).getAllByText('Authorization steps')).toHaveLength(3);
+    expect(screen.queryByText('Arrangement page 3')).toBeNull();
+    expect(screen.queryByText('Workflow 2')).toBeNull();
+    // Expanded: the same names, and the way to the steps.
+    fireEvent.click(screen.getByRole('button', { name: 'Show checklist for Ada Lowe' }));
+    expect(screen.getByRole('button', { name: 'Open authorization steps' })).toBeInTheDocument();
+    expect(within(needs).getAllByText('Authorization document')).toHaveLength(3);
+    expect(screen.queryByRole('button', { name: 'Resolve Workflow 2' })).toBeNull();
+    // Nothing to extract: opening the window prepares nothing.
+    expect(client.crematoryCaseAction).not.toHaveBeenCalled();
+  });
+
   it('several ready cases: one email, one PDF each, the shared-date subject — and sends only after review', async () => {
     client.fetchCrematoryOverview.mockResolvedValue(overview([readyCase('1042', 'Richard Reynolds', 'B2026-901'), readyCase('1044', 'Estela Salas Rueda', 'B2026-902')]));
     client.sendToCrematory.mockResolvedValue({

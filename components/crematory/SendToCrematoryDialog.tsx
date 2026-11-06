@@ -45,10 +45,10 @@ const PERMIT_TYPE = 'cremation_form.state_permit';
 
 /** Whether SOLIS can bring this case's page 3 or package up to date from
     what is already on it (2026-10) — never for a case already sent. */
-function needsPreparation(c: CrematoryCaseSummary): boolean {
+function needsPreparation(c: CrematoryCaseSummary, extractsPage3: boolean): boolean {
   if (c.lastSubmission?.status === 'submitted' || c.lastSubmission?.status === 'uncertain') return false;
   const form = c.readiness.requirements.find((r) => r.key === 'crematory_form');
-  return (form !== undefined && !form.ok) || (c.readiness.readyToBuild && !c.package?.current);
+  return (extractsPage3 && form !== undefined && !form.ok) || (c.readiness.readyToBuild && !c.package?.current);
 }
 
 type Step = 'prepare' | 'review' | 'done';
@@ -165,7 +165,7 @@ export function SendToCrematoryDialog({
     try {
       const { result } = (await crematoryCaseAction(organizationId, caseId, { action: 'prepare' })) as { result?: { crematoryForm: string; package: string } };
       if (result && (result.crematoryForm === 'failed' || result.package === 'failed')) {
-        setPrepareErrors((e) => ({ ...e, [caseId]: `SOLIS could not prepare ${result.crematoryForm === 'failed' ? "page 3 of this case's Arrangement Form" : 'the Crematory Package'}. Nothing was sent. Try again.` }));
+        setPrepareErrors((e) => ({ ...e, [caseId]: `SOLIS could not prepare ${result.crematoryForm === 'failed' ? (crematoryAuthorizationDocumentSource(organizationId) === 'arrangement_form_page' ? "page 3 of this case's Arrangement Form" : 'the authorization document') : 'the Crematory Package'}. Nothing was sent. Try again.` }));
       }
     } catch (error) {
       setPrepareErrors((e) => ({ ...e, [caseId]: `${error instanceof Error ? error.message : "This case's documents could not be prepared."} Nothing was sent. Try again.` }));
@@ -177,7 +177,7 @@ export function SendToCrematoryDialog({
 
   useEffect(() => {
     if (!open || !overview.data?.canPrepare) return;
-    const due = overview.data.candidates.filter((c) => !preparedOnce.current.has(c.caseId) && needsPreparation(c));
+    const due = overview.data.candidates.filter((c) => !preparedOnce.current.has(c.caseId) && needsPreparation(c, crematoryAuthorizationDocumentSource(organizationId) === 'arrangement_form_page'));
     if (due.length === 0) return;
     for (const c of due) preparedOnce.current.add(c.caseId);
     // Every due case shows "Preparing…" at once; each is prepared in turn.
@@ -695,6 +695,16 @@ const STEPS: Array<{ key: StepKey; label: string }> = [
   { key: 'package', label: 'Crematory Package' },
 ];
 
+/** A step's name for this organization (2026-11): "Arrangement page 3" and
+    "Workflow 2" are Manors' names — where the authorization document has no
+    source set up (Gus), the step is named for what it is. */
+function stepLabel(step: { key: StepKey; label: string }, organizationId: string): string {
+  if (crematoryAuthorizationDocumentSource(organizationId) === 'arrangement_form_page') return step.label;
+  if (step.key === 'crematory_form') return 'Authorization document';
+  if (step.key === 'workflow_2') return 'Authorization steps';
+  return step.label;
+}
+
 /**
  * One case as a compact checklist (2026-10): a fixed list of steps, each
  * with ✓ (done), ● (needs you now) or ○ (waiting on an earlier step), a
@@ -854,7 +864,7 @@ function CaseRow({
             </span>
           )}
           <button type="button" className="sx-btn sx-btn-secondary sx-btn-sm" onClick={onResolveWorkflow}>
-            Resolve Workflow 2
+            {crematoryAuthorizationDocumentSource(organizationId) === 'arrangement_form_page' ? 'Resolve Workflow 2' : 'Open authorization steps'}
           </button>
         </span>
       );
@@ -1035,7 +1045,7 @@ function CaseRow({
           <span className={styles.missingLabel}>Missing:</span>
           {STEPS.filter((step) => !ok(step.key) && !waiting[step.key]).map((step) => (
             <span key={step.key} className={styles.chip}>
-              {step.label}
+              {stepLabel(step, organizationId)}
             </span>
           ))}
           <button type="button" className="sx-btn sx-btn-ghost sx-btn-sm" onClick={() => onOpenChange(true)} aria-expanded={false} aria-label={`Show checklist for ${summary.decedentDisplayName}`}>
@@ -1053,7 +1063,7 @@ function CaseRow({
                   {state === 'done' ? '✓' : state === 'waiting' ? '○' : '●'}
                 </span>
                 <span className={styles.stepLabel}>
-                  {step.key === 'crematory_form' && crematoryAuthorizationDocumentSource(organizationId) === 'not_configured' ? 'Authorization document' : step.label}
+                  {stepLabel(step, organizationId)}
                 </span>
                 <span className={styles.stepContent}>{content(step.key)}</span>
               </li>

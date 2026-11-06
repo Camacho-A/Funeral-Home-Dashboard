@@ -1,4 +1,5 @@
 import type { StepperStage } from './StageStepper';
+import { NO_SLA_TARGET_LABEL } from '@/domain/cases/sla';
 
 /**
  * SOLIS Final Phase §8.1 — a presentational stage-progression list above
@@ -58,7 +59,7 @@ export function WorkflowStageOverview({
                   {stage.done
                     ? 'Complete'
                     : stage.current
-                      ? `Current stage · Day ${daysWaitingInStage} · target ${slaTargetLabel}`
+                      ? `Current stage · Day ${daysWaitingInStage}${slaTargetLabel !== NO_SLA_TARGET_LABEL ? ` · target ${slaTargetLabel}` : ''}`
                       : 'Not reached'}
                 </div>
                 {stage.current && (
