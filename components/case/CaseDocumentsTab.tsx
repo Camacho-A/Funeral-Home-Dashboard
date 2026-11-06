@@ -495,8 +495,10 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
         ))}
 
       {subTab === 'documents' && (
-        <>
-          {sendToCrematoryConfig(organizationId) && <CrematoryPackageStatus organizationId={organizationId} caseId={caseId} />}
+        // Crematory Package in a right-hand rail (2026-11), like Case
+        // Information on Overview; the documents keep the main column.
+        <div className="sx-docs-layout">
+          <div className="sx-docs-main">
           {deathCertificateFaxSettings(organizationId) && (
             <CaseFaxStatus
               organizationId={organizationId}
@@ -669,7 +671,11 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
               onConfirm={() => archive.mutateAsync({ documentId: archivingDoc.id })}
             />
           )}
-        </>
+          </div>
+          <aside className="sx-docs-rail" aria-label="Crematory Package status">
+            {sendToCrematoryConfig(organizationId) && <CrematoryPackageStatus organizationId={organizationId} caseId={caseId} />}
+          </aside>
+        </div>
       )}
     </div>
   );

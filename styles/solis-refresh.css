@@ -634,3 +634,55 @@
 .sx-panel-foot .sx-seg {
   align-self: flex-start;
 }
+
+/* ---------- Documents tab rail (2026-11) ----------
+   The Crematory Package sits on the right, as Case Information does on
+   Overview (same column widths and gap); the documents keep the main
+   column. With nothing in the rail, one column as before. */
+.sx-docs:has(.sx-docs-rail > *) {
+  max-width: none;
+}
+
+.sx-docs-layout:has(.sx-docs-rail > *) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: 48px;
+  align-items: start;
+}
+
+.sx-docs-main {
+  min-width: 0;
+}
+
+.sx-docs-rail {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+}
+
+.sx-docs-rail:empty {
+  display: none;
+}
+
+/* In the rail the status gets its own line under the title. */
+.sx-docs-rail .sx-panel-head {
+  flex-wrap: wrap;
+}
+
+.sx-docs-rail .sx-panel-head > .sx-status {
+  max-width: 100%;
+  text-align: left;
+}
+
+@media (max-width: 1024px) {
+  .sx-docs-layout:has(.sx-docs-rail > *) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  /* Narrow: the status comes first, above the documents, as before. */
+  .sx-docs-rail {
+    position: static;
+    order: -1;
+  }
+}
