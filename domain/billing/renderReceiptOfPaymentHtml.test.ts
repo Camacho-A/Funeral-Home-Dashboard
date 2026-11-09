@@ -203,14 +203,42 @@ describe('renderReceiptOfPaymentHtml — readable item codes (2026-10)', () => {
 });
 
 describe('renderReceiptOfPaymentHtml — refunds (2026-11)', () => {
-  it('no refund: no refund lines, rows or "Refunded" — the receipt reads exactly as before', () => {
+  const summary = (html: string) =>
+    [...html.matchAll(/<td style="[^"]*background:#efefef;">([A-Z ]+)<\/td>\s*<td style="[^"]*">([^<]*)<\/td>/g)].map((m) => [m[1], m[2]]);
+
+  it('no refund: the summary reads exactly as before', () => {
     const html = renderReceiptOfPaymentHtml(model());
+    expect(summary(html)).toEqual([
+      ['TOTAL CHARGE', '$890.00'],
+      ['DISCOUNT', ''],
+      ['PAYMENT', '$890.00'],
+      ['BALANCE DUE', '$0.00'],
+    ]);
     expect(html).not.toContain('REFUND');
     expect(html).not.toContain('Refunded');
-    expect(html).not.toContain('CHARGES REDUCED');
   });
 
-  it('family overpaid: the payment stays as received, the refund is its own line, and the balance is unchanged', () => {
+  it('service removed: the refund is a minus taken off the total charge, and the column adds up', () => {
+    const html = renderReceiptOfPaymentHtml(
+      model({
+        refunds: [{ methodLabel: 'Check — 2001', paidAtDisplay: 'June 2, 2025', amountCents: 15_000, reducedCharges: true }],
+        chargesReducedCents: 15_000,
+        refundCents: 15_000,
+      }),
+    );
+    expect(summary(html)).toEqual([
+      ['TOTAL CHARGE', '$890.00'],
+      ['DISCOUNT', ''],
+      ['REFUND', '&minus;$150.00'],
+      ['TOTAL AFTER REFUND', '$740.00'],
+      ['PAYMENT', '$740.00'],
+      ['BALANCE DUE', '$0.00'],
+    ]);
+    expect(html).toContain('REFUND &mdash; Check — 2001 &nbsp; June 2, 2025: &nbsp; &minus;$150.00');
+    expect(html).toContain('Refunded:&nbsp; &minus;$150.00');
+  });
+
+  it('family overpaid: the total stands, and the refund is a minus taken off the payment', () => {
     const html = renderReceiptOfPaymentHtml(
       model({
         payments: [{ methodLabel: 'Check — 1042', paidAtDisplay: 'May 21, 2025', amountCents: 100_000 }],
@@ -219,24 +247,13 @@ describe('renderReceiptOfPaymentHtml — refunds (2026-11)', () => {
         refundCents: 11_000,
       }),
     );
-    expect(html).toContain('REFUND &mdash; Check — 2001 &nbsp; June 2, 2025: &nbsp; $110.00');
-    expect(html).toMatch(/>PAYMENT<\/td>\s*<td[^>]*>\$1,000\.00</);
-    expect(html).toMatch(/>REFUND<\/td>\s*<td[^>]*>\$110\.00</);
-    expect(html).toContain('Refunded:&nbsp; $110.00');
-    expect(html).not.toContain('CHARGES REDUCED');
-    expect(html).toMatch(/BALANCE DUE<\/td>\s*<td[^>]*>\$0\.00</);
-  });
-
-  it('service removed: CHARGES REDUCED and REFUND both print, so the figures still add up', () => {
-    const html = renderReceiptOfPaymentHtml(
-      model({
-        refunds: [{ methodLabel: 'Cash', paidAtDisplay: 'June 2, 2025', amountCents: 20_000, reducedCharges: true }],
-        chargesReducedCents: 20_000,
-        refundCents: 20_000,
-      }),
-    );
-    expect(html).toMatch(/CHARGES REDUCED<\/td>\s*<td[^>]*>\$200\.00</);
-    expect(html).toMatch(/>REFUND<\/td>\s*<td[^>]*>\$200\.00</);
+    expect(summary(html)).toEqual([
+      ['TOTAL CHARGE', '$890.00'],
+      ['DISCOUNT', ''],
+      ['PAYMENT', '$1,000.00'],
+      ['REFUND OF OVERPAYMENT', '&minus;$110.00'],
+      ['BALANCE DUE', '$0.00'],
+    ]);
   });
 
   it('a partial payment reports what the family kept paid, after refunds', () => {

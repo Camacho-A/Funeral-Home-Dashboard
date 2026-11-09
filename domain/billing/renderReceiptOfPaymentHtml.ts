@@ -102,7 +102,7 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
     .map(
       (r) => `
             <tr>
-              <td style="${CELL}">REFUND &mdash; ${escapeHtml(r.methodLabel)}${r.paidAtDisplay ? ` &nbsp; ${escapeHtml(r.paidAtDisplay)}` : ''}: &nbsp; ${formatReceiptMoney(r.amountCents)}</td>
+              <td style="${CELL}">REFUND &mdash; ${escapeHtml(r.methodLabel)}${r.paidAtDisplay ? ` &nbsp; ${escapeHtml(r.paidAtDisplay)}` : ''}: &nbsp; &minus;${formatReceiptMoney(r.amountCents)}</td>
               <td style="${CELL}"></td>
               <td style="${CELL}"></td>
             </tr>`,
@@ -117,13 +117,38 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
    */
   const balanceDueLine = `Balance Due:&nbsp; ${formatReceiptMoney(model.balanceDueCents)}`;
   const netPaidCents = Math.max(model.paymentCents - model.refundCents, 0);
-  const refundedLine = model.refundCents > 0 ? `<br />Refunded:&nbsp; ${formatReceiptMoney(model.refundCents)}` : '';
+  const refundedLine = model.refundCents > 0 ? `<br />Refunded:&nbsp; &minus;${formatReceiptMoney(model.refundCents)}` : '';
   const statusLine =
     (model.status === 'paid_in_full'
       ? `${RECEIPT_STATUS_LABEL.paid_in_full}:${model.paidInFullDateDisplay ? `&nbsp; ${escapeHtml(model.paidInFullDateDisplay)}` : ''}`
       : model.status === 'partial_payment'
         ? `${RECEIPT_STATUS_LABEL.partial_payment}:&nbsp; ${formatReceiptMoney(netPaidCents)}<br />${balanceDueLine}`
         : balanceDueLine) + refundedLine;
+
+  /**
+   * Refunds in the summary (2026-11, user: "minus it from the total"). Each
+   * refund is printed as a minus and taken off the figure it changes, so the
+   * column adds up to the balance:
+   *   - service removed / price lowered: REFUND comes off the TOTAL CHARGE
+   *     (TOTAL AFTER REFUND), and PAYMENT is what the family kept paid;
+   *   - family overpaid: the total stands; REFUND OF OVERPAYMENT comes off
+   *     the PAYMENT.
+   * With no refund, the rows are exactly as before.
+   */
+  const overpaidRefundCents = Math.max(model.refundCents - model.chargesReducedCents, 0);
+  const summaryRow = (label: string, value: string, bold = false) => `
+        <tr>
+          <td style="${CELL}" colspan="4"></td>
+          <td style="${SUMMARY_LABEL}">${label}</td>
+          <td style="${NUM_CELL}${bold ? ' font-weight:700;' : ''}">${value}</td>
+        </tr>`;
+  const minus = (cents: number) => `&minus;${formatReceiptMoney(cents)}`;
+  const summaryRows = [
+    model.chargesReducedCents > 0 ? summaryRow('REFUND', minus(model.chargesReducedCents)) : '',
+    model.chargesReducedCents > 0 ? summaryRow('TOTAL AFTER REFUND', formatReceiptMoney(Math.max(model.totalChargeCents - model.chargesReducedCents, 0)), true) : '',
+    summaryRow('PAYMENT', formatReceiptMoney(Math.max(model.paymentCents - model.chargesReducedCents, 0))),
+    overpaidRefundCents > 0 ? summaryRow('REFUND OF OVERPAYMENT', minus(overpaidRefundCents)) : '',
+  ].join('');
 
   return `
   <div style="font-family: Arial, Helvetica, sans-serif; color:#111;">
@@ -189,30 +214,7 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
           <td style="${CELL}" colspan="4"></td>
           <td style="${SUMMARY_LABEL}">DISCOUNT</td>
           <td style="${NUM_CELL}">${model.discountCents > 0 ? formatReceiptMoney(model.discountCents) : ''}</td>
-        </tr>${
-          model.chargesReducedCents > 0
-            ? `
-        <tr>
-          <td style="${CELL}" colspan="4"></td>
-          <td style="${SUMMARY_LABEL}">CHARGES REDUCED</td>
-          <td style="${NUM_CELL}">${formatReceiptMoney(model.chargesReducedCents)}</td>
-        </tr>`
-            : ''
-        }
-        <tr>
-          <td style="${CELL}" colspan="4"></td>
-          <td style="${SUMMARY_LABEL}">PAYMENT</td>
-          <td style="${NUM_CELL}">${formatReceiptMoney(model.paymentCents)}</td>
-        </tr>${
-          model.refundCents > 0
-            ? `
-        <tr>
-          <td style="${CELL}" colspan="4"></td>
-          <td style="${SUMMARY_LABEL}">REFUND</td>
-          <td style="${NUM_CELL}">${formatReceiptMoney(model.refundCents)}</td>
-        </tr>`
-            : ''
-        }
+        </tr>${summaryRows}
         <tr>
           <td style="${CELL}" colspan="4"></td>
           <td style="${SUMMARY_LABEL}">BALANCE DUE</td>
