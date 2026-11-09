@@ -1,4 +1,5 @@
 import type { PaymentRecord } from '../../types/payment';
+import { CASE_REFUND_KIND_LABEL, refundKindOf } from '../billing/caseRefunds';
 
 /**
  * Phase 29 (Family Portal & External Collaboration). An explicit
@@ -27,13 +28,16 @@ export type PortalPaymentView = {
 };
 
 export function buildPortalPaymentView(payment: PaymentRecord): PortalPaymentView {
+  // Case refunds (2026-11): a family reads "Refund (Family overpaid)", never
+  // the stored purpose code.
+  const refundKind = refundKindOf(payment);
   return {
     id: payment.id,
     provider: payment.provider,
     status: payment.status,
     amount: payment.amount,
     currency: payment.currency,
-    purpose: payment.purpose,
+    purpose: refundKind ? `Refund (${CASE_REFUND_KIND_LABEL[refundKind]})` : payment.purpose,
     cardBrand: payment.cardBrand,
     cardLast4: payment.cardLast4,
     receiptReference: payment.receiptReference,

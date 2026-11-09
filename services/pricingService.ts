@@ -67,6 +67,7 @@ import {
 } from './orderOperationJournal';
 import { getAccountByNumber, seedChartOfAccounts } from './chartOfAccountsService';
 import { STARTER_ACCOUNT_NUMBERS } from '../domain/ledger/starterChartOfAccounts';
+import { chargeReductionCents, netPaidCents } from '../domain/billing/caseRefunds';
 import {
   serviceCatalogFixtures,
   caseOrderFixtures,
@@ -430,14 +431,29 @@ export async function listAuditEntriesForCase(
     CaseOrder version it has ever had — the one place "how much has this
     case actually been paid" is computed, reused by both createCaseOrder's
     balance seed (always 0 for a brand-new case, but computed the same way
-    for consistency) and recalculateOrder's balance refresh. */
+    for consistency) and recalculateOrder's balance refresh.
+
+    Case refunds (2026-11): net of every refund staff gave back
+    (domain/billing/caseRefunds.ts) — a refunded amount is no longer paid. */
 export async function getPaidAmountForCase(
   organizationId: string,
   caseId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<number> {
   const payments = await listPaymentRecordsForCase(organizationId, caseId, dataAdapterMode);
-  return payments.filter((p) => p.status === 'succeeded').reduce((sum, p) => sum + p.amount, 0);
+  return netPaidCents(payments);
+}
+
+/** Case refunds (2026-11): refunds given because a service was removed or
+    a price lowered. They lower what is owed by the same amount they lower
+    what was paid, so counting them here keeps the balance unchanged. */
+export async function getChargeReductionForCase(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+): Promise<number> {
+  const payments = await listPaymentRecordsForCase(organizationId, caseId, dataAdapterMode);
+  return chargeReductionCents(payments);
 }
 
 /**
@@ -483,7 +499,8 @@ export async function getSatisfiedAmountForCase(
 ): Promise<number> {
   const paidAmount = await getPaidAmountForCase(organizationId, caseId, dataAdapterMode);
   const writeOffTotal = await getWriteOffTotalForCase(organizationId, caseId, dataAdapterMode);
-  return paidAmount + writeOffTotal;
+  const chargeReduction = await getChargeReductionForCase(organizationId, caseId, dataAdapterMode);
+  return paidAmount + writeOffTotal + chargeReduction;
 }
 
 /**
@@ -1114,7 +1131,11 @@ async function prepareRecalculation(
   // agreed price too (services are kept by catalogWithOrderSnapshots above).
   const calculated = locked ? withLockedMerchandisePrices(computed, currentLineItems) : computed;
   assertNoUnpricedItems(calculated);
-  const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
+  // Case refunds (2026-11): a charge reduction already given stays counted
+  // when the order is edited later, so the edit does not reopen it.
+  const paidAmount =
+    (await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode)) +
+    (await getChargeReductionForCase(params.organizationId, params.caseId, dataAdapterMode));
 
   const newOrderId = params.idFactory();
   const newOrder: CaseOrder = {
@@ -1290,7 +1311,10 @@ export async function repriceCaseOrder(
   }
   if (changes.length === 0 || !params.confirm) return { applied: false, changes, order: current, lineItems: currentLineItems };
 
-  const paidAmount = await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode);
+  // Case refunds (2026-11): a charge reduction already given stays counted.
+  const paidAmount =
+    (await getPaidAmountForCase(params.organizationId, params.caseId, dataAdapterMode)) +
+    (await getChargeReductionForCase(params.organizationId, params.caseId, dataAdapterMode));
   const newOrderId = params.idFactory();
   const newOrder: CaseOrder = {
     id: newOrderId,
@@ -1950,7 +1974,10 @@ export async function revertCommittedCaseOrderChange(
   });
 
   if (current) {
-    const paidAmount = await getPaidAmountForCase(organizationId, caseId, dataAdapterMode);
+    // Case refunds (2026-11): a charge reduction already given stays counted.
+    const paidAmount =
+      (await getPaidAmountForCase(organizationId, caseId, dataAdapterMode)) +
+      (await getChargeReductionForCase(organizationId, caseId, dataAdapterMode));
     const restoredId = options.idFactory();
     const restored: CaseOrder = {
       id: restoredId,

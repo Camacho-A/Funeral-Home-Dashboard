@@ -2,6 +2,7 @@ import type { OrganizationContext } from '../types/organization';
 import type { PaymentRecord } from '../types/payment';
 import type { ManualPaymentMethod } from '../domain/billing/manualPaymentMethods';
 import type { CaseBalance } from '../domain/billing/caseBalance';
+import type { CaseRefundKind } from '../domain/billing/caseRefunds';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Client-side calls to
@@ -71,6 +72,24 @@ export async function recordManualPayment(
   return response.json();
 }
 
+/** Case refunds (2026-11): records a refund staff already gave back. */
+export async function recordRefund(
+  context: OrganizationContext,
+  caseId: string,
+  input: { kind: CaseRefundKind; method: ManualPaymentMethod; amountCents: number; reference?: string; reason: string; idempotencyKey: string },
+): Promise<{ refund: PaymentRecord }> {
+  const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/payments/refunds`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organizationId: context.organizationId, ...input }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error ?? 'Failed to record the refund.');
+  }
+  return response.json();
+}
+
 export async function cancelPayment(
   context: OrganizationContext,
   caseId: string,
@@ -114,6 +133,7 @@ export const paymentsClient = {
   getCaseBalance,
   getPayment,
   recordManualPayment,
+  recordRefund,
   cancelPayment,
   simulateMockPaymentSuccess,
 };

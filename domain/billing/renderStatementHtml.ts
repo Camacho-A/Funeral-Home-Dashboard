@@ -208,6 +208,7 @@ export function renderStatementHtml(model: BillingStatementModel): string {
       <table style="width:100%; border-collapse:collapse;" cellpadding="4">
         <tbody>
           <tr><td>Funeral goods and services charged</td>${moneyCell(model.goodsAndServicesTotalCents)}</tr>
+          ${(model.chargesReducedCents ?? 0) > 0 ? `<tr><td>Charges reduced (refunded to you)</td>${moneyCell(-(model.chargesReducedCents ?? 0))}</tr>` : ''}
           <tr><td>Payments received to date</td>${moneyCell(-model.paidToDateCents)}</tr>
           <tr style="font-weight:bold;"><td>Balance due to ${escapeHtml(model.provider.name)}</td>${moneyCell(model.authoritativeArBalanceDueCents)}</tr>
         </tbody>

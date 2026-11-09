@@ -1,4 +1,5 @@
 import type { PaymentRecordStatus } from '../../types/payment';
+import { chargeReductionCents, netPaidCents } from './caseRefunds';
 
 /**
  * Case balance and overpayment (2026-11). When an order is reduced below
@@ -13,12 +14,15 @@ import type { PaymentRecordStatus } from '../../types/payment';
  *     so "net of refunds" needs no separate subtraction); a record seen
  *     twice (same id) counts once;
  *   - write-offs reduce what is owed, but are never money received, so a
- *     write-off can never create an overpayment on its own.
+ *     write-off can never create an overpayment on its own;
+ *   - case refunds (2026-11, domain/billing/caseRefunds.ts): a refund staff
+ *     gave back comes off what was paid, and one given because a service
+ *     was removed or a price lowered also comes off what is owed.
  *
  * Pure and read-only: it never refunds, credits or changes a record.
  */
 
-export type CaseBalanceRecord = { id: string; status: PaymentRecordStatus; amount: number };
+export type CaseBalanceRecord = { id: string; status: PaymentRecordStatus; amount: number; purpose?: string | null };
 
 export type CaseBalance = {
   orderTotalCents: number;
@@ -41,12 +45,10 @@ export function computeCaseBalance(params: {
   const orderTotalCents = positive(params.orderTotalCents);
   const writeOffCents = positive(params.writeOffCents ?? 0);
   const seen = new Set<string>();
-  const paidCents = params.payments
-    .filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)))
-    .filter((p) => p.status === 'succeeded')
-    .reduce((sum, p) => sum + positive(p.amount), 0);
+  const records = params.payments.filter((p) => (seen.has(p.id) ? false : (seen.add(p.id), true)));
+  const paidCents = netPaidCents(records);
 
-  const owedAfterWriteOffs = Math.max(orderTotalCents - writeOffCents, 0);
+  const owedAfterWriteOffs = Math.max(orderTotalCents - writeOffCents - chargeReductionCents(records), 0);
   return {
     orderTotalCents,
     paidCents,

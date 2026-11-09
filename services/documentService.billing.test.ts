@@ -219,3 +219,21 @@ describe('generateBillingDocument — supersedes every older version of its type
     expect(caseDocumentFixtures.find((d) => d.id === uploaded.id)?.status).toBe('active');
   });
 });
+
+describe('documentService.resolveMergeSourceData — archived cases (2026-11)', () => {
+  it('refuses an archived case by default, and reads it only when the Statement/Receipt ask (includeArchived)', async () => {
+    const { resolveMergeSourceData } = await import('./documentService');
+    const { caseFixtures } = await import('./__mocks__/fixtures');
+    const { DEFAULT_ORGANIZATION_ID } = await import('./__mocks__/organizationIds');
+    const target = caseFixtures.find((c) => c.organizationId === DEFAULT_ORGANIZATION_ID)!;
+    const before = target.isDeleted;
+    target.isDeleted = true;
+    try {
+      await expect(resolveMergeSourceData(DEFAULT_ORGANIZATION_ID, target.id, 'mock')).rejects.toThrow('Case not found.');
+      const source = await resolveMergeSourceData(DEFAULT_ORGANIZATION_ID, target.id, 'mock', { includeArchived: true });
+      expect(source.case.id).toBe(target.id);
+    } finally {
+      target.isDeleted = before;
+    }
+  });
+});

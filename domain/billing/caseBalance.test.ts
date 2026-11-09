@@ -42,3 +42,19 @@ describe('computeCaseBalance', () => {
     expect(computeCaseBalance({ orderTotalCents: 10_000, payments: [pay('p1', -5_000), pay('p2', Number.NaN)] })).toMatchObject({ paidCents: 0, balanceDueCents: 10_000, overpaymentCents: 0 });
   });
 });
+
+describe('computeCaseBalance — case refunds (2026-11)', () => {
+  const refund = (id: string, amount: number, kind: 'refund_overpaid' | 'refund_charges_reduced'): CaseBalanceRecord => ({ id, amount, status: 'refund_issued', purpose: kind });
+
+  it('refunding an overpayment clears it: paid comes down to the total', () => {
+    expect(computeCaseBalance({ orderTotalCents: 150_000, payments: [pay('p1', 189_500), refund('r1', 39_500, 'refund_overpaid')] })).toMatchObject({
+      paidCents: 150_000, balanceDueCents: 0, overpaymentCents: 0,
+    });
+  });
+
+  it('a refund for a removed service lowers what is owed by the same amount, so nothing is owed and nothing is overpaid', () => {
+    expect(computeCaseBalance({ orderTotalCents: 189_500, payments: [pay('p1', 189_500), refund('r1', 25_000, 'refund_charges_reduced')] })).toMatchObject({
+      paidCents: 164_500, balanceDueCents: 0, overpaymentCents: 0,
+    });
+  });
+});

@@ -27,6 +27,18 @@ export type ReceiptPaymentLine = {
   amountCents: number;
 };
 
+/** Case refunds (2026-11): money handed back to the family, listed beside
+    the payments rather than netted into them. */
+export type ReceiptRefundLine = {
+  /** "Check — 1043", … — how the refund was given. */
+  methodLabel: string;
+  paidAtDisplay: string | null;
+  amountCents: number;
+  /** True when the refund lowered the charges (a service removed or a
+      price lowered), false when the family had overpaid. */
+  reducedCharges: boolean;
+};
+
 export type ReceiptLineItem = {
   quantity: number;
   /** The item number column. Null when the catalogue has no code for it —
@@ -59,10 +71,18 @@ export type ReceiptOfPaymentModel = {
       the balance. Null otherwise. */
   paidInFullDateDisplay: string | null;
   payments: readonly ReceiptPaymentLine[];
+  /** Case refunds (2026-11). Empty when nothing was refunded — the receipt
+      then reads exactly as before. */
+  refunds: readonly ReceiptRefundLine[];
   lineItems: readonly ReceiptLineItem[];
   totalChargeCents: number;
   discountCents: number;
+  /** Refunds that lowered the charges — printed as their own summary line. */
+  chargesReducedCents: number;
+  /** Every payment received (refunds are NOT taken off here). */
   paymentCents: number;
+  /** Every refund given back. */
+  refundCents: number;
   balanceDueCents: number;
   /** Information the case genuinely does not have. Surfaced to staff
       BEFORE the document is produced rather than silently rendered as a

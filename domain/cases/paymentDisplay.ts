@@ -14,12 +14,14 @@ export const PAYMENT_RECORD_STATUS_LABEL: Record<PaymentRecordStatus, string> = 
   failed: 'Failed',
   cancelled: 'Cancelled',
   refunded: 'Refunded',
+  refund_issued: 'Refund',
 };
 
 export function paymentRecordStatusVariant(status: PaymentRecordStatus): BadgeVariant {
   if (status === 'succeeded') return 'success';
   if (status === 'failed') return 'danger';
   if (status === 'pending') return 'brand';
+  if (status === 'refund_issued') return 'warning';
   return 'neutral'; // cancelled, refunded
 }
 

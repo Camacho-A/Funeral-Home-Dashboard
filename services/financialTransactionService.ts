@@ -483,4 +483,65 @@ export async function postRefundTransaction(
   return entry;
 }
 
+/**
+ * Case refunds (2026-11). The ledger entry for a refund staff gave back
+ * and recorded on the case (domain/billing/caseRefunds.ts) — nothing is
+ * refunded at a card processor here, and the payment it pays back is left
+ * untouched.
+ *
+ *   - Family overpaid: Dr Accounts Receivable / Cr Undeposited Funds — the
+ *     same pairing as `postRefundTransaction` above, undoing the excess
+ *     the payment entry credited to receivables.
+ *   - Service removed or price lowered: Dr Service Revenue / Cr Undeposited
+ *     Funds — the charge comes off revenue (which also clears the
+ *     receivable it created) and the money goes back out.
+ *
+ * Undeposited Funds, as for every refund without a linked bank deposit;
+ * an accountant can move it with an adjustment if it was paid from the
+ * bank.
+ */
+export async function postCaseRefundTransaction(
+  organizationId: string,
+  params: {
+    caseId: string;
+    refundId: string;
+    amountCents: number;
+    kind: 'overpaid' | 'charges_reduced';
+    memo: string;
+    entryDate?: string;
+    postedByStaffProfileId?: string | null;
+    idFactory: () => string;
+  },
+  ctx: ActivityContext,
+  dataAdapterMode: DataAdapterMode,
+) {
+  const debitAccount = await requireAccountByNumber(
+    organizationId,
+    params.kind === 'charges_reduced' ? STARTER_ACCOUNT_NUMBERS.SERVICE_REVENUE : STARTER_ACCOUNT_NUMBERS.ACCOUNTS_RECEIVABLE,
+    dataAdapterMode,
+  );
+  const undepositedFunds = await requireAccountByNumber(organizationId, STARTER_ACCOUNT_NUMBERS.UNDEPOSITED_FUNDS, dataAdapterMode);
+
+  const { entry } = await createAndPostJournalEntry(
+    organizationId,
+    {
+      entryDate: params.entryDate ?? nowIso(),
+      sourceType: 'refund',
+      sourceReferenceId: params.refundId,
+      caseId: params.caseId,
+      memo: params.memo,
+      lines: [
+        { accountId: debitAccount.id, direction: 'debit', amount: params.amountCents, caseId: params.caseId },
+        { accountId: undepositedFunds.id, direction: 'credit', amount: params.amountCents, caseId: params.caseId },
+      ],
+      postedByStaffProfileId: params.postedByStaffProfileId ?? null,
+      idFactory: params.idFactory,
+    },
+    dataAdapterMode,
+  );
+
+  await recordJournalEntryPosted(ctx, params.caseId, entry.id, entry.entryNumber, dataAdapterMode);
+  return entry;
+}
+
 export type { NewJournalEntryLineInput };

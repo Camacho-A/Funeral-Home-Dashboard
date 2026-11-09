@@ -1,6 +1,7 @@
 import type { PaymentStatus } from '../../types/case';
 import type { PaymentRecordStatus } from '../../types/payment';
 import { resolveReceiptPaymentStatus } from '../billing/receiptOfPayment';
+import { netPaidCents, refundedCents as sumRefundsIssued } from '../billing/caseRefunds';
 
 /**
  * Payment status shown on the case (2026-10) — derived, never stored.
@@ -17,6 +18,8 @@ import { resolveReceiptPaymentStatus } from '../billing/receiptOfPayment';
  *   - "paid" counts only `succeeded` payment records. Pending, failed,
  *     cancelled and refunded records never count, and a record seen twice
  *     (same id) is counted once;
+ *   - a refund staff gave back (2026-11, `refund_issued`) comes off what
+ *     was paid and is shown as refunded;
  *   - when the stored status says "Paid in full" but the records still
  *     show a balance (a refund, or a status set by hand), the summary says
  *     so instead of silently agreeing with either side.
@@ -40,7 +43,7 @@ export type CasePaymentSummary = {
   mismatch: 'marked_paid_with_balance' | 'paid_but_not_marked' | null;
 };
 
-export type PaymentSummaryRecord = { id: string; status: PaymentRecordStatus; amount: number };
+export type PaymentSummaryRecord = { id: string; status: PaymentRecordStatus; amount: number; purpose?: string | null };
 
 const LABEL: Record<CasePaymentState, string> = {
   paid_in_full: 'Paid in full',
@@ -73,9 +76,10 @@ export function summarizeCasePayment(params: {
 
   const totalCents = order.total;
   const balanceDueCents = Math.max(order.balanceDue, 0);
-  const paidCents = sumByStatus(records, 'succeeded');
+  const refundsIssuedCents = sumRefundsIssued(records);
+  const paidCents = netPaidCents(records);
   const pendingCents = sumByStatus(records, 'pending');
-  const refundedCents = sumByStatus(records, 'refunded');
+  const refundedCents = sumByStatus(records, 'refunded') + refundsIssuedCents;
 
   const receipt = resolveReceiptPaymentStatus({ balanceDueCents, paidCents });
   // A balance reduced by a write-off alone (no payment) is still partly settled.
@@ -83,7 +87,7 @@ export function summarizeCasePayment(params: {
     receipt === 'paid_in_full' ? 'paid_in_full' : receipt === 'partial_payment' || balanceDueCents < totalCents ? 'partial_payment' : 'awaiting_payment';
 
   const parts: string[] = [];
-  if (state === 'paid_in_full') parts.push(`${dollars(totalCents)} paid`);
+  if (state === 'paid_in_full') parts.push(`${dollars(refundsIssuedCents > 0 ? paidCents : totalCents)} paid`);
   else if (state === 'partial_payment') parts.push(`${dollars(totalCents - balanceDueCents)} of ${dollars(totalCents)} paid`, `${dollars(balanceDueCents)} due`);
   else parts.push(`${dollars(balanceDueCents)} due`);
   if (pendingCents > 0) parts.push(`${dollars(pendingCents)} pending`);

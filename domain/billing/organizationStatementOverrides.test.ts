@@ -114,6 +114,9 @@ describe('Gus Camacho Jr. — record-driven letterhead, never Manors data', () =
       totalChargeCents: 89_000,
       discountCents: 0,
       paymentCents: 89_000,
+      refunds: [],
+      chargesReducedCents: 0,
+      refundCents: 0,
       balanceDueCents: 0,
       missingFields: [],
     };

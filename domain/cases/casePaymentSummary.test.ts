@@ -74,6 +74,19 @@ describe('case payment summary — follows verified payment records', () => {
     expect(s.detail).toBe('$500.00 of $890.00 paid · $390.00 due · $390.00 refunded');
   });
 
+  it('a refund staff gave back (2026-11) comes off what was paid and shows as refunded — still paid in full', () => {
+    const s = summarizeCasePayment({
+      order: order(100000, 0),
+      payments: [pay('p1', 'succeeded', 110000), { id: 'r1', status: 'refund_issued', amount: 10000, purpose: 'refund_overpaid' }],
+      recordedStatus: 'paid_in_full',
+    })!;
+    expect(s.state).toBe('paid_in_full');
+    expect(s.paidCents).toBe(100000);
+    expect(s.refundedCents).toBe(10000);
+    expect(s.detail).toBe('$1,000.00 paid · $100.00 refunded');
+    expect(s.mismatch).toBeNull();
+  });
+
   it('the same payment record listed twice is counted once', () => {
     const s = summarizeCasePayment({ order: order(89000, 44500), payments: [pay('p1', 'succeeded', 44500), pay('p1', 'succeeded', 44500)], recordedStatus: 'awaiting_payment' })!;
     expect(s.paidCents).toBe(44500);
