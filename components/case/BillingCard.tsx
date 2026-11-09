@@ -7,6 +7,9 @@ import { useStatementPreview, useCashAdvances, useCreateCashAdvance, useDeleteCa
 import { useCaseDocumentLibrary } from '@/hooks/useCaseDocumentLibrary';
 import { DOCUMENT_TYPES } from '@/domain/documents/documentTypeRegistry';
 import { TextField } from '@/components/ui/TextField';
+import { useCasePayments } from '@/hooks/useCasePayments';
+import { CASE_REFUND_KIND_LABEL, chargeReductionCents, isRefundRecord, netPaidCents, refundKindOf, refundedCents } from '@/domain/billing/caseRefunds';
+import { formatTimestamp } from '@/utils/format';
 import styles from './BillingCard.module.css';
 
 /**
@@ -61,6 +64,16 @@ export function BillingCard({ caseId }: { caseId: string }) {
   const deleteCa = useDeleteCashAdvance(organizationId, caseId);
   const generate = useGenerateStatement(organizationId, caseId);
   const generateReceipt = useGenerateReceiptOfPayment(organizationId, caseId);
+  // Case refunds (2026-11): the tab shows money in and money given back.
+  // The Billing tab is only shown to staff with payment.read.
+  const paymentsQuery = useCasePayments(caseId);
+  const moneyRecords = (paymentsQuery.data ?? [])
+    .filter((p) => p.status === 'succeeded' || isRefundRecord(p))
+    .slice()
+    .sort((a, b) => String(a.paidAt ?? a.createdAt).localeCompare(String(b.paidAt ?? b.createdAt)));
+  const refundTotalCents = refundedCents(moneyRecords);
+  const chargesReducedCents = chargeReductionCents(moneyRecords);
+  const paidCents = netPaidCents(moneyRecords);
   const documents = useCaseDocumentLibrary(organizationId, caseId);
   const activeStatement =
     documents.data?.find(
@@ -241,12 +254,28 @@ export function BillingCard({ caseId }: { caseId: string }) {
         )}
         {model && (
           <div className={styles.statementBody}>
-            <div className="sx-kpis" style={{ gridTemplateColumns: 'repeat(2,minmax(0,1fr))' }}>
+            <div className="sx-kpis" style={{ gridTemplateColumns: refundTotalCents > 0 ? undefined : 'repeat(2,minmax(0,1fr))' }}>
               <div className="sx-kpi">
-                <span className="sx-kpi-label">Statement Total</span>
-                <span className="sx-kpi-value">{formatCents(model.ftcStatementTotalCents)}</span>
-                <span className="sx-kpi-caption">Goods/services + cash advances</span>
+                <span className="sx-kpi-label">{chargesReducedCents > 0 ? 'Total after refund' : 'Statement Total'}</span>
+                <span className="sx-kpi-value">{formatCents(Math.max(model.ftcStatementTotalCents - chargesReducedCents, 0))}</span>
+                <span className="sx-kpi-caption">
+                  {chargesReducedCents > 0 ? `${formatCents(model.ftcStatementTotalCents)} less ${formatCents(chargesReducedCents)} refunded` : 'Goods/services + cash advances'}
+                </span>
               </div>
+              {refundTotalCents > 0 && (
+                <div className="sx-kpi">
+                  <span className="sx-kpi-label">Paid</span>
+                  <span className="sx-kpi-value">{formatCents(paidCents)}</span>
+                  <span className="sx-kpi-caption">After {formatCents(refundTotalCents)} refunded</span>
+                </div>
+              )}
+              {refundTotalCents > 0 && (
+                <div className="sx-kpi">
+                  <span className="sx-kpi-label">Refunded</span>
+                  <span className="sx-kpi-value">−{formatCents(refundTotalCents)}</span>
+                  <span className="sx-kpi-caption">Given back to the family</span>
+                </div>
+              )}
               <div className="sx-kpi sx-kpi-emph">
                 <span className="sx-kpi-label">Account balance due</span>
                 <span className="sx-kpi-value">{formatCents(model.authoritativeArBalanceDueCents)}</span>
@@ -280,8 +309,59 @@ export function BillingCard({ caseId }: { caseId: string }) {
                   <td>Statement total</td>
                   <td className="sx-num">{formatCents(model.ftcStatementTotalCents)}</td>
                 </tr>
+                {chargesReducedCents > 0 && (
+                  <>
+                    <tr>
+                      <td>Refund (service removed or price lowered)</td>
+                      <td className="sx-num">−{formatCents(chargesReducedCents)}</td>
+                    </tr>
+                    <tr>
+                      <td>Total after refund</td>
+                      <td className="sx-num">{formatCents(Math.max(model.ftcStatementTotalCents - chargesReducedCents, 0))}</td>
+                    </tr>
+                  </>
+                )}
               </tfoot>
             </table>
+
+            {moneyRecords.length > 0 && (
+              <>
+                <h3 className="sx-section-title">
+                  Payments and refunds<span className="sx-section-meta">{moneyRecords.length}</span>
+                </h3>
+                <table className="sx-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Details</th>
+                      <th className="sx-num">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {moneyRecords.map((p) => {
+                      const refundKind = refundKindOf(p);
+                      const method = p.cardBrand && p.cardLast4 ? `${p.cardBrand} •••• ${p.cardLast4}` : p.receiptReference;
+                      return (
+                        <tr key={p.id}>
+                          <td>{formatTimestamp(p.paidAt ?? p.createdAt)}</td>
+                          <td>
+                            {refundKind ? `Refund — ${CASE_REFUND_KIND_LABEL[refundKind]}` : 'Payment'}
+                            {method && <span className="sx-cell-sub"> · {method}</span>}
+                          </td>
+                          <td className="sx-num">{refundKind ? `−${formatCents(p.amount)}` : formatCents(p.amount)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2}>Paid{refundTotalCents > 0 ? ' after refunds' : ''}</td>
+                      <td className="sx-num">{formatCents(paidCents)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </>
+            )}
 
             <div className="sx-bill-actions">
               {generate.isSuccess && <span className="sx-bill-success">✓ Generated — see the Documents tab.</span>}

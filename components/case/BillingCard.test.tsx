@@ -19,6 +19,12 @@ vi.mock('@/lib/caseDocumentsClient', async () => {
   return { ...actual, fetchCaseDocuments: vi.fn() };
 });
 
+const { listPayments } = vi.hoisted(() => ({ listPayments: vi.fn(async () => [] as unknown[]) }));
+vi.mock('@/services/paymentsClient', async () => {
+  const actual = await vi.importActual<typeof import('@/services/paymentsClient')>('@/services/paymentsClient');
+  return { ...actual, paymentsClient: { ...actual.paymentsClient, listPayments } };
+});
+
 const CASE_ID = 'case-1';
 
 const MODEL: BillingStatementModel = {
@@ -315,5 +321,46 @@ describe('BillingCard — staff-facing "FTC Statement" simplified to "Statement"
     await screen.findByText('Cash advance items on this case');
     expect(screen.queryByText(/FTC Statement/)).not.toBeInTheDocument();
     expect(await screen.findByText(/Statement Total below/)).toBeInTheDocument();
+  });
+});
+
+describe('BillingCard — refunds (2026-11)', () => {
+  const record = (over: Record<string, unknown>) => ({
+    id: 'p1', organizationId: DEFAULT_ORGANIZATION_ID, caseId: CASE_ID, caseOrderId: 'order-1', provider: 'clover',
+    providerCheckoutId: 'c1', providerPaymentId: 'pp1', idempotencyKey: 'k1', checkoutUrl: null,
+    status: 'succeeded', amount: 89000, currency: 'usd', purpose: 'Cremation service fee', cardBrand: 'VISA', cardLast4: '4242',
+    receiptReference: null, failureCode: null, failureMessage: null,
+    createdAt: '2026-10-26T15:00:00.000Z', paidAt: '2026-10-26T15:00:00.000Z', updatedAt: '2026-10-26T15:00:00.000Z',
+    ...over,
+  });
+
+  it('no refund: the tab reads as before — Statement Total and balance only', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue(MODEL);
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    listPayments.mockResolvedValueOnce([record({})]);
+    renderCard();
+    expect(await screen.findByText('Payments and refunds')).toBeInTheDocument();
+    expect(screen.getByText('Statement Total')).toBeInTheDocument();
+    expect(screen.queryByText('Refunded')).not.toBeInTheDocument();
+    expect(screen.queryByText('Total after refund')).not.toBeInTheDocument();
+  });
+
+  it('a refund for a removed service: the total is shown after the refund, the refund is a minus, and paid is net', async () => {
+    vi.mocked(billingClient.fetchStatementPreview).mockResolvedValue({ ...MODEL, paidToDateCents: 74000, authoritativeArBalanceDueCents: 0, chargesReducedCents: 15000 });
+    vi.mocked(billingClient.fetchCashAdvances).mockResolvedValue([]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([]);
+    listPayments.mockResolvedValueOnce([
+      record({}),
+      record({ id: 'r1', provider: 'manual', status: 'refund_issued', amount: 15000, purpose: 'refund_charges_reduced', cardBrand: null, cardLast4: null, receiptReference: 'Check — 2001', createdAt: '2026-11-09T18:00:00.000Z', paidAt: '2026-11-09T18:00:00.000Z' }),
+    ]);
+    renderCard();
+    expect(await screen.findByText('Refund — Service removed or price lowered')).toBeInTheDocument();
+    expect(screen.getAllByText('Total after refund')).toHaveLength(2); // the figure at the top and the table footer
+    expect(screen.getAllByText('$740.00').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getAllByText('−$150.00').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByText('Refunded')).toBeInTheDocument();
+    expect(screen.getByText('Paid after refunds')).toBeInTheDocument();
+    expect(screen.getByText(/Check — 2001/)).toBeInTheDocument();
   });
 });
