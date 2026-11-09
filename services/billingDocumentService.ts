@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { itemCodesForLines, usesReadableItemCodes } from '../domain/billing/itemCode';
 import type { DataAdapterMode } from '../lib/env';
 import { resolveMergeSourceData, resolveOrganizationIdentity, generateBillingDocument, renderAndStorePdf } from './documentService';
-import { getServiceCatalog, listLineItemsForOrder, getPaidAmountForCase } from './pricingService';
+import { getServiceCatalog, listLineItemsForOrder, getPaidAmountForCase, getChargeReductionForCase } from './pricingService';
 import { listProductsForOrganization } from './merchandiseService';
 import { listCashAdvanceItems, sumCashAdvances } from './cashAdvanceService';
 import { getSupplementalConfig } from './billingConfigService';
@@ -19,7 +19,9 @@ import {
   type ReceiptLineItem,
   type ReceiptOfPaymentModel,
   type ReceiptPaymentLine,
+  type ReceiptRefundLine,
 } from '../domain/billing/receiptOfPayment';
+import { isRefundRecord, refundKindOf } from '../domain/billing/caseRefunds';
 import { composeDecedentName } from '../domain/cases/decedentName';
 import { listPaymentRecordsForCase } from './paymentsService';
 import { resolveStatementProviderIdentity, shouldShowCashAdvanceSection, receiptFooterFor } from '../domain/billing/organizationStatementOverrides';
@@ -48,6 +50,10 @@ export class BillingDocumentServiceError extends Error {
     this.name = 'BillingDocumentServiceError';
   }
 }
+
+/** Statement and Receipt of Payment read archived cases too (2026-11) — a
+    refund recorded on an archived case updates its receipt. */
+const BILLING_CASE_LOOKUP = { includeArchived: true } as const;
 
 type ActivityContext = {
   organizationId: string;
@@ -107,19 +113,20 @@ export async function generateStatement(
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ document: CaseDocument; model: BillingStatementModel }> {
   const org = ctx.organizationId;
-  const src = await resolveMergeSourceData(org, params.caseId, dataAdapterMode);
+  const src = await resolveMergeSourceData(org, params.caseId, dataAdapterMode, BILLING_CASE_LOOKUP);
   if (!src.caseOrder) {
     throw new BillingDocumentServiceError('This case has no active order — a statement cannot be generated until an order exists.');
   }
   const order = src.caseOrder;
 
-  const [lineItems, catalog, products, paidToDate, cashAdvances, supplemental] = await Promise.all([
+  const [lineItems, catalog, products, paidToDate, cashAdvances, supplemental, chargesReduced] = await Promise.all([
     listLineItemsForOrder(org, order.id, dataAdapterMode),
     getServiceCatalog(org, dataAdapterMode),
     listProductsForOrganization(org, dataAdapterMode, { includeInactive: true }),
     getPaidAmountForCase(org, params.caseId, dataAdapterMode),
     listCashAdvanceItems(org, params.caseId, dataAdapterMode),
     getSupplementalConfig(org, dataAdapterMode),
+    getChargeReductionForCase(org, params.caseId, dataAdapterMode),
   ]);
 
   const catalogByCode = new Map(catalog.map((c) => [c.serviceCode, c]));
@@ -164,6 +171,7 @@ export async function generateStatement(
     basicServicesFeeMode: hasBundledBasicFee ? 'included_in_priced_service' : 'separately_charged',
     goodsAndServicesTotalCents: order.total,
     paidToDateCents: paidToDate,
+    chargesReducedCents: chargesReduced,
     authoritativeArBalanceDueCents: order.balanceDue,
     showCashAdvanceSection: shouldShowCashAdvanceSection(org),
     cashAdvanceItems: cashAdvances.map((c) => ({ description: c.description, amountCents: c.amountCents, hasMarkup: c.hasMarkup, isEstimated: c.isEstimated })),
@@ -208,16 +216,17 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
   // is to duplicate only the read+assemble portion. To avoid divergence we call
   // a shared private assembler.
   const org = ctx.organizationId;
-  const src = await resolveMergeSourceData(org, caseId, dataAdapterMode);
+  const src = await resolveMergeSourceData(org, caseId, dataAdapterMode, BILLING_CASE_LOOKUP);
   if (!src.caseOrder) throw new BillingDocumentServiceError('This case has no active order.');
   const order = src.caseOrder;
-  const [lineItems, catalog, products, paidToDate, cashAdvances, supplemental] = await Promise.all([
+  const [lineItems, catalog, products, paidToDate, cashAdvances, supplemental, chargesReduced] = await Promise.all([
     listLineItemsForOrder(org, order.id, dataAdapterMode),
     getServiceCatalog(org, dataAdapterMode),
     listProductsForOrganization(org, dataAdapterMode, { includeInactive: true }),
     getPaidAmountForCase(org, caseId, dataAdapterMode),
     listCashAdvanceItems(org, caseId, dataAdapterMode),
     getSupplementalConfig(org, dataAdapterMode),
+    getChargeReductionForCase(org, caseId, dataAdapterMode),
   ]);
   const catalogByCode = new Map(catalog.map((c) => [c.serviceCode, c]));
   const showItemCodes = usesReadableItemCodes(org);
@@ -256,6 +265,7 @@ async function buildStatementModelOnly(caseId: string, ctx: ActivityContext, dat
     basicServicesFeeMode: hasBundledBasicFee ? 'included_in_priced_service' : 'separately_charged',
     goodsAndServicesTotalCents: order.total,
     paidToDateCents: paidToDate,
+    chargesReducedCents: chargesReduced,
     authoritativeArBalanceDueCents: order.balanceDue,
     showCashAdvanceSection: shouldShowCashAdvanceSection(org),
     cashAdvanceItems: cashAdvances.map((c) => ({ description: c.description, amountCents: c.amountCents, hasMarkup: c.hasMarkup, isEstimated: c.isEstimated })),
@@ -294,7 +304,7 @@ export async function buildReceiptOfPaymentModel(
   organizationId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<ReceiptOfPaymentModel> {
-  const src = await resolveMergeSourceData(organizationId, params.caseId, dataAdapterMode);
+  const src = await resolveMergeSourceData(organizationId, params.caseId, dataAdapterMode, BILLING_CASE_LOOKUP);
   if (!src.caseOrder) {
     throw new BillingDocumentServiceError(
       'This case has no active order — a receipt cannot be generated until an order exists.',
@@ -319,7 +329,23 @@ export async function buildReceiptOfPaymentModel(
       amountCents: p.amount,
     }));
 
-  const paidCents = paymentLines.reduce((sum, p) => sum + p.amountCents, 0);
+  const receivedCents = paymentLines.reduce((sum, p) => sum + p.amountCents, 0);
+
+  // Case refunds (2026-11): each refund is listed on its own line, and the
+  // amount paid the status line reports is what the family kept paid.
+  const refundLines: ReceiptRefundLine[] = payments
+    .filter(isRefundRecord)
+    .slice()
+    .sort((a, b) => String(a.paidAt ?? a.createdAt).localeCompare(String(b.paidAt ?? b.createdAt)))
+    .map((r) => ({
+      methodLabel: r.receiptReference?.trim() || 'Refund',
+      paidAtDisplay: formatReceiptDate(r.paidAt ?? r.createdAt),
+      amountCents: r.amount,
+      reducedCharges: refundKindOf(r) === 'charges_reduced',
+    }));
+  const refundCents = refundLines.reduce((sum, r) => sum + r.amountCents, 0);
+  const chargesReducedCents = refundLines.filter((r) => r.reducedCharges).reduce((sum, r) => sum + r.amountCents, 0);
+  const paidCents = Math.max(receivedCents - refundCents, 0);
 
   // Readable item codes (2026-10): an organization that uses them prints a
   // short code for every line (domain/billing/itemCode.ts) — never an
@@ -364,10 +390,13 @@ export async function buildReceiptOfPaymentModel(
     status,
     paidInFullDateDisplay: resolvePaidInFullDate(status, paymentLines),
     payments: paymentLines,
+    refunds: refundLines,
     lineItems: receiptLines,
     totalChargeCents: order.total,
     discountCents,
-    paymentCents: paidCents,
+    chargesReducedCents,
+    paymentCents: receivedCents,
+    refundCents,
     balanceDueCents: order.balanceDue,
     missingFields,
   };

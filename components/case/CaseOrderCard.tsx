@@ -6,12 +6,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { TextField } from '@/components/ui/TextField';
+import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
 import { EditServicesModal } from '@/components/case/EditServicesModal';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useMyPermissions } from '@/hooks/useRbac';
 import { useCaseOrder } from '@/hooks/useCaseOrder';
-import { useCasePayments, useRecordManualPayment } from '@/hooks/useCasePayments';
+import { useCasePayments, useRecordManualPayment, useRecordRefund } from '@/hooks/useCasePayments';
 import { formatCentsAsCurrency, formatTimestamp } from '@/utils/format';
 import { printTextLog } from '@/utils/print';
 import {
@@ -23,6 +24,16 @@ import {
 import { additionalItemsLabel } from '@/domain/organization/caseOrderTerminology';
 import styles from './CaseOrderCard.module.css';
 import { MANUAL_PAYMENT_METHODS, MANUAL_PAYMENT_METHOD_LABEL, looksLikeCardNumber, type ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods';
+import {
+  CASE_REFUND_KINDS,
+  CASE_REFUND_KIND_HINT,
+  CASE_REFUND_KIND_LABEL,
+  chargeReductionCents,
+  isRefundRecord,
+  netPaidCents,
+  refundKindOf,
+  type CaseRefundKind,
+} from '@/domain/billing/caseRefunds';
 
 /**
  * Phase 19C (Service Catalog, Case Order & Pricing Engine). Replaces
@@ -51,6 +62,9 @@ import { MANUAL_PAYMENT_METHODS, MANUAL_PAYMENT_METHOD_LABEL, looksLikeCardNumbe
  *   - `payment.read` — the case's TOTAL, balance due, and payment history
  *     specifically (narrower — not every case-working role gets this).
  *   - `payment.collect` — Record Payment.
+ *   - `payment.refund` — Refund (2026-11): records a refund staff already
+ *     gave back. Also offered on an archived case, where Record Payment is
+ *     not (the case is complete; only a refund can still happen).
  * Renders nothing at all without `caseOrder.read`. Every query is disabled
  * without its own gate, so no data is fetched for a caller who can't see
  * it — but the real enforcement is server-side (the underlying routes
@@ -60,10 +74,12 @@ export function CaseOrderCard({
   caseId,
   caseName,
   caseNumber,
+  isArchived = false,
 }: {
   caseId: string;
   caseName: string;
   caseNumber: string;
+  isArchived?: boolean;
 }) {
   const { organizationId } = useOrganization();
   const permissionsQuery = useMyPermissions(organizationId);
@@ -71,7 +87,8 @@ export function CaseOrderCard({
   const canReadCaseOrder = permissions.includes('caseOrder.read');
   const canEditCaseOrder = permissions.includes('caseOrder.update');
   const canReadPayment = permissions.includes('payment.read');
-  const canRecordPayment = permissions.includes('payment.collect');
+  const canRecordPayment = permissions.includes('payment.collect') && !isArchived;
+  const canRefund = permissions.includes('payment.refund');
 
   const { data, isPending } = useCaseOrder(caseId, canReadCaseOrder);
   const { data: payments = [] } = useCasePayments(caseId, canReadPayment);
@@ -82,11 +99,25 @@ export function CaseOrderCard({
   const [method, setMethod] = useState<ManualPaymentMethod>('cash');
   const [amountInput, setAmountInput] = useState('');
   const [reference, setReference] = useState('');
+  const recordRefund = useRecordRefund(caseId);
+  const [refundKey, setRefundKey] = useState(() => crypto.randomUUID());
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundKind, setRefundKind] = useState<CaseRefundKind>('overpaid');
+  const [refundMethod, setRefundMethod] = useState<ManualPaymentMethod>('check');
+  const [refundAmountInput, setRefundAmountInput] = useState('');
+  const [refundReference, setRefundReference] = useState('');
+  const [refundReason, setRefundReason] = useState('');
 
   const order = data?.order ?? null;
   const lineItems = data?.lineItems ?? [];
 
   const canCollect = Boolean(order) && (order?.balanceDue ?? 0) > 0;
+  const paidCents = netPaidCents(payments);
+  // A guide for the form only — the server checks the real limit, including
+  // write-offs this card does not load.
+  const chargesReducedCents = chargeReductionCents(payments);
+  const overpaidCents = order ? Math.max(paidCents + chargesReducedCents - order.total, 0) : 0;
+  const showRefund = canRefund && canReadPayment && Boolean(order) && paidCents > 0;
 
   function dollarsToCents(input: string): number | null {
     const n = Number(input);
@@ -95,6 +126,7 @@ export function CaseOrderCard({
   }
 
   function openRecordPayment() {
+    setRefundOpen(false);
     setAmountInput(order ? (order.balanceDue / 100).toFixed(2) : '');
     setMethod('cash');
     setReference('');
@@ -110,6 +142,37 @@ export function CaseOrderCard({
         onSuccess: () => {
           setRecordOpen(false);
           setIdempotencyKey(crypto.randomUUID());
+        },
+      },
+    );
+  }
+
+  function openRefund() {
+    const kind: CaseRefundKind = overpaidCents > 0 ? 'overpaid' : 'charges_reduced';
+    setRefundKind(kind);
+    setRefundAmountInput(kind === 'overpaid' ? (overpaidCents / 100).toFixed(2) : '');
+    setRefundMethod('check');
+    setRefundReference('');
+    setRefundReason('');
+    recordRefund.reset();
+    setRecordOpen(false);
+    setRefundOpen(true);
+  }
+
+  function chooseRefundKind(kind: CaseRefundKind) {
+    setRefundKind(kind);
+    if (kind === 'overpaid' && overpaidCents > 0) setRefundAmountInput((overpaidCents / 100).toFixed(2));
+  }
+
+  function submitRefund() {
+    const cents = dollarsToCents(refundAmountInput);
+    if (cents === null || refundReason.trim() === '') return;
+    recordRefund.mutate(
+      { kind: refundKind, method: refundMethod, amountCents: cents, reference: refundReference.trim() || undefined, reason: refundReason.trim(), idempotencyKey: refundKey },
+      {
+        onSuccess: () => {
+          setRefundOpen(false);
+          setRefundKey(crypto.randomUUID());
         },
       },
     );
@@ -180,6 +243,12 @@ export function CaseOrderCard({
                 <span>Total</span>
                 <span>{formatCentsAsCurrency(order.total, 'usd')}</span>
               </div>
+              {chargesReducedCents > 0 && (
+                <div className={styles.totalRow}>
+                  <span>Charges reduced (refund)</span>
+                  <span>−{formatCentsAsCurrency(chargesReducedCents, 'usd')}</span>
+                </div>
+              )}
               <div className={styles.balanceRow}>
                 <span>Balance due</span>
                 <span>{formatCentsAsCurrency(order.balanceDue, 'usd')}</span>
@@ -198,12 +267,95 @@ export function CaseOrderCard({
                 Record Payment
               </Button>
             )}
+            {showRefund && (
+              <Button variant="secondary" onClick={openRefund}>
+                Refund
+              </Button>
+            )}
             {canReadPayment && (
               <Button variant="secondary" onClick={handlePrint}>
                 Print Order
               </Button>
             )}
           </div>
+          {isArchived && showRefund && !refundOpen && (
+            <p className={styles.recordPaymentHint}>This case is archived. You can still record a refund; the case stays archived.</p>
+          )}
+          {refundOpen && (
+            <div className={styles.recordPaymentPanel}>
+              <strong>Record a refund</strong>
+              <p className={styles.recordPaymentHint}>
+                For money you have already given back to the family. Nothing is refunded to a card from here. The Receipt of Payment is updated to show the refund.
+              </p>
+              <fieldset className={styles.refundKinds}>
+                <legend className={styles.refundLegend}>Why is the family getting money back?</legend>
+                {CASE_REFUND_KINDS.map((kind) => (
+                  <label key={kind} className={styles.refundKind}>
+                    <input type="radio" name={`refund-kind-${caseId}`} value={kind} checked={refundKind === kind} onChange={() => chooseRefundKind(kind)} />
+                    <span>
+                      <span className={styles.refundKindLabel}>{CASE_REFUND_KIND_LABEL[kind]}</span>
+                      <span className={styles.recordPaymentHint}>{CASE_REFUND_KIND_HINT[kind]}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              <label className={styles.recordPaymentField}>
+                Amount refunded ($)
+                <TextField inputMode="decimal" value={refundAmountInput} onChange={(e) => setRefundAmountInput(e.target.value)} />
+              </label>
+              <p className={styles.recordPaymentHint}>
+                {refundKind === 'overpaid'
+                  ? overpaidCents > 0
+                    ? `The family paid ${formatCentsAsCurrency(overpaidCents, 'usd')} more than the charges.`
+                    : 'The family has not paid more than the charges.'
+                  : `Paid so far: ${formatCentsAsCurrency(paidCents, 'usd')}.`}
+              </p>
+              <label className={styles.recordPaymentField}>
+                How was it refunded?
+                <SelectField value={refundMethod} onChange={(e) => setRefundMethod(e.target.value as ManualPaymentMethod)}>
+                  {MANUAL_PAYMENT_METHODS.map((value) => (
+                    <option key={value} value={value}>
+                      {MANUAL_PAYMENT_METHOD_LABEL[value]}
+                    </option>
+                  ))}
+                </SelectField>
+              </label>
+              <label className={styles.recordPaymentField}>
+                {refundMethod === 'credit_card' ? 'Reference (optional — e.g. refund approval code)' : 'Reference (optional — e.g. check number)'}
+                <TextField value={refundReference} onChange={(e) => setRefundReference(e.target.value)} />
+              </label>
+              {refundMethod === 'credit_card' && looksLikeCardNumber(refundReference) && (
+                <div className={styles.error} role="alert">
+                  This looks like a card number. Remove it — use an approval code or receipt number instead.
+                </div>
+              )}
+              <label className={styles.recordPaymentField}>
+                Reason
+                <TextArea rows={2} maxLength={300} value={refundReason} onChange={(e) => setRefundReason(e.target.value)} placeholder="e.g. Death certificates no longer needed" />
+              </label>
+              <div className={styles.recordPaymentActions}>
+                <Button
+                  onClick={submitRefund}
+                  disabled={
+                    recordRefund.isPending ||
+                    dollarsToCents(refundAmountInput) === null ||
+                    refundReason.trim() === '' ||
+                    (refundMethod === 'credit_card' && looksLikeCardNumber(refundReference))
+                  }
+                >
+                  {recordRefund.isPending ? 'Saving…' : 'Save Refund'}
+                </Button>
+                <Button variant="secondary" onClick={() => setRefundOpen(false)}>
+                  Cancel
+                </Button>
+              </div>
+              {recordRefund.isError && (
+                <div className={styles.error} role="alert">
+                  {recordRefund.error instanceof Error ? recordRefund.error.message : 'Failed to record the refund.'}
+                </div>
+              )}
+            </div>
+          )}
           {recordOpen && (
             <div className={styles.recordPaymentPanel}>
               <strong>Record a payment</strong>
@@ -268,8 +420,13 @@ export function CaseOrderCard({
                   <Badge variant={paymentRecordStatusVariant(payment.status)}>
                     {PAYMENT_RECORD_STATUS_LABEL[payment.status]}
                   </Badge>
-                  <span className={styles.historyAmount}>{formatCentsAsCurrency(payment.amount, payment.currency)}</span>
-                  <span className={styles.historyPurpose}>{payment.purpose}</span>
+                  <span className={styles.historyAmount}>
+                    {isRefundRecord(payment) ? '−' : ''}
+                    {formatCentsAsCurrency(payment.amount, payment.currency)}
+                  </span>
+                  <span className={styles.historyPurpose}>
+                    {isRefundRecord(payment) ? CASE_REFUND_KIND_LABEL[refundKindOf(payment) ?? 'overpaid'] : payment.purpose}
+                  </span>
                   {payment.cardBrand && payment.cardLast4 && (
                     <span className={styles.historyCard}>
                       {payment.cardBrand} •••• {payment.cardLast4}

@@ -280,3 +280,44 @@
 .orderBody > :global(.sx-empty) + .actions {
   margin-top: 12px;
 }
+
+/* Case refunds (2026-11): the two reasons, each with one line of what it
+   does to the figures. */
+.refundKinds {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.refundLegend {
+  padding: 0;
+  margin-bottom: var(--space-2);
+  font-weight: 600;
+}
+
+.refundKind {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  cursor: pointer;
+}
+
+.refundKind input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.refundKind > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.refundKindLabel {
+  font-weight: 600;
+}

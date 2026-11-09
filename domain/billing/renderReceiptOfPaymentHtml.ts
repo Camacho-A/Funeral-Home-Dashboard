@@ -95,6 +95,20 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
            <td style="${CELL}">${escapeHtml(model.deceasedName)}</td>
          </tr>`;
 
+  /** Case refunds (2026-11): one row per refund, under the payments, with
+      its amount — so the family sees each payment as received and each
+      refund given back. */
+  const refundRows = model.refunds
+    .map(
+      (r) => `
+            <tr>
+              <td style="${CELL}">REFUND &mdash; ${escapeHtml(r.methodLabel)}${r.paidAtDisplay ? ` &nbsp; ${escapeHtml(r.paidAtDisplay)}` : ''}: &nbsp; ${formatReceiptMoney(r.amountCents)}</td>
+              <td style="${CELL}"></td>
+              <td style="${CELL}"></td>
+            </tr>`,
+    )
+    .join('');
+
   /**
    * 2026-10: the amount after "PARTIAL PAYMENT" is what was actually paid;
    * what is still owed is its own line, "Balance Due". The remaining
@@ -102,12 +116,14 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
    * that were the amount paid.
    */
   const balanceDueLine = `Balance Due:&nbsp; ${formatReceiptMoney(model.balanceDueCents)}`;
+  const netPaidCents = Math.max(model.paymentCents - model.refundCents, 0);
+  const refundedLine = model.refundCents > 0 ? `<br />Refunded:&nbsp; ${formatReceiptMoney(model.refundCents)}` : '';
   const statusLine =
-    model.status === 'paid_in_full'
+    (model.status === 'paid_in_full'
       ? `${RECEIPT_STATUS_LABEL.paid_in_full}:${model.paidInFullDateDisplay ? `&nbsp; ${escapeHtml(model.paidInFullDateDisplay)}` : ''}`
       : model.status === 'partial_payment'
-        ? `${RECEIPT_STATUS_LABEL.partial_payment}:&nbsp; ${formatReceiptMoney(model.paymentCents)}<br />${balanceDueLine}`
-        : balanceDueLine;
+        ? `${RECEIPT_STATUS_LABEL.partial_payment}:&nbsp; ${formatReceiptMoney(netPaidCents)}<br />${balanceDueLine}`
+        : balanceDueLine) + refundedLine;
 
   return `
   <div style="font-family: Arial, Helvetica, sans-serif; color:#111;">
@@ -148,7 +164,7 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
           <th style="${HEAD_CELL}">Deceased</th>
         </tr>
       </thead>
-      <tbody>${paymentRows}</tbody>
+      <tbody>${paymentRows}${refundRows}</tbody>
     </table>
 
     <table style="width:100%; border-collapse:collapse;">
@@ -173,12 +189,30 @@ export function renderReceiptOfPaymentHtml(model: ReceiptOfPaymentModel): string
           <td style="${CELL}" colspan="4"></td>
           <td style="${SUMMARY_LABEL}">DISCOUNT</td>
           <td style="${NUM_CELL}">${model.discountCents > 0 ? formatReceiptMoney(model.discountCents) : ''}</td>
-        </tr>
+        </tr>${
+          model.chargesReducedCents > 0
+            ? `
+        <tr>
+          <td style="${CELL}" colspan="4"></td>
+          <td style="${SUMMARY_LABEL}">CHARGES REDUCED</td>
+          <td style="${NUM_CELL}">${formatReceiptMoney(model.chargesReducedCents)}</td>
+        </tr>`
+            : ''
+        }
         <tr>
           <td style="${CELL}" colspan="4"></td>
           <td style="${SUMMARY_LABEL}">PAYMENT</td>
           <td style="${NUM_CELL}">${formatReceiptMoney(model.paymentCents)}</td>
-        </tr>
+        </tr>${
+          model.refundCents > 0
+            ? `
+        <tr>
+          <td style="${CELL}" colspan="4"></td>
+          <td style="${SUMMARY_LABEL}">REFUND</td>
+          <td style="${NUM_CELL}">${formatReceiptMoney(model.refundCents)}</td>
+        </tr>`
+            : ''
+        }
         <tr>
           <td style="${CELL}" colspan="4"></td>
           <td style="${SUMMARY_LABEL}">BALANCE DUE</td>

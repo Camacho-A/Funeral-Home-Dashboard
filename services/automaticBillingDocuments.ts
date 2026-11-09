@@ -15,7 +15,9 @@ import { listPaymentRecordsForCase } from './paymentsService';
  *   - the case order is created or changed  -> Statement (and the Receipt,
  *     if the case has a payment, since the receipt itemises the order);
  *   - a payment succeeds (manual entry or a Clover-confirmed payment)
- *     -> Statement and Receipt.
+ *     -> Statement and Receipt;
+ *   - a refund is recorded (2026-11) -> Statement and Receipt, also on an
+ *     archived case, so the receipt shows the refund.
  *
  * Each document goes through the same generation path as the Generate
  * button — same renderer, same Manors letterhead, same versioning, and
@@ -27,7 +29,7 @@ import { listPaymentRecordsForCase } from './paymentsService';
  * fail the payment or order change that triggered it — callers run it
  * after the response (lib/afterResponse.ts).
  */
-export type AutomaticBillingTrigger = 'order_saved' | 'payment_succeeded';
+export type AutomaticBillingTrigger = 'order_saved' | 'payment_succeeded' | 'refund_recorded';
 
 export type AutomaticBillingResult = {
   statement: 'generated' | 'not_applicable' | 'failed';
@@ -49,7 +51,7 @@ export async function regenerateBillingDocuments(
     logFailure('Statement', params, error);
   }
 
-  let wantsReceipt = params.trigger === 'payment_succeeded';
+  let wantsReceipt = params.trigger === 'payment_succeeded' || params.trigger === 'refund_recorded';
   if (!wantsReceipt) {
     try {
       const payments = await listPaymentRecordsForCase(ctx.organizationId, params.caseId, dataAdapterMode);

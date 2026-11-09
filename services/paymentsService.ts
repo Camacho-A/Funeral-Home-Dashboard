@@ -332,6 +332,22 @@ export async function createIdempotentPendingPaymentRecord(
   }
 }
 
+type ManualRecordParams = {
+  id: string;
+  organizationId: string;
+  caseId: string;
+  caseOrderId: string | null;
+  amount: number;
+  currency: string;
+  purpose: string;
+  /** A short, non-sensitive reconciliation string — e.g. "Cash" or
+      "Check #1234" — never card data (manual records never carry any). */
+  receiptReference: string | null;
+  idempotencyKey: string;
+  initiatedByStaffProfileId: string | null;
+  createdAt: string;
+};
+
 /**
  * Manors launch-prep (manual payment recording). Creates an already-
  * SUCCEEDED PaymentRecord for a payment collected outside any card
@@ -351,21 +367,30 @@ export async function createIdempotentPendingPaymentRecord(
  * — this function only ever creates the payment record itself.
  */
 export async function createManualSucceededPayment(
-  params: {
-    id: string;
-    organizationId: string;
-    caseId: string;
-    caseOrderId: string | null;
-    amount: number;
-    currency: string;
-    purpose: string;
-    /** A short, non-sensitive reconciliation string — e.g. "Cash" or
-        "Check #1234" — never card data (manual payments never carry any). */
-    receiptReference: string | null;
-    idempotencyKey: string;
-    initiatedByStaffProfileId: string | null;
-    createdAt: string;
-  },
+  params: ManualRecordParams,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ record: PaymentRecord; isNew: boolean }> {
+  return insertManualRecord(params, 'succeeded', dataAdapterMode);
+}
+
+/**
+ * Case refunds (2026-11). A refund staff already gave back to the family,
+ * stored as its own row (status `'refund_issued'`, see
+ * domain/billing/caseRefunds.ts) through exactly the same idempotent
+ * insert as a manual payment — a repeated request returns the first row
+ * rather than recording the refund twice. Like a manual payment, the
+ * caller posts the ledger entry and refreshes the balance.
+ */
+export async function createManualRefundRecord(
+  params: ManualRecordParams,
+  dataAdapterMode: DataAdapterMode,
+): Promise<{ record: PaymentRecord; isNew: boolean }> {
+  return insertManualRecord(params, 'refund_issued', dataAdapterMode);
+}
+
+async function insertManualRecord(
+  params: ManualRecordParams,
+  status: 'succeeded' | 'refund_issued',
   dataAdapterMode: DataAdapterMode,
 ): Promise<{ record: PaymentRecord; isNew: boolean }> {
   const storedIdempotencyKey = `${params.organizationId}:${params.idempotencyKey}`;
@@ -380,7 +405,7 @@ export async function createManualSucceededPayment(
     providerPaymentId: null,
     idempotencyKey: storedIdempotencyKey,
     checkoutUrl: null,
-    status: 'succeeded',
+    status,
     amount: params.amount,
     currency: params.currency,
     purpose: params.purpose,

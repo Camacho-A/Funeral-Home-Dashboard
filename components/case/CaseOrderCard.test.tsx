@@ -21,6 +21,7 @@ type FetchHandlers = {
   checkout?: { paymentId: string; checkoutUrl: string } | { error: string; status: number };
   manualPayment?: { payment: unknown } | { error: string; status: number };
   onManualPaymentRequest?: (body: unknown) => void;
+  onRefundRequest?: (body: unknown) => void;
   /** Manors launch-prep: this card is self-gated on the viewer's own
       caseOrder.read/caseOrder.update/payment.read/payment.collect
       permissions. Defaults to a caller who holds all four, matching every
@@ -72,6 +73,10 @@ function stubFetch(handlers: FetchHandlers) {
         }
         return Promise.resolve({ ok: true, json: async () => result });
       }
+      if (url.includes('/payments/refunds') && init?.method === 'POST') {
+        if (handlers.onRefundRequest && init?.body) handlers.onRefundRequest(JSON.parse(init.body as string));
+        return Promise.resolve({ ok: true, json: async () => ({ refund: { id: 'refund-1', status: 'refund_issued' } }) });
+      }
       if (url.includes('/payments')) {
         return Promise.resolve({ ok: true, json: async () => ({ payments: handlers.payments ?? [] }) });
       }
@@ -80,13 +85,13 @@ function stubFetch(handlers: FetchHandlers) {
   );
 }
 
-function renderCard(handlers: FetchHandlers = {}) {
+function renderCard(handlers: FetchHandlers = {}, props: { isArchived?: boolean } = {}) {
   stubFetch(handlers);
   const queryClient = new QueryClient();
   return render(
     <QueryClientProvider client={queryClient}>
       <OrganizationProvider>
-        <CaseOrderCard caseId="case-1" caseName="Robert Ellison" caseNumber="B2026-001" />
+        <CaseOrderCard caseId="case-1" caseName="Robert Ellison" caseNumber="B2026-001" isArchived={props.isArchived} />
       </OrganizationProvider>
     </QueryClientProvider>,
   );
@@ -509,5 +514,76 @@ describe('CaseOrderCard — Payment History list indentation (2026-10)', () => {
     const amount = await screen.findByText('$890.00', { selector: '[class*="historyAmount"]' });
     expect(amount.closest('li')).not.toBeNull();
     expect(amount.closest('ul')).not.toBeNull();
+  });
+});
+
+describe('CaseOrderCard — refunds (2026-11)', () => {
+  const PAID_ORDER = { ...ACTIVE_ORDER, balanceDue: 0 };
+  const payment = (over: Record<string, unknown>) => ({
+    id: 'p1', organizationId: 'managed-cremations', caseId: 'case-1', caseOrderId: 'order-1', provider: 'manual',
+    providerCheckoutId: 'manual:p1', providerPaymentId: null, idempotencyKey: 'k1', checkoutUrl: null,
+    status: 'succeeded', amount: 118_000, currency: 'usd', purpose: 'Case order balance due', cardBrand: null, cardLast4: null,
+    receiptReference: 'Check — 1042', failureCode: null, failureMessage: null,
+    createdAt: '2026-01-01T00:00:00.000Z', paidAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    ...over,
+  });
+  const ALL = ['caseOrder.read', 'caseOrder.update', 'payment.read', 'payment.collect', 'payment.refund'];
+
+  it('offers Refund only to someone with payment.refund, and only once something was paid', async () => {
+    const { unmount } = renderCard({ order: { order: PAID_ORDER, lineItems: LINE_ITEMS, auditEntries: [] }, payments: [payment({})] });
+    expect(await screen.findByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refund' })).not.toBeInTheDocument();
+    unmount();
+    renderCard({ order: { order: ACTIVE_ORDER, lineItems: LINE_ITEMS, auditEntries: [] }, payments: [], permissions: ALL });
+    expect(await screen.findByRole('button', { name: 'Record Payment' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Refund' })).not.toBeInTheDocument();
+  });
+
+  it('records a refund with the reason, method and amount staff entered', async () => {
+    let requestBody: Record<string, unknown> | null = null;
+    renderCard({
+      order: { order: PAID_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [payment({})],
+      permissions: ALL,
+      onRefundRequest: (body) => { requestBody = body as Record<string, unknown>; },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund' }));
+    expect(screen.getByText('Record a refund')).toBeInTheDocument();
+    // Nothing was overpaid, so the form starts on "Service removed or price lowered".
+    expect(screen.getByRole('radio', { name: /Service removed or price lowered/ })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save Refund' })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText('Amount refunded ($)'), { target: { value: '150' } });
+    fireEvent.change(screen.getByLabelText(/Reference/), { target: { value: '2001' } });
+    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Urn upgrade cancelled' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Refund' }));
+    await waitFor(() => expect(requestBody).not.toBeNull());
+    expect(requestBody).toMatchObject({ kind: 'charges_reduced', method: 'check', amountCents: 15_000, reference: '2001', reason: 'Urn upgrade cancelled' });
+  });
+
+  it('when the family overpaid, starts on "Family overpaid" with the overpaid amount', async () => {
+    renderCard({ order: { order: PAID_ORDER, lineItems: LINE_ITEMS, auditEntries: [] }, payments: [payment({ amount: 130_000 })], permissions: ALL });
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund' }));
+    expect(screen.getByRole('radio', { name: /Family overpaid/ })).toBeChecked();
+    expect(screen.getByDisplayValue('120.00')).toBeInTheDocument();
+  });
+
+  it('lists a refund in the history with a minus amount, and shows the charge reduction under the total', async () => {
+    renderCard({
+      order: { order: PAID_ORDER, lineItems: LINE_ITEMS, auditEntries: [] },
+      payments: [payment({}), payment({ id: 'r1', status: 'refund_issued', amount: 15_000, purpose: 'refund_charges_reduced', receiptReference: 'Check — 2001' })],
+      permissions: ALL,
+    });
+    expect(await screen.findByText('Charges reduced (refund)')).toBeInTheDocument();
+    // The badge in the history, beside the Refund button.
+    expect(screen.getAllByText('Refund')).toHaveLength(2);
+    expect(screen.getAllByText('−$150.00').length).toBe(2);
+    expect(screen.getByText('Service removed or price lowered')).toBeInTheDocument();
+  });
+
+  it('archived case: no Record Payment, but Refund is offered and says the case stays archived', async () => {
+    renderCard({ order: { order: PAID_ORDER, lineItems: LINE_ITEMS, auditEntries: [] }, payments: [payment({})], permissions: ALL }, { isArchived: true });
+    expect(await screen.findByRole('button', { name: 'Refund' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Record Payment' })).not.toBeInTheDocument();
+    expect(screen.getByText(/This case is archived. You can still record a refund/)).toBeInTheDocument();
   });
 });

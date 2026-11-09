@@ -15,7 +15,7 @@ import type { PaymentRecord, PaymentRecordStatus } from '../types/payment';
  * tried.
  */
 
-const VALID_STATUSES: PaymentRecordStatus[] = ['pending', 'succeeded', 'failed', 'cancelled', 'refunded'];
+const VALID_STATUSES: PaymentRecordStatus[] = ['pending', 'succeeded', 'failed', 'cancelled', 'refunded', 'refund_issued'];
 
 export type WixPaymentRecordItem = {
   beaconPaymentId?: unknown;

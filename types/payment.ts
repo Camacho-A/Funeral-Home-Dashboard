@@ -18,7 +18,11 @@
  * convention here.
  */
 
-export type PaymentRecordStatus = 'pending' | 'succeeded' | 'failed' | 'cancelled' | 'refunded';
+/** `'refund_issued'` (2026-11): not a payment at all — a refund staff gave
+    back to the family, recorded as its own row (domain/billing/caseRefunds.ts).
+    `'refunded'` is the older, different meaning: a whole payment reversed at
+    its processor. */
+export type PaymentRecordStatus = 'pending' | 'succeeded' | 'failed' | 'cancelled' | 'refunded' | 'refund_issued';
 
 /**
  * One payment *attempt* against one case. A case can have many —

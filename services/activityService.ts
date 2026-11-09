@@ -938,6 +938,32 @@ export function recordPaymentRefunded(ctx: ActivityContext, caseId: string, paym
   );
 }
 
+/** Case refunds (2026-11): a refund staff gave back and recorded on the
+    case — its own row, so the payment it pays back keeps its status. The
+    reason and how it was paid back are kept here, in the case history. */
+export function recordCaseRefundIssued(
+  ctx: ActivityContext,
+  caseId: string,
+  refund: { id: string; amountCents: number; kindLabel: string; methodReference: string; reason: string },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'payments',
+      eventType: ACTIVITY_EVENT_TYPES.PAYMENT_REFUNDED,
+      resourceType: 'payment',
+      resourceId: refund.id,
+      previousValue: null,
+      newValue: JSON.stringify({ status: 'refund_issued', amountCents: refund.amountCents }),
+      description: `Refund of $${(refund.amountCents / 100).toFixed(2)} recorded (${refund.kindLabel}) — ${refund.methodReference}. Reason: ${refund.reason}`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCaseOrderChanged(
   ctx: ActivityContext,
   caseId: string,

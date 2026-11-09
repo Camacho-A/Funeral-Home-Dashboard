@@ -63,6 +63,7 @@ export default function FamilyPaymentsPage({ params }: { params: Promise<{ caseI
               <div key={payment.id} className={styles.row}>
                 <div className={styles.identity}>
                   <span className={styles.title}>
+                    {payment.status === 'refund_issued' ? '−' : ''}
                     {formatCents(payment.amount, payment.currency)} · {payment.purpose}
                   </span>
                   <span className={styles.meta}>
@@ -70,7 +71,7 @@ export default function FamilyPaymentsPage({ params }: { params: Promise<{ caseI
                     {payment.cardBrand && payment.cardLast4 ? ` · ${payment.cardBrand} •••• ${payment.cardLast4}` : ''}
                   </span>
                 </div>
-                <Badge variant={payment.status === 'succeeded' ? 'success' : payment.status === 'failed' || payment.status === 'cancelled' ? 'danger' : 'brand'}>{payment.status}</Badge>
+                <Badge variant={payment.status === 'succeeded' ? 'success' : payment.status === 'failed' || payment.status === 'cancelled' ? 'danger' : payment.status === 'refund_issued' ? 'warning' : 'brand'}>{payment.status === 'refund_issued' ? 'refund' : payment.status}</Badge>
               </div>
             ))}
           </Card>

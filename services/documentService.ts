@@ -123,12 +123,17 @@ function nowIso(): string {
 // of a larger orchestration, not as its own request/response.
 // ---------------------------------------------------------------------------
 
-async function getCaseForMerge(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<Case | null> {
+async function getCaseForMerge(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+  options: { includeArchived?: boolean } = {},
+): Promise<Case | null> {
   if (dataAdapterMode === 'mock') {
-    return caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && !c.isDeleted) ?? null;
+    return caseFixtures.find((c) => c.id === caseId && c.organizationId === organizationId && (options.includeArchived || !c.isDeleted)) ?? null;
   }
   const response = await queryWixDataItems<WixCaseItem>('cases', {
-    filter: { beaconCaseId: caseId, organizationId, isArchived: false },
+    filter: options.includeArchived ? { beaconCaseId: caseId, organizationId } : { beaconCaseId: caseId, organizationId, isArchived: false },
     paging: { limit: 1 },
   });
   return mapWixCaseItem(response.dataItems[0]?.data);
@@ -214,10 +219,19 @@ async function getServiceAppointmentForMerge(organizationId: string, caseId: str
 
 /** Exported for `POST /api/document-templates/[templateId]/preview`,
     which needs the exact same real-case merge resolution `generate()`
-    uses — no separate implementation. */
-export async function resolveMergeSourceData(organizationId: string, caseId: string, dataAdapterMode: DataAdapterMode): Promise<MergeSourceData> {
+    uses — no separate implementation.
+
+    `includeArchived` (2026-11): only the Statement and Receipt of Payment
+    pass it — a refund on an archived case must be able to update the
+    receipt. Every other document still refuses an archived case. */
+export async function resolveMergeSourceData(
+  organizationId: string,
+  caseId: string,
+  dataAdapterMode: DataAdapterMode,
+  options: { includeArchived?: boolean } = {},
+): Promise<MergeSourceData> {
   const [caseRecord, caseOrder, organization, branding, location, serviceAppointment] = await Promise.all([
-    getCaseForMerge(organizationId, caseId, dataAdapterMode),
+    getCaseForMerge(organizationId, caseId, dataAdapterMode, options),
     getActiveCaseOrder(organizationId, caseId, dataAdapterMode),
     getOrganizationForMerge(organizationId, dataAdapterMode),
     getBrandingForMerge(organizationId, dataAdapterMode),

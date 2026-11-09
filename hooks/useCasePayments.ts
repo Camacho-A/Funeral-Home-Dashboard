@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import { paymentsClient } from '@/services/paymentsClient';
 import { useOrganization } from './useOrganization';
 import { withMockPaymentStatusSync } from './mockPaymentStatusSync';
+import { caseDocumentsKey } from './useCaseDocumentLibrary';
 import type { ManualPaymentMethod } from '@/domain/billing/manualPaymentMethods';
+import type { CaseRefundKind } from '@/domain/billing/caseRefunds';
 
 /**
  * Phase 19B (Clover Hosted Checkout Integration). Same
@@ -59,6 +61,22 @@ export function useRecordManualPayment(caseId: string) {
     mutationFn: (input: { method: ManualPaymentMethod; amountCents: number; reference?: string; purpose?: string; idempotencyKey: string }) =>
       withMockPaymentStatusSync(organization, caseId, () => paymentsClient.recordManualPayment(organization, caseId, input)),
     onSuccess: () => invalidateCasePaymentState(queryClient, organization.organizationId, caseId),
+  });
+}
+
+/** Case refunds (2026-11). */
+export function useRecordRefund(caseId: string) {
+  const organization = useOrganization();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: { kind: CaseRefundKind; method: ManualPaymentMethod; amountCents: number; reference?: string; reason: string; idempotencyKey: string }) =>
+      paymentsClient.recordRefund(organization, caseId, input),
+    onSuccess: () => {
+      invalidateCasePaymentState(queryClient, organization.organizationId, caseId);
+      // The Receipt of Payment is regenerated on the server after the refund.
+      queryClient.invalidateQueries({ queryKey: caseDocumentsKey(organization.organizationId, caseId) });
+    },
   });
 }
 

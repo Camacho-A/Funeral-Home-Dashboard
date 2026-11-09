@@ -30,6 +30,9 @@ function model(overrides: Partial<ReceiptOfPaymentModel> = {}): ReceiptOfPayment
     totalChargeCents: 89_000,
     discountCents: 0,
     paymentCents: 89_000,
+    refunds: [],
+    chargesReducedCents: 0,
+    refundCents: 0,
     balanceDueCents: 0,
     missingFields: [],
     ...overrides,
@@ -196,5 +199,51 @@ describe('renderReceiptOfPaymentHtml — readable item codes (2026-10)', () => {
     expect(html).toMatch(/white-space:nowrap;">CREM-001<\/td>/);
     expect(html).toContain('overflow-wrap:anywhere;">' + long);
     expect(html).toMatch(/width:13%;">Item #/);
+  });
+});
+
+describe('renderReceiptOfPaymentHtml — refunds (2026-11)', () => {
+  it('no refund: no refund lines, rows or "Refunded" — the receipt reads exactly as before', () => {
+    const html = renderReceiptOfPaymentHtml(model());
+    expect(html).not.toContain('REFUND');
+    expect(html).not.toContain('Refunded');
+    expect(html).not.toContain('CHARGES REDUCED');
+  });
+
+  it('family overpaid: the payment stays as received, the refund is its own line, and the balance is unchanged', () => {
+    const html = renderReceiptOfPaymentHtml(
+      model({
+        payments: [{ methodLabel: 'Check — 1042', paidAtDisplay: 'May 21, 2025', amountCents: 100_000 }],
+        refunds: [{ methodLabel: 'Check — 2001', paidAtDisplay: 'June 2, 2025', amountCents: 11_000, reducedCharges: false }],
+        paymentCents: 100_000,
+        refundCents: 11_000,
+      }),
+    );
+    expect(html).toContain('REFUND &mdash; Check — 2001 &nbsp; June 2, 2025: &nbsp; $110.00');
+    expect(html).toMatch(/>PAYMENT<\/td>\s*<td[^>]*>\$1,000\.00</);
+    expect(html).toMatch(/>REFUND<\/td>\s*<td[^>]*>\$110\.00</);
+    expect(html).toContain('Refunded:&nbsp; $110.00');
+    expect(html).not.toContain('CHARGES REDUCED');
+    expect(html).toMatch(/BALANCE DUE<\/td>\s*<td[^>]*>\$0\.00</);
+  });
+
+  it('service removed: CHARGES REDUCED and REFUND both print, so the figures still add up', () => {
+    const html = renderReceiptOfPaymentHtml(
+      model({
+        refunds: [{ methodLabel: 'Cash', paidAtDisplay: 'June 2, 2025', amountCents: 20_000, reducedCharges: true }],
+        chargesReducedCents: 20_000,
+        refundCents: 20_000,
+      }),
+    );
+    expect(html).toMatch(/CHARGES REDUCED<\/td>\s*<td[^>]*>\$200\.00</);
+    expect(html).toMatch(/>REFUND<\/td>\s*<td[^>]*>\$200\.00</);
+  });
+
+  it('a partial payment reports what the family kept paid, after refunds', () => {
+    const html = renderReceiptOfPaymentHtml(
+      model({ status: 'partial_payment', paidInFullDateDisplay: null, paymentCents: 50_000, refundCents: 10_000, balanceDueCents: 49_000,
+        refunds: [{ methodLabel: 'Cash', paidAtDisplay: null, amountCents: 10_000, reducedCharges: false }] }),
+    );
+    expect(html).toContain('PARTIAL PAYMENT:&nbsp; $400.00');
   });
 });

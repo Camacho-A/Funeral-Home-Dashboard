@@ -627,7 +627,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
               />
             </div>
 
-            <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} />
+            <CaseOrderCard caseId={caseId} caseName={viewModel.decedentName} caseNumber={viewModel.caseNumber} isArchived={case_.isDeleted === true} />
           </div>
 
           {!isMobileTabs && (

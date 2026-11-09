@@ -72,8 +72,12 @@ export type BillingStatementModel = {
   /** === AUTHORITATIVE ACCOUNTING FIGURES (from CaseOrder + payments) === */
   /** CaseOrder.total — the GL/AR-authoritative charge for funeral-home goods/services. */
   goodsAndServicesTotalCents: number;
-  /** Payments applied to date (succeeded), across all order versions. */
+  /** Payments applied to date (succeeded), across all order versions — net
+      of refunds given back (2026-11). */
   paidToDateCents: number;
+  /** Case refunds (2026-11): refunds that lowered the charges (a service
+      removed or a price lowered). Absent or 0 — no row is printed. */
+  chargesReducedCents?: number;
   /** CaseOrder.balanceDue — the AUTHORITATIVE Accounts Receivable balance.
       Does NOT include cash advances (D4). */
   authoritativeArBalanceDueCents: number;
