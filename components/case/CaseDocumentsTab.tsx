@@ -25,8 +25,9 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { RowMenu, type RowMenuItem } from '@/components/ui/RowMenu';
 import { formatTimestamp } from '@/utils/format';
 import {
-  CASE_DOCUMENT_STATUS_LABEL,
+  caseDocumentStatusLabel,
   caseDocumentStatusVariant,
+  isUnfinishedDocument,
   isCaseDocumentDownloadable,
   isCaseDocumentHistorical,
   isFailedDocumentResolvedByLaterSuccess,
@@ -358,7 +359,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
     const ext = rawExt || undefined;
     const extDisplay = rawExt ? rawExt.slice(0, 4).toUpperCase() : 'FILE';
 
-    const statusVariant = caseDocumentStatusVariant(doc.status);
+    const statusVariant = isUnfinishedDocument(doc) ? 'danger' : caseDocumentStatusVariant(doc.status);
     const statusModifier = statusModifierClass(statusVariant);
     const hasSignatureBadge = doc.signatureStatus !== null;
 
@@ -398,7 +399,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
                 {doc.fileName}
               </span>
               <span className="sx-doc-status">
-                <span className={`sx-status ${statusModifier}${doc.status === 'active' ? ' sx-doc-status-quiet' : ''}`}>{CASE_DOCUMENT_STATUS_LABEL[doc.status]}</span>
+                <span className={`sx-status ${statusModifier}${doc.status === 'active' ? ' sx-doc-status-quiet' : ''}`}>{caseDocumentStatusLabel(doc)}</span>
                 {hasSignatureBadge && (
                   <span className={`sx-status ${doc.signatureStatus === 'signed' ? 'sx-status-ok' : 'sx-status-warn'}`}>
                     {doc.signatureStatus === 'signed' ? 'Signed' : 'Awaiting signature'}

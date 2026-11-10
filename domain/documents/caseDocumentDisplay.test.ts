@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { isCaseDocumentDownloadable, isCaseDocumentHistorical, isCaseDocumentEligibleForBulkAction ,
   isFailedDocumentResolvedByLaterSuccess,
+  isUnfinishedDocument,
+  caseDocumentStatusLabel,
+  CASE_DOCUMENT_STATUS_LABEL,
 } from './caseDocumentDisplay';
 import type { CaseDocumentStatus } from '@/types/caseDocument';
 
@@ -143,5 +146,43 @@ describe('isFailedDocumentResolvedByLaterSuccess', () => {
   it('never applies to a document that did not fail', () => {
     const active = { status: 'active' as const, documentTypeKey: 'financial.statement_goods_services' };
     expect(isFailedDocumentResolvedByLaterSuccess(active, [active, failed])).toBe(false);
+  });
+});
+
+/**
+ * Unfinished generations (2026-11). B2026-047's Statement v2 and Receipt
+ * v1 were cut off mid-build and stayed `pending` — shown as "Draft" with
+ * no file behind them.
+ */
+describe('unfinished documents', () => {
+  const created = '2026-11-10T19:02:16.000Z';
+  const at = (minutes: number) => Date.parse(created) + minutes * 60_000;
+  const pending = { status: 'pending' as const, documentTypeKey: 'statement.account', createdAt: created };
+
+  it('a pending document is "Generating…", never "Draft"', () => {
+    expect(caseDocumentStatusLabel(pending, at(1))).toBe('Generating…');
+    expect(Object.values(CASE_DOCUMENT_STATUS_LABEL)).not.toContain('Draft');
+  });
+
+  it("is \"Didn't finish\" once it has been pending for 10 minutes", () => {
+    expect(isUnfinishedDocument(pending, at(9))).toBe(false);
+    expect(isUnfinishedDocument(pending, at(10))).toBe(true);
+    expect(caseDocumentStatusLabel(pending, at(10))).toBe("Didn't finish");
+  });
+
+  it('only ever applies to pending documents with a readable date', () => {
+    expect(isUnfinishedDocument({ ...pending, status: 'active' }, at(60))).toBe(false);
+    expect(isUnfinishedDocument({ ...pending, createdAt: undefined }, at(60))).toBe(false);
+    expect(isUnfinishedDocument({ ...pending, createdAt: 'not a date' }, at(60))).toBe(false);
+    expect(caseDocumentStatusLabel({ status: 'active' }, at(60))).toBe('Generated');
+  });
+
+  it('moves to History once that document has been made successfully', () => {
+    const active = { status: 'active' as const, documentTypeKey: 'statement.account' };
+    expect(isFailedDocumentResolvedByLaterSuccess(pending, [pending, active], at(10))).toBe(true);
+    // Still being made: stays where it is.
+    expect(isFailedDocumentResolvedByLaterSuccess(pending, [pending, active], at(1))).toBe(false);
+    // Nothing succeeded yet: stays, so staff can see it needs doing again.
+    expect(isFailedDocumentResolvedByLaterSuccess(pending, [pending], at(10))).toBe(false);
   });
 });

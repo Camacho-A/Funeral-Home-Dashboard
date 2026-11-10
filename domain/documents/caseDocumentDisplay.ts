@@ -11,12 +11,35 @@ import type { BadgeVariant } from '@/components/ui/Badge';
  * archived -> "Archived", failed -> "Generation Failed".
  */
 export const CASE_DOCUMENT_STATUS_LABEL: Record<CaseDocumentStatus, string> = {
-  pending: 'Draft',
+  // Was "Draft" until 2026-11 — misleading: a pending row is a file still
+  // being made, not an editable draft.
+  pending: 'Generating…',
   active: 'Generated',
   superseded: 'Superseded',
   archived: 'Archived',
   failed: 'Generation Failed',
 };
+
+/**
+ * A generation that never finished (2026-11). A row is `pending` only for
+ * the few seconds its PDF is being made; one still pending long after
+ * that was cut off mid-way (B2026-047, 2026-11-10: the server was stopped
+ * while two automatic Statement/Receipt builds were running) and will
+ * never get a file. It is shown, and treated, like a failed generation.
+ */
+export const UNFINISHED_DOCUMENT_AFTER_MS = 10 * 60 * 1000;
+export const UNFINISHED_DOCUMENT_LABEL = "Didn't finish";
+
+export function isUnfinishedDocument(doc: { status: CaseDocumentStatus; createdAt?: string }, now: number = Date.now()): boolean {
+  if (doc.status !== 'pending' || !doc.createdAt) return false;
+  const created = Date.parse(doc.createdAt);
+  return Number.isFinite(created) && now - created >= UNFINISHED_DOCUMENT_AFTER_MS;
+}
+
+/** The label staff see for a document's status. */
+export function caseDocumentStatusLabel(doc: { status: CaseDocumentStatus; createdAt?: string }, now: number = Date.now()): string {
+  return isUnfinishedDocument(doc, now) ? UNFINISHED_DOCUMENT_LABEL : CASE_DOCUMENT_STATUS_LABEL[doc.status];
+}
 
 export function caseDocumentStatusVariant(status: CaseDocumentStatus): BadgeVariant {
   if (status === 'active') return 'success';
@@ -120,10 +143,12 @@ export function isCaseDocumentEligibleForBulkAction(status: CaseDocumentStatus):
  * what makes the failed attempt unactionable.
  */
 export function isFailedDocumentResolvedByLaterSuccess(
-  doc: { status: CaseDocumentStatus; documentTypeKey: string | null },
+  doc: { status: CaseDocumentStatus; documentTypeKey: string | null; createdAt?: string },
   siblings: readonly { status: CaseDocumentStatus; documentTypeKey: string | null }[],
+  now: number = Date.now(),
 ): boolean {
-  if (doc.status !== 'failed') return false;
+  // An unfinished generation is a failed one (isUnfinishedDocument).
+  if (doc.status !== 'failed' && !isUnfinishedDocument(doc, now)) return false;
   return siblings.some(
     (other) =>
       other !== doc &&

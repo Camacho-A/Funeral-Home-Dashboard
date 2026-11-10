@@ -115,3 +115,87 @@ describe('resolveLaunchOptions — serverless branch (no real Chromium launch)',
     await expect(resolveLaunchOptions()).rejects.toThrow(/PUPPETEER_EXECUTABLE_PATH|VERCEL|AWS_LAMBDA_FUNCTION_VERSION/);
   });
 });
+
+/**
+ * Hang protection (2026-11). Two automatic Statement/Receipt builds on
+ * B2026-047 ran side by side and hung until the server was stopped.
+ */
+describe('runOneAtATime', () => {
+  it('runs renders one after another, never side by side', async () => {
+    const { runOneAtATime } = await import('./puppeteerDocumentRenderer');
+    let running = 0;
+    let most = 0;
+    const task = (ms: number, value: string) => async () => {
+      running += 1;
+      most = Math.max(most, running);
+      await new Promise((resolve) => setTimeout(resolve, ms));
+      running -= 1;
+      return value;
+    };
+    const results = await Promise.all([runOneAtATime(task(20, 'a')), runOneAtATime(task(5, 'b')), runOneAtATime(task(1, 'c'))]);
+    expect(results).toEqual(['a', 'b', 'c']);
+    expect(most).toBe(1);
+  });
+
+  it('a failed render does not stop the next one', async () => {
+    const { runOneAtATime } = await import('./puppeteerDocumentRenderer');
+    const failing = runOneAtATime(async () => {
+      throw new Error('boom');
+    });
+    const next = runOneAtATime(async () => 'ok');
+    await expect(failing).rejects.toThrow('boom');
+    await expect(next).resolves.toBe('ok');
+  });
+});
+
+describe('withTimeout', () => {
+  it('gives up after the limit, calling onTimeout so Chromium can be killed', async () => {
+    const { withTimeout } = await import('./puppeteerDocumentRenderer');
+    const onTimeout = vi.fn();
+    const never = new Promise<string>(() => {});
+    await expect(withTimeout(never, 10, onTimeout)).rejects.toThrow('The PDF could not be made within 0 seconds.');
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the result when the work finishes in time', async () => {
+    const { withTimeout } = await import('./puppeteerDocumentRenderer');
+    const onTimeout = vi.fn();
+    await expect(withTimeout(Promise.resolve('pdf'), 1_000, onTimeout)).resolves.toBe('pdf');
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+});
+
+describe('renderHtmlToPdf time limit', () => {
+  afterEach(() => {
+    vi.doUnmock('puppeteer-core');
+    vi.resetModules();
+    vi.useRealTimers();
+  });
+
+  it('a hung render fails and kills Chromium, and the next render still runs', async () => {
+    vi.resetModules();
+    const kill = vi.fn();
+    const hungPage = { setRequestInterception: vi.fn(), on: vi.fn(), setContent: () => new Promise(() => {}), pdf: vi.fn() };
+    const goodPage = { setRequestInterception: vi.fn(), on: vi.fn(), setContent: vi.fn(), pdf: vi.fn().mockResolvedValue(new Uint8Array([37, 80, 68, 70, 45])) };
+    const launch = vi
+      .fn()
+      .mockResolvedValueOnce({ newPage: async () => hungPage, close: () => new Promise(() => {}), process: () => ({ kill }) })
+      .mockResolvedValueOnce({ newPage: async () => goodPage, close: vi.fn().mockResolvedValue(undefined), process: () => ({ kill: vi.fn() }) });
+    vi.doMock('puppeteer-core', () => ({ default: { launch } }));
+    process.env.PUPPETEER_EXECUTABLE_PATH = '/fake/chrome';
+    vi.useFakeTimers();
+
+    const { puppeteerDocumentRenderer, RENDER_TIMEOUT_MS } = await import('./puppeteerDocumentRenderer');
+    const hung = puppeteerDocumentRenderer.renderHtmlToPdf('<p>one</p>');
+    const hungResult = expect(hung).rejects.toThrow('could not be made');
+    const next = puppeteerDocumentRenderer.renderHtmlToPdf('<p>two</p>');
+
+    await vi.advanceTimersByTimeAsync(RENDER_TIMEOUT_MS + 10);
+    await hungResult;
+    expect(kill).toHaveBeenCalledWith('SIGKILL');
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(next).resolves.toEqual(Buffer.from([37, 80, 68, 70, 45]));
+    expect(launch).toHaveBeenCalledTimes(2);
+  });
+});
