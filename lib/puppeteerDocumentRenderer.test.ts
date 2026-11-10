@@ -153,7 +153,7 @@ describe('withTimeout', () => {
     const { withTimeout } = await import('./puppeteerDocumentRenderer');
     const onTimeout = vi.fn();
     const never = new Promise<string>(() => {});
-    await expect(withTimeout(never, 10, onTimeout)).rejects.toThrow('The PDF could not be made within 0 seconds.');
+    await expect(withTimeout(never, 10, onTimeout)).rejects.toThrow('Gave up after 0 seconds');
     expect(onTimeout).toHaveBeenCalledTimes(1);
   });
 

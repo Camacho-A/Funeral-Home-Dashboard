@@ -165,6 +165,28 @@ describe('regenerateOfficialDocumentsAfterCaseChange', () => {
     expect(results).toEqual({ certificate_of_cremation: 'template_unavailable', cremation_label: 'generated' });
     expect(buildEnvelopePdf).not.toHaveBeenCalled();
   });
+
+  /** 2026-11-10: the label ran after a Certificate whose save never
+      finished, so adding the Tag # produced no label. */
+  it('saves the Cremation Label before the Certificate, so a stuck or failed Certificate cannot stop it', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    process.env.CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY = 'k';
+    downloadOrgDocumentBytes.mockResolvedValue({ buffer: Buffer.from([9]), contentType: 'application/pdf' });
+    const original = generateBillingDocument.getMockImplementation()!;
+    generateBillingDocument.mockImplementation(async (p: { documentTypeKey?: string; buildPdf?: () => Promise<Uint8Array> }) => {
+      if (p.documentTypeKey === 'cremation_form.certificate_of_cremation') throw new Error('The document was not finished within 90 seconds.');
+      await p.buildPdf?.();
+      return { id: 'doc' };
+    });
+    const results = await regenerateOfficialDocumentsAfterCaseChange(manorsCase({ tagNumber: null }), manorsCase(), ctx, 'mock').finally(() =>
+      generateBillingDocument.mockImplementation(original),
+    );
+    const order = generateBillingDocument.mock.calls.map((call) => (call[0] as { documentTypeKey: string }).documentTypeKey);
+    expect(order[0]).toBe('cremation_form.cremation_label');
+    expect(order).toContain('cremation_form.certificate_of_cremation');
+    expect(results.cremation_label).toBe('generated');
+    expect(results.certificate_of_cremation).toBe('failed');
+  });
 });
 
 /**

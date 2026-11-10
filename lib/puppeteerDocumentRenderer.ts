@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer-core';
 import type { DocumentRenderer } from './documentRenderer';
+import { withTimeout } from './timeLimit';
 
 /**
  * Phase 25 (Document Generation & Template Management). The one real
@@ -81,18 +82,8 @@ export function runOneAtATime<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-/** Rejects with a clear message once `ms` passes, calling `onTimeout`
-    first. Exported for testing only. */
-export function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => void): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      onTimeout();
-      reject(new Error(`The PDF could not be made within ${Math.round(ms / 1000)} seconds.`));
-    }, ms);
-  });
-  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
-}
+/** Re-exported for the renderer's own tests. */
+export { withTimeout };
 
 type LaunchedBrowser = Awaited<ReturnType<typeof puppeteer.launch>>;
 
@@ -145,10 +136,15 @@ async function renderOnce(html: string): Promise<Buffer> {
     if (state.browser) await closeBrowser(state.browser);
   });
   settled.catch(() => undefined);
-  return withTimeout(settled, RENDER_TIMEOUT_MS, () => {
-    state.timedOut = true;
-    killBrowser(state.browser);
-  });
+  return withTimeout(
+    settled,
+    RENDER_TIMEOUT_MS,
+    () => {
+      state.timedOut = true;
+      killBrowser(state.browser);
+    },
+    `The PDF could not be made within ${Math.round(RENDER_TIMEOUT_MS / 1000)} seconds.`,
+  );
 }
 
 export const puppeteerDocumentRenderer: DocumentRenderer = {

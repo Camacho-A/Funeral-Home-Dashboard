@@ -32,6 +32,7 @@ import { getActiveCaseOrder } from './pricingService';
 import { listAppointmentsForCase } from './scheduling/appointmentReads';
 import { resolveMergeContext, mergeTemplate, type MergeSourceData } from '../domain/documents/mergeEngine';
 import { puppeteerDocumentRenderer } from '../lib/puppeteerDocumentRenderer';
+import { TimeLimitError, withTimeout } from '../lib/timeLimit';
 import { vercelBlobStorageProvider } from '../lib/vercelBlob/vercelBlobStorageProvider';
 import type { DocumentRenderer } from '../lib/documentRenderer';
 import type { DocumentStorageProvider } from '../lib/documentStorageProvider';
@@ -289,6 +290,53 @@ async function completeDocumentGeneration(
   const mapped = mapWixCaseDocumentItem(updated.data);
   if (!mapped) throw new DocumentServiceError('Failed to update document after generation.');
   return mapped;
+}
+
+/**
+ * Time limits for making a document (2026-11). On 2026-11-10 three
+ * automatic builds on Manors (a Statement, a Receipt and a Certificate of
+ * Cremation) each waited on a service that never answered until Vercel
+ * killed the function at 300 seconds: the row stayed `pending` forever,
+ * nothing was logged, and everything queued after it in the same job —
+ * the Cremation Label — never ran. Now the build, upload and record
+ * update together get a fixed limit; past it the attempt is marked failed
+ * (with the usual "generation failed" notice) and the caller moves on.
+ */
+export const DOCUMENT_GENERATION_TIMEOUT_MS = 90_000;
+const MARK_FAILED_TIMEOUT_MS = 20_000;
+
+type GenerationStep = 'building the file' | 'saving the file to storage' | 'updating the document record';
+
+/** `work` reports each step it starts, so a timeout names the one that
+    never answered (logged by the caller). */
+async function withGenerationTimeLimit<T>(work: (step: (name: GenerationStep) => void) => Promise<T>): Promise<T> {
+  let current: GenerationStep = 'building the file';
+  const pending = work((name) => {
+    current = name;
+  });
+  pending.catch(() => undefined);
+  try {
+    return await withTimeout(pending, DOCUMENT_GENERATION_TIMEOUT_MS);
+  } catch (error) {
+    if (error instanceof TimeLimitError) {
+      throw new TimeLimitError(`The document was not finished within ${DOCUMENT_GENERATION_TIMEOUT_MS / 1000} seconds (stuck ${current}).`);
+    }
+    throw error;
+  }
+}
+
+/** Records a failed attempt. Never throws, and never waits long: if even
+    this cannot be written, the row stays pending and is shown as
+    "Didn't finish" (domain/documents/caseDocumentDisplay.ts). */
+async function markGenerationFailed(organizationId: string, documentId: string, dataAdapterMode: DataAdapterMode): Promise<void> {
+  try {
+    await withTimeout(
+      completeDocumentGeneration(organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode),
+      MARK_FAILED_TIMEOUT_MS,
+    );
+  } catch (error) {
+    console.error(`Could not mark document ${documentId} as failed:`, error instanceof Error ? error.message : error);
+  }
 }
 
 async function updateDocumentStatus(organizationId: string, documentId: string, status: CaseDocumentStatus, dataAdapterMode: DataAdapterMode): Promise<void> {
@@ -597,18 +645,22 @@ export async function generate(
 
   let finalDocument: CaseDocument;
   try {
-    const pdfBuffer = await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(mergedHtml));
-    const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-    const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.pdf`;
-    const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, 'application/pdf');
-    finalDocument = await completeDocumentGeneration(
-      ctx.organizationId,
-      documentId,
-      { status: 'active', storageKey: finalStorageKey, checksumSha256, fileSizeBytes: pdfBuffer.length },
-      dataAdapterMode,
-    );
+    finalDocument = await withGenerationTimeLimit(async (step) => {
+      const pdfBuffer = await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(mergedHtml));
+      const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+      const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.pdf`;
+      step('saving the file to storage');
+      const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, 'application/pdf');
+      step('updating the document record');
+      return completeDocumentGeneration(
+        ctx.organizationId,
+        documentId,
+        { status: 'active', storageKey: finalStorageKey, checksumSha256, fileSizeBytes: pdfBuffer.length },
+        dataAdapterMode,
+      );
+    });
   } catch (error) {
-    await completeDocumentGeneration(ctx.organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode);
+    await markGenerationFailed(ctx.organizationId, documentId, dataAdapterMode);
     await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: template.name, succeeded: false }, dataAdapterMode);
     throw new DocumentServiceError(`Document generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -710,22 +762,26 @@ export async function generateBillingDocument(
 
   let finalDocument: CaseDocument;
   try {
-    const pdfBuffer = params.buildFile
-      ? Buffer.from(await params.buildFile())
-      : params.buildPdf
-        ? Buffer.from(await params.buildPdf())
-        : await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
-    const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
-    const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.${params.buildFile ? params.fileExtension : 'pdf'}`;
-    const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, pendingDocument.mimeType);
-    finalDocument = await completeDocumentGeneration(
-      ctx.organizationId,
-      documentId,
-      { status: 'active', storageKey: finalStorageKey, checksumSha256, fileSizeBytes: pdfBuffer.length },
-      dataAdapterMode,
-    );
+    finalDocument = await withGenerationTimeLimit(async (step) => {
+      const pdfBuffer = params.buildFile
+        ? Buffer.from(await params.buildFile())
+        : params.buildPdf
+          ? Buffer.from(await params.buildPdf())
+          : await documentRenderer.renderHtmlToPdf(wrapMergedHtmlDocument(params.bodyHtml));
+      const checksumSha256 = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+      const storageKey = `${ctx.organizationId}/${params.caseId}/${documentId}.${params.buildFile ? params.fileExtension : 'pdf'}`;
+      step('saving the file to storage');
+      const { storageKey: finalStorageKey } = await documentStorageProvider.uploadFile(storageKey, pdfBuffer, pendingDocument.mimeType);
+      step('updating the document record');
+      return completeDocumentGeneration(
+        ctx.organizationId,
+        documentId,
+        { status: 'active', storageKey: finalStorageKey, checksumSha256, fileSizeBytes: pdfBuffer.length },
+        dataAdapterMode,
+      );
+    });
   } catch (error) {
-    await completeDocumentGeneration(ctx.organizationId, documentId, { status: 'failed', storageKey: '', checksumSha256: '', fileSizeBytes: 0 }, dataAdapterMode);
+    await markGenerationFailed(ctx.organizationId, documentId, dataAdapterMode);
     await announceGeneration(ctx, { caseId: params.caseId, documentId, documentTitle: generatedDocumentTitle(params.fileName), succeeded: false }, dataAdapterMode);
     throw new DocumentServiceError(`Billing document generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }

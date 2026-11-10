@@ -196,12 +196,15 @@ export async function regenerateOfficialDocumentsAfterCaseChange(
   dataAdapterMode: DataAdapterMode,
 ): Promise<AutomaticDocumentResults> {
   const results: AutomaticDocumentResults = {};
+  // The label first (2026-11): it is the quickest, and staff print it as
+  // soon as the Tag # is in. On 2026-11-10 it ran after a Certificate whose
+  // save never finished, so it was never made at all.
+  const label = await generateCremationLabelAfterCaseChange(before, after, ctx, dataAdapterMode);
+  if (label !== 'not_applicable') results.cremation_label = label;
   for (const kind of officialDocumentsToRegenerate(before, after)) {
     if (kind === 'envelope' && !(await envelopeIsDue(before, after, dataAdapterMode))) continue;
     results[kind] = await generateOfficialDocument(kind, after, ctx, dataAdapterMode);
   }
-  const label = await generateCremationLabelAfterCaseChange(before, after, ctx, dataAdapterMode);
-  if (label !== 'not_applicable') results.cremation_label = label;
   const crematoryForm = await extractCrematoryFormAfterCaseChange(before, after, ctx, dataAdapterMode);
   if (crematoryForm !== 'not_applicable') results.crematory_form = crematoryForm;
   // Send to Crematory (2026-10): workflow 2 just completed (or page 3 was

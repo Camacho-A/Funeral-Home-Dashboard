@@ -74,7 +74,7 @@ describe('vercelBlobStorageProvider — never calls the real Vercel Blob API in 
 
       expect(result).toEqual({ storageKey: 'org-1/case-1/doc-1.pdf' });
       const [, , options] = mockPut.mock.calls[0];
-      expect(options).toEqual({ access: 'private', contentType: 'application/pdf', addRandomSuffix: false });
+      expect(options).toEqual({ access: 'private', contentType: 'application/pdf', addRandomSuffix: false, abortSignal: expect.any(AbortSignal) });
       expect(options).not.toHaveProperty('token');
     });
 
@@ -86,7 +86,8 @@ describe('vercelBlobStorageProvider — never calls the real Vercel Blob API in 
 
       expect(result.buffer.toString()).toBe('hello pdf');
       const [, options] = mockGet.mock.calls[0];
-      expect(options).toEqual({ access: 'private' });
+      // A time limit (2026-11) so an unanswered request cannot wait 300 seconds.
+      expect(options).toEqual({ access: 'private', abortSignal: expect.any(AbortSignal) });
     });
 
     it('deleteFile omits the token option entirely', async () => {
