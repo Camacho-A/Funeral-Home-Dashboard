@@ -9,6 +9,7 @@ import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { isSignatureRequestsEnabled } from '@/domain/organization/signatureRequestCapability';
 import { isDocumentArchivingAdministratorsOnly, isDocumentArchivingEnabled } from '@/domain/organization/documentArchiveCapability';
 import { useMyPermissions } from '@/hooks/useRbac';
+import { useGenerateReceiptOfPayment, useGenerateStatement } from '@/hooks/useBilling';
 import {
   useCaseDocumentLibrary,
   useUploadCaseDocument,
@@ -28,6 +29,9 @@ import {
   caseDocumentStatusLabel,
   caseDocumentStatusVariant,
   isUnfinishedDocument,
+  isUnfinishedDocumentHistorical,
+  remakeActionFor,
+  type DocumentRemakeAction,
   isCaseDocumentDownloadable,
   isCaseDocumentHistorical,
   isFailedDocumentResolvedByLaterSuccess,
@@ -94,6 +98,10 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   const officialKinds = officialDocumentsFor(organizationId);
   const [officialError, setOfficialError] = useState<string | null>(null);
   const [officialPending, setOfficialPending] = useState<OfficialDocumentKind | null>(null);
+  /** "Make again" for a file that failed or didn't finish (2026-11). */
+  const generateStatementAgain = useGenerateStatement(organizationId, caseId);
+  const generateReceiptAgain = useGenerateReceiptOfPayment(organizationId, caseId);
+  const [remakingDocId, setRemakingDocId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [subTab, setSubTab] = useState<'documents' | 'forms' | 'history'>('documents');
 
@@ -220,7 +228,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
     }
   }
 
-  async function handlePrint(doc: CaseDocument) {
+  async function handlePrint(doc: Pick<CaseDocument, 'id' | 'fileName'>) {
     setPrintError(null);
     setPrintingDocId(doc.id);
     try {
@@ -281,7 +289,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
   // unactionable and belongs with the record. See
   // isFailedDocumentResolvedByLaterSuccess.
   const isHistorical = (doc: (typeof documents)[number]) =>
-    isCaseDocumentHistorical(doc.status) || isFailedDocumentResolvedByLaterSuccess(doc, documents);
+    isCaseDocumentHistorical(doc.status) || isUnfinishedDocumentHistorical(doc) || isFailedDocumentResolvedByLaterSuccess(doc, documents);
   const currentDocuments = documents.filter((doc) => !isHistorical(doc));
   const historicalDocuments = documents.filter(isHistorical);
   const generatedDocuments = currentDocuments.filter((doc) => doc.origin === 'generated');
@@ -339,6 +347,24 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
     return '';
   }
 
+  function remake(doc: CaseDocumentWithActorName, action: DocumentRemakeAction) {
+    // The new file appears in Documents, so that is where staff are taken.
+    setSubTab('documents');
+    setOfficialError(null);
+    if (action === 'cremation_label') {
+      setLabelDialog({});
+      return;
+    }
+    setRemakingDocId(doc.id);
+    const callbacks = {
+      onError: (error: unknown) => setOfficialError(error instanceof Error ? error.message : 'The document could not be made. Please try again.'),
+      onSettled: () => setRemakingDocId(null),
+    };
+    if (action === 'statement') generateStatementAgain.mutate({}, callbacks);
+    else if (action === 'receipt') generateReceiptAgain.mutate({}, callbacks);
+    else generateOfficial.mutate(action, callbacks);
+  }
+
   function renderDocumentRow(doc: CaseDocumentWithActorName) {
     const typeLabel = doc.documentTypeKey ? (getDocumentTypeDefinition(doc.documentTypeKey)?.displayName ?? doc.documentTypeKey) : 'Uploaded file';
     const canDownload = isCaseDocumentDownloadable(doc.status);
@@ -369,6 +395,14 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
       items.push({ label: 'Download', href: downloadUrl, onSelect: () => {} });
       if (isLabel) items.push({ label: 'Print', onSelect: openView });
       else items.push({ label: printingDocId === doc.id ? 'Preparing…' : 'Print', onSelect: () => handlePrint(doc), disabled: printingDocId === doc.id });
+    }
+    const remakeAction = canGenerate ? remakeActionFor(doc) : null;
+    if (remakeAction && (remakeAction !== 'cremation_label' || labelsEnabled)) {
+      items.push({
+        label: remakingDocId === doc.id ? 'Making…' : 'Make again',
+        disabled: remakingDocId !== null,
+        onSelect: () => remake(doc, remakeAction),
+      });
     }
     if (canRegenerate) {
       items.push({
@@ -452,7 +486,21 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
           <div className="sx-modal-body" style={{ padding: 0 }}>
             <DocumentPreview url={viewingDoc.url} fileName={viewingDoc.fileName} mimeType={viewingDoc.mimeType} />
           </div>
+          {printError && printError.docId === viewingDoc.id && (
+            <div className="sx-form-banner sx-form-banner-error" role="alert">
+              {printError.message}
+            </div>
+          )}
           <div className="sx-modal-footer">
+            {/* Print beside Download (2026-11) — the same print as the row's menu. */}
+            <button
+              type="button"
+              className="sx-btn sx-btn-secondary"
+              onClick={() => void handlePrint(viewingDoc)}
+              disabled={printingDocId === viewingDoc.id}
+            >
+              {printingDocId === viewingDoc.id ? 'Preparing…' : 'Print'}
+            </button>
             <a className="sx-btn sx-btn-secondary" href={buildCaseDocumentDownloadUrl(organizationId, caseId, viewingDoc.id)}>
               Download
             </a>
@@ -492,7 +540,7 @@ export function CaseDocumentsTab({ caseId, caseName, caseNumber }: { caseId: str
         ) : (
           <section className="sx-docs-group">
             <h3 className="sx-section-title">
-              Superseded &amp; archived<span className="sx-section-meta">{historicalDocuments.length} file(s)</span>
+              Superseded, archived &amp; unfinished<span className="sx-section-meta">{historicalDocuments.length} file(s)</span>
             </h3>
             {historicalDocuments.map(renderDocumentRow)}
           </section>
