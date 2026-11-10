@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { CremationLabelState, SavedCremationLabelFile } from '@/lib/caseLabelClient';
 
 /** Cremation Label (2026-10). The dialog with the label routes and DYMO Connect faked. */
-const { client, dymo, permissions } = vi.hoisted(() => ({
+const { client, dymo, permissions, printing } = vi.hoisted(() => ({
   client: {
     fetchCremationLabelState: vi.fn(),
     fetchSavedCremationLabel: vi.fn(),
@@ -13,12 +13,15 @@ const { client, dymo, permissions } = vi.hoisted(() => ({
   },
   dymo: { findDymoService: vi.fn(), listDymoPrinters: vi.fn(), renderDymoPreview: vi.fn(), printDymoLabel: vi.fn() },
   permissions: { list: ['document.generate'] as string[] },
+  printing: { printHtmlPage: vi.fn() },
 }));
 vi.mock('@/lib/caseLabelClient', () => client);
 vi.mock('@/lib/dymoConnect', () => dymo);
+vi.mock('@/utils/print', () => printing);
 vi.mock('@/hooks/useRbac', () => ({ useMyPermissions: () => ({ isSuccess: true, data: { permissions: permissions.list } }) }));
 
 const { PrintLabelDialog } = await import('./PrintLabelDialog');
+const { fillManorsLabel } = await import('@/domain/labels/manorsLabel');
 
 const V1 = { name: 'Juniper Fairweather', tag: 'Tag #90210', date: 'November 3, 2026' };
 const savedFile = (over: Partial<SavedCremationLabelFile> = {}): SavedCremationLabelFile => ({
@@ -59,7 +62,7 @@ const open = (documentId?: string) =>
   );
 
 describe('PrintLabelDialog', () => {
-  it('saves a label with the printer disconnected, then offers it for download — never a print without DYMO', async () => {
+  it('saves a label with the printer disconnected, then offers it for download and for printing (2026-11)', async () => {
     dymoUnavailable();
     client.fetchCremationLabelState.mockResolvedValueOnce(state({ latest: null, latestMatchesCase: false })).mockResolvedValue(state());
     client.fetchSavedCremationLabel.mockResolvedValue(savedFile());
@@ -76,7 +79,43 @@ describe('PrintLabelDialog', () => {
     expect(screen.getByText('Latest')).toBeInTheDocument();
     expect(screen.getByText(/DYMO Connect is not running on this computer\. The saved label is kept as it is\./)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download .dymo' })).toHaveAttribute('href', expect.stringContaining('/api/cases/1042/documents/label-v1/download'));
-    expect(screen.queryByRole('button', { name: 'Print' })).toBeNull();
+    // 2026-11: Print is offered without DYMO Connect too (the print window).
+    expect(screen.getByRole('button', { name: 'Print' })).toBeInTheDocument();
+    expect(dymo.printDymoLabel).not.toHaveBeenCalled();
+  });
+
+  it('without DYMO Connect, Print draws the SAVED label in the print window and records the print', async () => {
+    dymoUnavailable();
+    const xml = fillManorsLabel(V1);
+    client.fetchCremationLabelState.mockResolvedValue(state());
+    client.fetchSavedCremationLabel.mockResolvedValue(savedFile({ labelXml: xml }));
+    open();
+
+    expect(await screen.findByText(/Print still works: it opens your computer/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    await waitFor(() => expect(printing.printHtmlPage).toHaveBeenCalledTimes(1));
+    const html = printing.printHtmlPage.mock.calls[0][0] as string;
+    expect(html).toContain('@page { size: 4in 2.125in');
+    expect(html).toContain('Juniper Fairweather');
+    expect(html).toContain('Tag #90210');
+    expect(dymo.printDymoLabel).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(client.recordCremationLabelPrinted).toHaveBeenCalledWith('managed-cremations', '1042', 'label-v1', 'Print window (no DYMO Connect)'),
+    );
+  });
+
+  it('a blocked print window is reported, and nothing is recorded as printed', async () => {
+    dymoUnavailable();
+    printing.printHtmlPage.mockImplementationOnce(() => {
+      throw new Error('The print window was blocked. Allow pop-ups for Solis, then try again.');
+    });
+    client.fetchCremationLabelState.mockResolvedValue(state());
+    client.fetchSavedCremationLabel.mockResolvedValue(savedFile({ labelXml: fillManorsLabel(V1) }));
+    open();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Print' }));
+    expect(await screen.findByText(/The print window was blocked/)).toBeInTheDocument();
+    expect(client.recordCremationLabelPrinted).not.toHaveBeenCalled();
   });
 
   it('prints the SAVED label exactly as stored and records the print', async () => {
