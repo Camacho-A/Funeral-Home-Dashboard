@@ -22,6 +22,10 @@ import { resolveStaticBlobToken } from './vercelBlobConfig';
  * static secret required. See `vercelBlobConfig.ts`'s own header comment
  * for the confirmed resolution order this relies on.
  */
+/** No storage call may wait longer than this (2026-11): an unanswered
+    request otherwise waits 300 seconds, the whole function's limit. */
+const BLOB_REQUEST_TIMEOUT_MS = 60_000;
+
 function blobAuthOptions(): { token: string } | Record<string, never> {
   const token = resolveStaticBlobToken();
   return token ? { token } : {};
@@ -29,12 +33,12 @@ function blobAuthOptions(): { token: string } | Record<string, never> {
 
 export const vercelBlobStorageProvider: DocumentStorageProvider = {
   async uploadFile(key: string, contents: Buffer, contentType: string): Promise<{ storageKey: string }> {
-    const result = await put(key, contents, { access: 'private', contentType, addRandomSuffix: false, ...blobAuthOptions() });
+    const result = await put(key, contents, { access: 'private', contentType, addRandomSuffix: false, abortSignal: AbortSignal.timeout(BLOB_REQUEST_TIMEOUT_MS), ...blobAuthOptions() });
     return { storageKey: result.pathname };
   },
 
   async downloadFile(storageKey: string): Promise<{ buffer: Buffer; contentType: string }> {
-    const result = await get(storageKey, { access: 'private', ...blobAuthOptions() });
+    const result = await get(storageKey, { access: 'private', abortSignal: AbortSignal.timeout(BLOB_REQUEST_TIMEOUT_MS), ...blobAuthOptions() });
     if (!result || result.statusCode !== 200) {
       throw new DocumentNotFoundError(storageKey);
     }

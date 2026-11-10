@@ -291,7 +291,7 @@ describe('CaseDocumentsTab — document list', () => {
 
   it('shows a Download link only for active/superseded/archived statuses, not pending or failed', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
-      makeDocument({ id: 'doc-pending', fileName: 'pending.pdf', status: 'pending' }),
+      makeDocument({ id: 'doc-pending', fileName: 'pending.pdf', status: 'pending', createdAt: new Date().toISOString() }),
       makeDocument({ id: 'doc-active', fileName: 'active.pdf', status: 'active' }),
       makeDocument({ id: 'doc-failed', fileName: 'failed.pdf', status: 'failed' }),
     ]);
@@ -393,7 +393,7 @@ describe('item #2 — Documents tab Print (replaces the removed Overview Documen
   });
 
   it("does not offer Print for a status that also lacks Download (e.g. 'pending')", async () => {
-    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'pending.pdf', status: 'pending' })]);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([makeDocument({ id: 'doc-1', fileName: 'pending.pdf', status: 'pending', createdAt: new Date().toISOString() })]);
     renderTab();
 
     await screen.findByText('pending.pdf');
@@ -452,7 +452,7 @@ describe('Task #3 (2026-09) — Print All / Download All bulk case document acti
 
   it('3b. empty state: both bulk actions are disabled when every document is pending/failed (none currently eligible)', async () => {
     vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([
-      makeDocument({ id: 'doc-1', fileName: 'still-generating.pdf', status: 'pending' }),
+      makeDocument({ id: 'doc-1', fileName: 'still-generating.pdf', status: 'pending', createdAt: new Date().toISOString() }),
       makeDocument({ id: 'doc-2', fileName: 'broken.pdf', status: 'failed' }),
     ]);
     renderTab();
@@ -1037,6 +1037,20 @@ describe('CaseDocumentsTab — View shows the document in the browser', () => {
     expect(dialog).toBeInTheDocument();
   });
 
+  it('the viewer has Print beside Download, printing the same stored file (2026-11)', async () => {
+    mockPrintStoredDocument.mockResolvedValue(undefined);
+    renderTab();
+    fireEvent.click(await screen.findByRole('button', { name: 'View' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('link', { name: 'Download' })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Print' }));
+    await waitFor(() => expect(mockPrintStoredDocument).toHaveBeenCalledTimes(1));
+    const [url, , caseName, caseNumber] = mockPrintStoredDocument.mock.calls[0];
+    // The same guarded download route the row's Print uses.
+    expect(String(url)).toMatch(/^\/api\/cases\/case-1\/documents\/[^/]+\/download/);
+    expect([caseName, caseNumber]).toEqual(['Jane Doe', 'B2026-001']);
+  });
+
   it('reads the document from the authenticated disposition=inline URL', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
@@ -1391,5 +1405,70 @@ describe('Upload File — choosing the document type (Send to Crematory, 2026-10
     expect(screen.queryByLabelText('Document type for the upload')).toBeNull();
     chooseFile(container, 'scan.pdf');
     await waitFor(() => expect(caseDocumentsClient.uploadCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ documentTypeKey: undefined })));
+  });
+});
+
+/** 2026-11: a file that didn't finish goes to History and can be made again. */
+describe('CaseDocumentsTab — unfinished documents', () => {
+  beforeEach(() => {
+    mockPermissions(['document.generate', 'document.upload', 'document.archive']);
+    mockOrganization({ id: DEFAULT_ORGANIZATION_ID });
+  });
+  afterEach(() => vi.clearAllMocks());
+
+  const unfinished = () =>
+    makeDocument({
+      id: 'doc-stuck',
+      fileName: 'Certificate of Cremation.pdf',
+      documentTypeKey: 'cremation_form.certificate_of_cremation',
+      templateId: null,
+      status: 'pending',
+      storageKey: '',
+      createdAt: new Date(Date.now() - 30 * 60_000).toISOString(),
+    });
+
+  it('is in History, not Documents, marked "Didn\'t finish"', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([unfinished()]);
+    renderTab();
+    await screen.findByText('No documents for this case yet.');
+    expect(screen.queryByText('Certificate of Cremation.pdf')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    expect(await screen.findByText('Certificate of Cremation.pdf')).toBeInTheDocument();
+    expect(screen.getByText("Didn't finish")).toBeInTheDocument();
+  });
+
+  it('a file still being made stays in Documents as "Generating…"', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([{ ...unfinished(), createdAt: new Date().toISOString() }]);
+    renderTab();
+    expect(await screen.findByText('Certificate of Cremation.pdf')).toBeInTheDocument();
+    expect(screen.getByText('Generating…')).toBeInTheDocument();
+  });
+
+  it('"Make again" asks the server for that document and returns to Documents', async () => {
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([unfinished()]);
+    vi.mocked(caseDocumentsClient.generateOfficialCaseDocument).mockResolvedValue();
+    renderTab();
+    await screen.findByText('No documents for this case yet.');
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await screen.findByText('Certificate of Cremation.pdf');
+    openRowMenu('Certificate of Cremation.pdf');
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Make again' }));
+    await waitFor(() =>
+      expect(caseDocumentsClient.generateOfficialCaseDocument).toHaveBeenCalledWith(expect.objectContaining({ kind: 'certificate_of_cremation' })),
+    );
+    expect(screen.getByRole('tab', { name: 'Documents' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('is not offered without permission to generate documents', async () => {
+    mockPermissions(['document.upload']);
+    vi.mocked(caseDocumentsClient.fetchCaseDocuments).mockResolvedValue([unfinished()]);
+    renderTab();
+    await screen.findByText('No documents for this case yet.');
+    fireEvent.click(screen.getByRole('tab', { name: 'History' }));
+    await screen.findByText('Certificate of Cremation.pdf');
+    await waitFor(() => expect(identityAuthClient.fetchMyPermissions).toHaveBeenCalled());
+    // With nothing to offer, the row has no actions menu at all.
+    expect(screen.queryByRole('button', { name: 'More actions for Certificate of Cremation.pdf' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Make again')).not.toBeInTheDocument();
   });
 });

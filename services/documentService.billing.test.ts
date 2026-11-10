@@ -14,7 +14,7 @@ vi.mock('../lib/vercelBlob/vercelBlobStorageProvider', () => ({
   },
 }));
 
-const { generateBillingDocument, list, markDocumentSigned, DocumentServiceError } = await import('./documentService');
+const { generateBillingDocument, list, markDocumentSigned, DocumentServiceError, DOCUMENT_GENERATION_TIMEOUT_MS } = await import('./documentService');
 const { caseDocumentFixtures } = await import('./__mocks__/documentFixtures');
 
 let n = 0;
@@ -75,6 +75,23 @@ describe('documentService.generateBillingDocument', () => {
     await expect(generateBillingDocument(params(), ctx, 'mock')).rejects.toBeInstanceOf(DocumentServiceError);
     const all = await list('org-1', 'case-1', 'mock');
     expect(all[0].status).toBe('failed');
+  });
+
+  /** 2026-11-10: saves that never got an answer left rows pending ("Draft")
+      and held the whole background job for 300 seconds. */
+  it('gives up when saving the file never answers: marked failed, naming the stuck step', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUploadFile.mockImplementationOnce(() => new Promise(() => {}));
+      const attempt = generateBillingDocument(params(), ctx, 'mock');
+      const outcome = expect(attempt).rejects.toThrow(/not finished within 90 seconds \(stuck saving the file to storage\)/);
+      await vi.advanceTimersByTimeAsync(DOCUMENT_GENERATION_TIMEOUT_MS + 10);
+      await outcome;
+      const all = await list('org-1', 'case-1', 'mock');
+      expect(all[0].status).toBe('failed');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

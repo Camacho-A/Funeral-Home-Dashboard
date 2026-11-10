@@ -87,3 +87,30 @@ export async function printStoredDocument(url: string, docName: string, caseName
   const blob = await response.blob();
   printFile(blob, docName, caseName, caseNumber);
 }
+
+/**
+ * Prints a complete, self-contained HTML page (2026-11 — the Cremation
+ * Label without DYMO Connect, domain/labels/dymoLabelPrintHtml.ts) in a
+ * new window, once its images have loaded. Throws if the browser blocked
+ * the window.
+ */
+export function printHtmlPage(html: string): void {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) throw new Error('The print window was blocked. Allow pop-ups for Solis, then try again.');
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  const images = Array.from(printWindow.document.images);
+  const ready = images.map((image) =>
+    image.complete
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          image.addEventListener('load', () => resolve(), { once: true });
+          image.addEventListener('error', () => resolve(), { once: true });
+        }),
+  );
+  void Promise.all(ready).then(() => {
+    printWindow.focus();
+    printWindow.print();
+  });
+}
