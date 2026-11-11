@@ -663,6 +663,12 @@ export function CaseInformationCard({
   shippingDateShipped,
   shippingDeliveryStatus,
   shippingDeliveredAt,
+  shippingRecipientName = null,
+  shippingRecipientPhone = null,
+  shippingAddressStreet = null,
+  shippingAddressCity = null,
+  shippingAddressState = null,
+  shippingAddressZip = null,
   ownerStaffId,
   staffOptions,
   onReassignOwner,
@@ -771,6 +777,14 @@ export function CaseInformationCard({
   shippingDateShipped: string | null;
   shippingDeliveryStatus: ShippingDeliveryStatus | null;
   shippingDeliveredAt: string | null;
+  /** Who receives shipped remains, and the address they go to (2026-11).
+      Shown only with Shipping, under the tracking fields. */
+  shippingRecipientName?: string | null;
+  shippingRecipientPhone?: string | null;
+  shippingAddressStreet?: string | null;
+  shippingAddressCity?: string | null;
+  shippingAddressState?: string | null;
+  shippingAddressZip?: string | null;
   ownerStaffId: string | null;
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
@@ -1252,6 +1266,49 @@ export function CaseInformationCard({
           </>
         )}
       </div>
+
+      {/* Who receives the ashes, and where they are shipped (2026-11). */}
+      {returnMethod === 'shipping' && (
+        <div className={`${styles.grid} ${styles.operationalRow}`} data-testid="shipping-recipient">
+          <EditableField
+            label="Receiving the ashes"
+            value={shippingRecipientName ?? ''}
+            uppercase
+            onSave={(v) => onUpdateCaseInfo({ shippingRecipientName: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <EditableField
+            label="Recipient phone"
+            kind="phone"
+            value={shippingRecipientPhone ?? ''}
+            onSave={(v) => onUpdateCaseInfo({ shippingRecipientPhone: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <div className={styles.fullRow}>
+            <EditableField
+              label="Shipping address"
+              value={shippingAddressStreet ?? ''}
+              uppercase
+              onSave={(v) => onUpdateCaseInfo({ shippingAddressStreet: v.trim().length > 0 ? v.trim() : null })}
+            />
+          </div>
+          <EditableField
+            label="City"
+            value={shippingAddressCity ?? ''}
+            uppercase
+            onSave={(v) => onUpdateCaseInfo({ shippingAddressCity: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <EditableField
+            label="State"
+            value={shippingAddressState ?? ''}
+            uppercase
+            onSave={(v) => onUpdateCaseInfo({ shippingAddressState: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <EditableField
+            label="ZIP"
+            value={shippingAddressZip ?? ''}
+            onSave={(v) => onUpdateCaseInfo({ shippingAddressZip: v.trim().length > 0 ? v.trim() : null })}
+          />
+        </div>
+      )}
 
 
       {/* Automatic archiving (2026-10): there is no manual "Archive

@@ -2060,4 +2060,32 @@ describe('CaseInformationCard — compact layout, second pass (2026-10)', () => 
     render(<CaseInformationCard {...baseProps} showOwner={false} returnMethod="pickup" onUpdateCaseInfo={vi.fn()} />);
     expect(screen.getByText('Cremated Remains').parentElement!.className).toMatch(/fullRow/);
   });
+  it('Shipping shows who receives the ashes and the shipping address; Pickup does not', () => {
+    const onUpdateCaseInfo = vi.fn();
+    const { rerender } = render(
+      <CaseInformationCard
+        {...baseProps}
+        returnMethod="shipping"
+        shippingRecipientName="JANE SAMPLE"
+        shippingAddressCity="SPRINGFIELD"
+        onUpdateCaseInfo={onUpdateCaseInfo}
+      />,
+    );
+    for (const label of ['Receiving the ashes', 'Recipient phone', 'Shipping address', 'City', 'State', 'ZIP']) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByRole('button', { name: 'JANE SAMPLE' })).toBeInTheDocument();
+    expect(screen.getByText('Shipping address').parentElement!.parentElement!.className).toMatch(/fullRow/);
+
+    const streetField = screen.getByText('Shipping address').parentElement!;
+    fireEvent.click(within(streetField).getByRole('button'));
+    const input = within(streetField).getByDisplayValue('');
+    fireEvent.change(input, { target: { value: ' 12 example st ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingAddressStreet: '12 EXAMPLE ST' });
+
+    rerender(<CaseInformationCard {...baseProps} returnMethod="pickup" shippingRecipientName="JANE SAMPLE" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    expect(screen.queryByText('Receiving the ashes')).not.toBeInTheDocument();
+    expect(screen.queryByText('Shipping address')).not.toBeInTheDocument();
+  });
 });

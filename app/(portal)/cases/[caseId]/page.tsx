@@ -345,6 +345,12 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
             shippingDateShipped={case_.shippingDateShipped}
             shippingDeliveryStatus={case_.shippingDeliveryStatus}
             shippingDeliveredAt={case_.shippingDeliveredAt}
+            shippingRecipientName={case_.shippingRecipientName ?? null}
+            shippingRecipientPhone={case_.shippingRecipientPhone ?? null}
+            shippingAddressStreet={case_.shippingAddressStreet ?? null}
+            shippingAddressCity={case_.shippingAddressCity ?? null}
+            shippingAddressState={case_.shippingAddressState ?? null}
+            shippingAddressZip={case_.shippingAddressZip ?? null}
             ownerStaffId={viewModel.ownerStaffId}
             staffOptions={staffOptions}
             onReassignOwner={(staffId) => mutations.reassignOwner(staffId)}

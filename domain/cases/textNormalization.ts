@@ -28,6 +28,13 @@ const UPPERCASE_STRING_FIELDS = [
   'nextOfKinName',
   'pickupReleasedTo',
   'shippingCarrier',
+  // Shipping recipient and address (2026-11) — a name and a street
+  // address, same treatment as nextOfKinName/placeOfDeath. The phone and
+  // ZIP are left alone, like every phone number here.
+  'shippingRecipientName',
+  'shippingAddressStreet',
+  'shippingAddressCity',
+  'shippingAddressState',
   'nextOfKinRelationshipOther',
   'pickupNote',
   'stalledReason',

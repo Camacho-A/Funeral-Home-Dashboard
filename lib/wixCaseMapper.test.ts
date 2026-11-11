@@ -1295,3 +1295,49 @@ describe('checklistCompletions and SLA fields (2026-10)', () => {
     expect(patch).toEqual({});
   });
 });
+
+describe('shipping recipient and address (2026-11)', () => {
+  it('maps a row from before these fields to null for each', () => {
+    const result = mapWixCaseItem(validItem);
+    expect(result?.shippingRecipientName).toBeNull();
+    expect(result?.shippingRecipientPhone).toBeNull();
+    expect(result?.shippingAddressStreet).toBeNull();
+    expect(result?.shippingAddressCity).toBeNull();
+    expect(result?.shippingAddressState).toBeNull();
+    expect(result?.shippingAddressZip).toBeNull();
+  });
+
+  it('maps stored values through', () => {
+    const result = mapWixCaseItem({
+      ...validItem,
+      shippingRecipientName: 'JANE SAMPLE',
+      shippingRecipientPhone: '555-010-0100',
+      shippingAddressStreet: '12 EXAMPLE ST APT 3',
+      shippingAddressCity: 'SPRINGFIELD',
+      shippingAddressState: 'FL',
+      shippingAddressZip: '34201',
+    });
+    expect(result?.shippingRecipientName).toBe('JANE SAMPLE');
+    expect(result?.shippingRecipientPhone).toBe('555-010-0100');
+    expect(result?.shippingAddressStreet).toBe('12 EXAMPLE ST APT 3');
+    expect(result?.shippingAddressCity).toBe('SPRINGFIELD');
+    expect(result?.shippingAddressState).toBe('FL');
+    expect(result?.shippingAddressZip).toBe('34201');
+  });
+
+  it('accepts, trims, uppercases names, clears and length-checks the fields in a case update', () => {
+    expect(validateAndPickCaseUpdate({ shippingRecipientName: '  Jane Sample ', shippingAddressZip: '' })).toEqual({
+      patch: { shippingRecipientName: 'JANE SAMPLE', shippingAddressZip: null },
+      errors: [],
+    });
+    expect(validateAndPickCaseUpdate({ shippingRecipientPhone: null }).patch).toEqual({ shippingRecipientPhone: null });
+    expect(validateAndPickCaseUpdate({ shippingAddressStreet: 'x'.repeat(201) }).errors).toContain('shippingAddressStreet');
+    expect(validateAndPickCaseUpdate({ shippingAddressCity: 42 }).errors).toContain('shippingAddressCity');
+  });
+
+  it('writes the fields to the Wix row', () => {
+    const next = applyCaseUpdateToWixData(validItem, { shippingRecipientName: 'JANE SAMPLE', shippingAddressState: 'FL' });
+    expect(next.shippingRecipientName).toBe('JANE SAMPLE');
+    expect(next.shippingAddressState).toBe('FL');
+  });
+});
