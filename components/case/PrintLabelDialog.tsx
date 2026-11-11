@@ -11,6 +11,8 @@ import { findDymoService, listDymoPrinters, printDymoLabel, renderDymoPreview, t
 import { formatTimestamp } from '@/utils/format';
 import type { ManorsLabelValues } from '@/domain/labels/manorsLabel';
 import styles from './PrintLabelDialog.module.css';
+import { dymoLabelPrintHtml } from '@/domain/labels/dymoLabelPrintHtml';
+import { printHtmlPage } from '@/utils/print';
 
 /**
  * Cremation Label (2026-10). Saves Manors' approved DYMO label, filled with
@@ -111,7 +113,28 @@ export function PrintLabelDialog({
     }
   }
 
+  /** Without DYMO Connect (2026-11): the saved label is drawn as a page and
+      printed through the computer's own print window. */
+  const printsThroughDymo = dymo.status === 'ready' && dymo.printers.length > 0;
+
+  async function handleBrowserPrint() {
+    if (!savedFile) return;
+    setNotice(null);
+    try {
+      printHtmlPage(dymoLabelPrintHtml(savedFile.labelXml, `Cremation Label v${savedFile.label.version ?? 1}`));
+    } catch (error) {
+      setNotice({ ok: false, message: `${error instanceof Error ? error.message : 'The label could not be printed.'} The saved label is unchanged.` });
+      return;
+    }
+    try {
+      await recordCremationLabelPrinted(organizationId, caseId, savedFile.label.documentId, 'Print window (no DYMO Connect)');
+    } catch {
+      // The print itself already opened; only the history entry is missing.
+    }
+  }
+
   async function handlePrint() {
+    if (!printsThroughDymo) return handleBrowserPrint();
     if (!savedFile || dymo.status !== 'ready' || !printerName) return;
     setPrinting(true);
     setNotice(null);
@@ -190,6 +213,8 @@ export function PrintLabelDialog({
             {savedFile && dymo.status === 'unavailable' && (
               <div className="sx-form-banner sx-form-banner-info" role="status">
                 {dymo.message} The saved label is kept as it is.
+                <br />
+                Print still works: it opens your computer&rsquo;s print window. Choose the DYMO LabelWriter and the 4&Prime; &times; 2-1/8&Prime; label there.
               </div>
             )}
             {savedFile && dymo.status === 'ready' && (
@@ -236,8 +261,8 @@ export function PrintLabelDialog({
             {save.isPending ? 'Saving…' : latest ? 'Save New Version' : 'Save Label'}
           </button>
         )}
-        {savedFile && dymo.status === 'ready' && dymo.printers.length > 0 && (
-          <button type="button" className="sx-btn sx-btn-primary" onClick={handlePrint} disabled={printing || !printerName}>
+        {savedFile && dymo.status !== 'connecting' && (
+          <button type="button" className="sx-btn sx-btn-primary" onClick={handlePrint} disabled={printing || (printsThroughDymo && !printerName)}>
             {printing ? 'Printing…' : 'Print'}
           </button>
         )}
