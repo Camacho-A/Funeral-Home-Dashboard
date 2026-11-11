@@ -664,6 +664,12 @@ export function CaseInformationCard({
   shippingDeliveryStatus,
   shippingDeliveredAt,
   showRemainsReturn = true,
+  shippingRecipientName = null,
+  shippingRecipientPhone = null,
+  shippingAddressStreet = null,
+  shippingAddressCity = null,
+  shippingAddressState = null,
+  shippingAddressZip = null,
   ownerStaffId,
   staffOptions,
   onReassignOwner,
@@ -782,6 +788,14 @@ export function CaseInformationCard({
       every caller that does not pass it (and every legacy / Manors /
       cremation case) is unchanged. */
   showRemainsReturn?: boolean;
+  /** Who receives shipped remains, and the address they go to (2026-11).
+      Shown only with Shipping, under the tracking fields. */
+  shippingRecipientName?: string | null;
+  shippingRecipientPhone?: string | null;
+  shippingAddressStreet?: string | null;
+  shippingAddressCity?: string | null;
+  shippingAddressState?: string | null;
+  shippingAddressZip?: string | null;
   ownerStaffId: string | null;
   staffOptions: StaffOption[];
   onReassignOwner: (staffId: string) => void;
@@ -875,6 +889,7 @@ export function CaseInformationCard({
 
   const [editingName, setEditingName] = useState(false);
   const isReadOnlyCard = isArchived === true;
+  const nokNameForShipping = normalizeNextOfKinName(nextOfKinName, nextOfKinPhone).trim();
 
   return (
     /* Archived cases are read-only (2026-10). The provider covers every
@@ -1263,6 +1278,70 @@ export function CaseInformationCard({
           </>
         )}
       </div>
+
+      {/* Who receives the ashes, and where they are shipped (2026-11).
+          Hidden with the other shipping fields when the service returns no
+          remains (showRemainsReturn). */}
+      {showRemainsReturn && returnMethod === 'shipping' && (
+        <div className={`${styles.grid} ${styles.operationalRow}`} data-testid="shipping-recipient">
+          {/* Usually the next of kin receives the ashes: one click copies
+              their name and phone. The address is not stored for the next
+              of kin, so it is always typed here. */}
+          {!isReadOnlyCard && nokNameForShipping !== '' && (
+            <div className={styles.fullRow}>
+              <button
+                type="button"
+                className={styles.editNameButton}
+                onClick={() =>
+                  onUpdateCaseInfo({
+                    shippingRecipientName: nokNameForShipping,
+                    shippingRecipientPhone: nextOfKinPhone.trim() !== '' ? nextOfKinPhone.trim() : null,
+                  })
+                }
+              >
+                Same as next of kin
+              </button>
+            </div>
+          )}
+          <EditableField
+            label="Receiving the ashes"
+            value={shippingRecipientName ?? ''}
+            uppercase
+            onSave={(v) => onUpdateCaseInfo({ shippingRecipientName: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <EditableField
+            label="Recipient phone"
+            kind="phone"
+            value={shippingRecipientPhone ?? ''}
+            onSave={(v) => onUpdateCaseInfo({ shippingRecipientPhone: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <div className={styles.fullRow}>
+            <EditableField
+              label="Shipping address"
+              value={shippingAddressStreet ?? ''}
+              uppercase
+              onSave={(v) => onUpdateCaseInfo({ shippingAddressStreet: v.trim().length > 0 ? v.trim() : null })}
+            />
+          </div>
+          <EditableField
+            label="City"
+            value={shippingAddressCity ?? ''}
+            uppercase
+            onSave={(v) => onUpdateCaseInfo({ shippingAddressCity: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <EditableField
+            label="State"
+            value={shippingAddressState ?? ''}
+            uppercase
+            onSave={(v) => onUpdateCaseInfo({ shippingAddressState: v.trim().length > 0 ? v.trim() : null })}
+          />
+          <EditableField
+            label="ZIP"
+            value={shippingAddressZip ?? ''}
+            onSave={(v) => onUpdateCaseInfo({ shippingAddressZip: v.trim().length > 0 ? v.trim() : null })}
+          />
+        </div>
+      )}
 
 
       {/* Automatic archiving (2026-10): there is no manual "Archive

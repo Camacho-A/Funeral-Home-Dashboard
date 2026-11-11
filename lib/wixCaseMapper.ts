@@ -142,6 +142,12 @@ export type WixCaseItem = {
   shippingDateShipped?: unknown;
   shippingDeliveryStatus?: unknown;
   shippingDeliveredAt?: unknown;
+  shippingRecipientName?: unknown;
+  shippingRecipientPhone?: unknown;
+  shippingAddressStreet?: unknown;
+  shippingAddressCity?: unknown;
+  shippingAddressState?: unknown;
+  shippingAddressZip?: unknown;
   isVeteran?: unknown;
   vaStepsState?: unknown;
   vaPublishChoice?: unknown;
@@ -270,6 +276,9 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     ? item.shippingDeliveryStatus
     : null;
   const shippingDeliveredAt = typeof item.shippingDeliveredAt === 'string' ? item.shippingDeliveredAt : null;
+  // Shipping recipient and address (2026-11) — additive fields; rows from
+  // before them map to null.
+  const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value : null);
 
   return {
     id: item.beaconCaseId,
@@ -315,6 +324,12 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     shippingDateShipped,
     shippingDeliveryStatus,
     shippingDeliveredAt,
+    shippingRecipientName: textOrNull(item.shippingRecipientName),
+    shippingRecipientPhone: textOrNull(item.shippingRecipientPhone),
+    shippingAddressStreet: textOrNull(item.shippingAddressStreet),
+    shippingAddressCity: textOrNull(item.shippingAddressCity),
+    shippingAddressState: textOrNull(item.shippingAddressState),
+    shippingAddressZip: textOrNull(item.shippingAddressZip),
     isVeteran: item.isVeteran,
     vaStepsState: isPlainObject(item.vaStepsState) ? (item.vaStepsState as Record<number, boolean>) : {},
     vaPublishChoice,
@@ -631,6 +646,12 @@ export function buildWixCaseData(params: {
     shippingDateShipped: null,
     shippingDeliveryStatus: null,
     shippingDeliveredAt: null,
+    shippingRecipientName: null,
+    shippingRecipientPhone: null,
+    shippingAddressStreet: null,
+    shippingAddressCity: null,
+    shippingAddressState: null,
+    shippingAddressZip: null,
     isVeteran: false,
     vaStepsState: {},
     vaPublishChoice: null,
@@ -804,6 +825,12 @@ export function validateAndPickCaseUpdate(body: unknown): { patch: CaseUpdate; e
   nullableStringField('shippingTrackingNumber');
   nullableStringField('shippingDateShipped');
   nullableStringField('shippingDeliveredAt');
+  nullableTextField('shippingRecipientName', 200);
+  nullableTextField('shippingRecipientPhone', 40);
+  nullableTextField('shippingAddressStreet', 200);
+  nullableTextField('shippingAddressCity', 100);
+  nullableTextField('shippingAddressState', 50);
+  nullableTextField('shippingAddressZip', 20);
   numberField('rawStage');
   numberField('daysWaitingInStage');
   booleanField('isVeteran');
@@ -935,6 +962,12 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.shippingDateShipped !== undefined) next.shippingDateShipped = patch.shippingDateShipped;
   if (patch.shippingDeliveryStatus !== undefined) next.shippingDeliveryStatus = patch.shippingDeliveryStatus;
   if (patch.shippingDeliveredAt !== undefined) next.shippingDeliveredAt = patch.shippingDeliveredAt;
+  if (patch.shippingRecipientName !== undefined) next.shippingRecipientName = patch.shippingRecipientName;
+  if (patch.shippingRecipientPhone !== undefined) next.shippingRecipientPhone = patch.shippingRecipientPhone;
+  if (patch.shippingAddressStreet !== undefined) next.shippingAddressStreet = patch.shippingAddressStreet;
+  if (patch.shippingAddressCity !== undefined) next.shippingAddressCity = patch.shippingAddressCity;
+  if (patch.shippingAddressState !== undefined) next.shippingAddressState = patch.shippingAddressState;
+  if (patch.shippingAddressZip !== undefined) next.shippingAddressZip = patch.shippingAddressZip;
   if (patch.rawStage !== undefined) next.currentStage = patch.rawStage;
   if (patch.assignedStaffId !== undefined) next.caseHandlerId = patch.assignedStaffId;
   if (patch.paymentStatus !== undefined) next.paymentStatus = patch.paymentStatus;

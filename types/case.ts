@@ -312,6 +312,15 @@ export type Case = {
   shippingDateShipped: string | null;
   shippingDeliveryStatus: ShippingDeliveryStatus | null;
   shippingDeliveredAt: string | null;
+  /** Who receives shipped remains, and where they go (2026-11). Same
+      "toggle hides, never destroys" rule as the five fields above. Optional
+      because every case before this has none of them. */
+  shippingRecipientName?: string | null;
+  shippingRecipientPhone?: string | null;
+  shippingAddressStreet?: string | null;
+  shippingAddressCity?: string | null;
+  shippingAddressState?: string | null;
+  shippingAddressZip?: string | null;
   daysWaitingInStage: number; // mock-static for this phase; a real backend would derive this from a stage-entry timestamp
   isStalled: boolean;
   stalledReason: string | null;
