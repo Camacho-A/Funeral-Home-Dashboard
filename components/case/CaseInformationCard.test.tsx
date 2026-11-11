@@ -2088,4 +2088,17 @@ describe('CaseInformationCard — compact layout, second pass (2026-10)', () => 
     expect(screen.queryByText('Receiving the ashes')).not.toBeInTheDocument();
     expect(screen.queryByText('Shipping address')).not.toBeInTheDocument();
   });
+  it('Same as next of kin copies the next of kin name and phone into the shipping recipient', () => {
+    const onUpdateCaseInfo = vi.fn();
+    render(<CaseInformationCard {...baseProps} nextOfKinName="KAREN SAMPLE" nextOfKinPhone="5550100100" returnMethod="shipping" onUpdateCaseInfo={onUpdateCaseInfo} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Same as next of kin' }));
+    expect(onUpdateCaseInfo).toHaveBeenCalledWith({ shippingRecipientName: 'KAREN SAMPLE', shippingRecipientPhone: '5550100100' });
+  });
+
+  it('Same as next of kin is not offered without a next of kin name, or on an archived case', () => {
+    const { rerender } = render(<CaseInformationCard {...baseProps} nextOfKinName="" nextOfKinPhone="" returnMethod="shipping" onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Same as next of kin' })).not.toBeInTheDocument();
+    rerender(<CaseInformationCard {...baseProps} nextOfKinName="KAREN SAMPLE" returnMethod="shipping" isArchived onUpdateCaseInfo={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Same as next of kin' })).not.toBeInTheDocument();
+  });
 });

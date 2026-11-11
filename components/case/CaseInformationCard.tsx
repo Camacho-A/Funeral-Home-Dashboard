@@ -878,6 +878,7 @@ export function CaseInformationCard({
 
   const [editingName, setEditingName] = useState(false);
   const isReadOnlyCard = isArchived === true;
+  const nokNameForShipping = normalizeNextOfKinName(nextOfKinName, nextOfKinPhone).trim();
 
   return (
     /* Archived cases are read-only (2026-10). The provider covers every
@@ -1270,6 +1271,25 @@ export function CaseInformationCard({
       {/* Who receives the ashes, and where they are shipped (2026-11). */}
       {returnMethod === 'shipping' && (
         <div className={`${styles.grid} ${styles.operationalRow}`} data-testid="shipping-recipient">
+          {/* Usually the next of kin receives the ashes: one click copies
+              their name and phone. The address is not stored for the next
+              of kin, so it is always typed here. */}
+          {!isReadOnlyCard && nokNameForShipping !== '' && (
+            <div className={styles.fullRow}>
+              <button
+                type="button"
+                className={styles.editNameButton}
+                onClick={() =>
+                  onUpdateCaseInfo({
+                    shippingRecipientName: nokNameForShipping,
+                    shippingRecipientPhone: nextOfKinPhone.trim() !== '' ? nextOfKinPhone.trim() : null,
+                  })
+                }
+              >
+                Same as next of kin
+              </button>
+            </div>
+          )}
           <EditableField
             label="Receiving the ashes"
             value={shippingRecipientName ?? ''}
