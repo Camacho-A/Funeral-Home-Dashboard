@@ -26,6 +26,7 @@
 import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from './sla';
 import type { CaseWorkflowSnapshot } from './workflowTemplate';
 import type { CaseSsnSummary } from '../domain/cases/caseSsn';
+import type { ServicePreparationRecord } from '../domain/servicePreparation/types';
 
 /** Manors launch-prep. The NOK's relationship to the deceased — a small,
     closed dropdown (never free text) distinct from
@@ -259,6 +260,11 @@ export type Case = {
       and sent. Written only by services/crematory/ — never by the generic
       case update — and merged key by key. See CaseCrematoryRecord. */
   crematory?: CaseCrematoryRecord;
+  /** Service preparation (Gus Phase 5C, 2026-11): what staff recorded while
+      preparing a service held before cremation. Written only by
+      services/servicePreparationService.ts — never by the generic case
+      update (not in its allowlist). Absent on every case without it. */
+  servicePreparation?: ServicePreparationRecord | null;
   /** Case SSN (2026-10): the last four digits and their source, never the
       number (domain/cases/caseSsn.ts). Set only by the server. */
   ssnOnFile?: CaseSsnSummary | null;

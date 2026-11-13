@@ -1,6 +1,7 @@
 import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from '../types/sla';
 import { SLA_DELAY_REASONS, SLA_EVENT_KEYS, SLA_MILESTONE_KEYS } from '../types/sla';
 import { caseSsnSummary } from '../domain/cases/caseSsn';
+import { readServicePreparationRecord } from '../domain/servicePreparation/recordParsing';
 import type { Case, CaseManualCompletion, CaseUpdate, CaseWorkflowHistoryEntry, ChecklistCompletionRecord, NextOfKinRelationship, PaymentStatus, PickupStatus, ReturnMethod, ShippingDeliveryStatus, VaPublishChoice, VaNotificationResponsibility } from '../types/case';
 import type { CaseWorkflowSnapshot } from '../types/workflowTemplate';
 import { isValidEmail, isValidCalendarDate } from '../utils/inputMask';
@@ -98,6 +99,8 @@ export type WixCaseItem = {
   slaEvents?: unknown;
   slaDelays?: unknown;
   crematory?: unknown;
+  /** Service preparation (Gus Phase 5C, 2026-11). Server-written only. */
+  servicePreparation?: unknown;
   /** Case SSN (2026-10): encrypted; only its summary is mapped. */
   ssnProtected?: unknown;
   stageEnteredAt?: unknown;
@@ -343,6 +346,8 @@ export function mapWixCaseItem(item: WixCaseItem | undefined): Case | null {
     ...readChecklistCompletions(item.checklistCompletions),
     ...readSlaFields(item),
     ...(isPlainObject(item.crematory) ? { crematory: item.crematory as Case['crematory'] } : {}),
+    // Service preparation (Gus Phase 5C): absent on every case without it.
+    ...(readServicePreparationRecord(item.servicePreparation) ? { servicePreparation: readServicePreparationRecord(item.servicePreparation) } : {}),
     // Case SSN (2026-10): the last four digits and their source only — the
     // encrypted number never leaves the server (domain/cases/caseSsn.ts).
     ...(caseSsnSummary(item.ssnProtected) ? { ssnOnFile: caseSsnSummary(item.ssnProtected) } : {}),
@@ -980,6 +985,9 @@ export function applyCaseUpdateToWixData(existing: WixCaseItem, patch: CaseUpdat
   if (patch.slaEvents !== undefined) next.slaEvents = patch.slaEvents;
   if (patch.slaDelays !== undefined) next.slaDelays = patch.slaDelays;
   if (patch.crematory !== undefined) next.crematory = patch.crematory;
+  // Whole record: services/servicePreparationService.ts decides it from the
+  // row as it is now, under the revision check, so nothing is merged here.
+  if (patch.servicePreparation !== undefined) next.servicePreparation = patch.servicePreparation;
   if (patch.stageEnteredAt !== undefined) next.stageEnteredAt = patch.stageEnteredAt;
   if (patch.fieldValues !== undefined) {
     // SOLIS-wide ALL-CAPS data standard (2026-09): fieldValues' per-key

@@ -627,7 +627,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
 
             {/* Gus Phase 5B: renders nothing unless the organization has
                 service preparation and this case's service has one. */}
-            <ServiceReadinessCard case_={case_} />
+            <ServiceReadinessCard case_={case_} onOpenDocuments={() => setActiveTab('documents')} />
 
             <div className={styles.overviewPair}>
               <CaseLogCard

@@ -145,7 +145,7 @@ export function summarizeServiceReadiness(params: {
 }): ServiceReadiness {
   const { definition, service } = params;
   const record = params.record && params.record.definitionKey === definition.key ? params.record : null;
-  const choices = record?.choices ?? {};
+  const choices: Record<string, string> = Object.fromEntries(Object.entries(record?.choices ?? {}).map(([key, v]) => [key, v.value]));
   const choiceLabel = (key: string) => definition.choices.find((c) => c.key === key)?.label ?? key;
   const decisions = new Map<string, PendingDecision>();
   const items: EvaluatedPreparationItem[] = [];

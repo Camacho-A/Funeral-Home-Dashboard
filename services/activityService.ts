@@ -1543,6 +1543,31 @@ export function recordFaxConfigurationEvent(
   );
 }
 
+/** Gus Phase 5C (2026-11): one change to a service's preparation, with the
+    entry before and after it (the completion history). */
+export function recordServicePreparationChange(
+  ctx: ActivityContext,
+  caseId: string,
+  details: { description: string; target: string; previous: Record<string, unknown> | null; next: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.SERVICE_PREPARATION_UPDATED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: details.previous ? JSON.stringify({ [details.target]: details.previous }) : null,
+      newValue: JSON.stringify({ [details.target]: details.next }),
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

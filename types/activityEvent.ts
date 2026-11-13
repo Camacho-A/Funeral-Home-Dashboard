@@ -603,6 +603,11 @@ export const ACTIVITY_EVENT_TYPES = {
       could not be filled in safely (no matching option, or a different
       person) — kept for staff to review, never guessed. */
   EXTERNAL_FORM_NOK_RELATIONSHIP_REVIEW: 'external_form.nok_relationship_review',
+  /** Gus Phase 5C (2026-11): staff changed a service's preparation — an
+      item's status, a family choice or a detail. previousValue/newValue
+      hold that one entry before and after: the completion history. Never
+      a workflow or legal step. */
+  SERVICE_PREPARATION_UPDATED: 'service_preparation.updated',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

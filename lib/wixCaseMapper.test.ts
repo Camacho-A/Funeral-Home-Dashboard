@@ -1383,3 +1383,33 @@ describe('shipping recipient and address (2026-11)', () => {
     expect(next.shippingAddressState).toBe('FL');
   });
 });
+
+describe('servicePreparation (Gus Phase 5C)', () => {
+  const stored = {
+    definitionKey: 'prep.viewing',
+    definitionVersion: 1,
+    serviceAppointmentId: 'appt-fictional',
+    choices: { casket: { value: 'rental', at: '2026-12-01T12:00:00.000Z', by: 'identity-fictional', byName: 'Fictional Director' } },
+    details: {},
+    items: { 'prep.crematory.notified': { status: 'completed', forServiceStartAt: '2026-12-10T15:00:00.000Z', note: null, documentId: null, at: '2026-12-01T12:00:00.000Z', by: 'identity-fictional', byName: 'Fictional Director' } },
+    release: null,
+  };
+
+  it('a case without the field (every existing case, every Manors case) has no preparation', () => {
+    expect(mapWixCaseItem(validItem as never)?.servicePreparation).toBeUndefined();
+    expect(mapWixCaseItem({ ...validItem, servicePreparation: 'garbage' } as never)?.servicePreparation).toBeUndefined();
+  });
+
+  it('a stored record is read back as saved', () => {
+    expect(mapWixCaseItem({ ...validItem, servicePreparation: stored } as never)?.servicePreparation).toEqual(stored);
+  });
+
+  it('the generic case PATCH can never write it', () => {
+    const { patch } = validateAndPickCaseUpdate({ servicePreparation: stored, decedentName: 'Fictional Name' });
+    expect('servicePreparation' in patch).toBe(false);
+  });
+
+  it('the server writes it as one field, without touching any other', () => {
+    expect(buildCaseFieldPatch(validItem as never, { servicePreparation: stored } as never)).toEqual({ servicePreparation: stored });
+  });
+});

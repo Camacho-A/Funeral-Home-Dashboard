@@ -141,6 +141,8 @@ export type PreparationItemRecord = {
       for (ISO-8601). */
   forServiceStartAt?: string | null;
   note?: string | null;
+  /** A supporting document already on the case (caseDocuments id). */
+  documentId?: string | null;
   at: string;
   by: string | null;
   byName?: string | null;
@@ -153,17 +155,21 @@ export type ReleaseForCremationRecord = {
   roleKey: string;
 };
 
+/** Who last set a choice or detail, and when. */
+export type PreparationValueRecord = { value: string; at: string; by: string | null; byName?: string | null };
+
 /**
- * PROPOSED storage — the `servicePreparation` case field
- * (docs/SERVICE_PREPARATION.md). Not in Wix yet: nothing writes this
- * until the field is approved.
+ * The `servicePreparation` case field (docs/SERVICE_PREPARATION.md). The
+ * LATEST state only — every change, with its previous value, is also an
+ * Activity event, which is the history. Written only by
+ * services/servicePreparationService.ts.
  */
 export type ServicePreparationRecord = {
   definitionKey: string;
   definitionVersion: number;
   serviceAppointmentId: string | null;
-  choices: Record<string, string>;
-  details: Record<string, string>;
+  choices: Record<string, PreparationValueRecord>;
+  details: Record<string, PreparationValueRecord>;
   items: Record<string, PreparationItemRecord>;
   release?: ReleaseForCremationRecord | null;
 };

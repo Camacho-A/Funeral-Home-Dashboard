@@ -143,14 +143,14 @@ export const PREPARATION_GROUPS = {
     details: [
       {
         key: 'prayerCards.language',
-        label: 'Language',
+        label: 'Prayer card language',
         kind: 'select',
         options: [
           { value: 'english', label: 'English' },
           { value: 'spanish', label: 'Spanish' },
         ],
       },
-      { key: 'prayerCards.image', label: 'Image', kind: 'text' },
+      { key: 'prayerCards.image', label: 'Prayer card image', kind: 'text' },
     ],
     items: [
       { id: 'prep.prayer_cards.proof_approved', label: 'Proof approved by the family', requirement: 'optional', kind: 'confirmation', dateDependent: false, target: 'prayer_card_printing', beforeFamilyArrives: true, supportingDocument: 'Approved proof' },
@@ -173,7 +173,7 @@ export const PREPARATION_GROUPS = {
     details: [
       {
         key: 'crucifix.type',
-        label: 'Type',
+        label: 'Crucifix type',
         kind: 'select',
         options: [
           { value: 'plain', label: 'Plain cross' },
@@ -188,8 +188,8 @@ export const PREPARATION_GROUPS = {
     label: 'Priest or pastor',
     requestedBy: PREPARATION_CHOICES.clergy.key,
     details: [
-      { key: 'clergy.name', label: 'Name', kind: 'text' },
-      { key: 'clergy.phone', label: 'Phone', kind: 'phone' },
+      { key: 'clergy.name', label: 'Priest or pastor', kind: 'text' },
+      { key: 'clergy.phone', label: 'Priest or pastor phone', kind: 'phone' },
       { key: 'clergy.parish', label: 'Parish or church', kind: 'text' },
     ],
     items: [
@@ -201,9 +201,9 @@ export const PREPARATION_GROUPS = {
     label: 'Church',
     details: [
       { key: 'church.name', label: 'Church', kind: 'text' },
-      { key: 'church.address', label: 'Address', kind: 'text' },
-      { key: 'church.phone', label: 'Phone', kind: 'phone' },
-      { key: 'church.contact', label: 'Contact person', kind: 'text' },
+      { key: 'church.address', label: 'Church address', kind: 'text' },
+      { key: 'church.phone', label: 'Church phone', kind: 'phone' },
+      { key: 'church.contact', label: 'Church contact person', kind: 'text' },
     ],
     items: [
       { id: 'prep.church.confirmed', label: 'Church confirmed the date and time', requirement: 'required', kind: 'confirmation', dateDependent: true, target: 'church_coordination', beforeFamilyArrives: true },

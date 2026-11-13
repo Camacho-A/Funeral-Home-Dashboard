@@ -4,7 +4,7 @@ Preparation for services held **before cremation** — Cremation with Viewing,
 Cremation with Final Goodbye, and (provisionally) Mass. Code:
 `domain/servicePreparation/`, `components/case/ServiceReadinessCard.tsx`.
 
-## What exists now (code only, no Wix change)
+## What exists (code only, no Wix change)
 
 - **Reusable groups** (`preparationGroups.ts`): service date confirmed with the
   family; crematory hold; embalming + written permission; clothing; casket;
@@ -47,52 +47,78 @@ Cremation with Final Goodbye, and (provisionally) Mass. Code:
   `servicePreparation` (Gus); Manors is never offered them and the server
   refuses them.
 - **Service Readiness card** on the case Overview, Gus only, for cases whose
-  service has a preparation. Read-only.
+  service has a preparation. Interactive since Phase 5C: family choices,
+  details, item statuses, notes and linked documents.
 
 The Direct Cremation template, the Viewing and Final Goodbye templates (still
 the cremation foundation unchanged), Send to Crematory, prices, the catalog
 and every existing case are unchanged.
 
-## Proposed Wix change — needs approval (not made)
+## Storage (Phase 5C) — Wix change needs approval (not made)
 
-One new optional field on the live `cases` collection, added with
-`create-field` (additive; existing rows read it as absent):
+**Code (done):** `servicePreparation` on the case (`types/case.ts`), read
+leniently by `lib/wixCaseMapper.ts` (`domain/servicePreparation/recordParsing.ts`),
+written only by `services/servicePreparationService.ts` through
+`GET/POST /api/cases/[caseId]/service-preparation`. Not in the generic case
+PATCH allowlist, so nothing else can write it.
+
+**Verified against live Wix (read-only, 2026-11-13):** collection `cases`,
+revision 32, 64 declared fields, permissions ADMIN for everything. The
+existing server-written JSON records — `crematory`, `checklistCompletions`,
+`slaEvents`, and `revision` itself — are **not declared** fields: Wix stores
+them on the rows anyway. `checklistState` is declared as `OBJECT`.
+`servicePreparation` is absent.
+
+So Wix would accept `servicePreparation` without any schema change. That is
+why saving is switched off in code for live Wix
+(`SERVICE_PREPARATION_WIX_FIELD_ADDED = false` in
+`services/servicePreparationService.ts`): until approval, a Wix-mode save is
+refused before anything is sent to Wix, and reads simply find no
+preparation.
+
+**Recommended change** (additive; existing rows read it as absent):
 
 | Field | Type | Required | Mutable |
 |---|---|---|---|
-| `servicePreparation` | Object (JSON), nullable | Optional | Server-written only, merged key by key like `crematory` — never accepted from the generic case PATCH |
+| `servicePreparation` | Object (`OBJECT`), nullable | Optional | Server-written only — a whole record decided from the row as it is now, under the case revision check |
 
-Shape (`ServicePreparationRecord` in `domain/servicePreparation/types.ts`):
+Declaring it is optional for Wix but recommended: it shows in the CMS with
+its type, like `checklistState`. Steps, once approved:
 
-```json
-{
-  "definitionKey": "prep.viewing",
-  "definitionVersion": 1,
-  "serviceAppointmentId": "<appointments.beaconAppointmentId>",
-  "choices": { "casket": "rental", "prayerCards": "requested" },
-  "details": { "prayerCards.language": "spanish", "clergy.name": "…" },
-  "items": {
-    "prep.crematory.hold_confirmed": {
-      "status": "confirmed",
-      "forServiceStartAt": "2026-12-10T15:00:00.000Z",
-      "note": null,
-      "at": "2026-12-02T12:00:00.000Z",
-      "by": "<identity id>",
-      "byName": "…"
-    }
-  },
-  "release": null
-}
-```
+1. Read `cases` and stop unless revision and field count are what was last
+   seen and `servicePreparation` is still absent.
+2. `POST /wix-data/v2/collections/create-field` with
+   `{ dataCollectionId: 'cases', field: { key: 'servicePreparation', displayName: 'servicePreparation', type: 'OBJECT' } }`
+   — once, no retry of the write.
+3. Read again: the field is present, no field lost, permissions unchanged.
+   No row is written.
+4. Set `SERVICE_PREPARATION_WIX_FIELD_ADDED = true` and release that commit.
 
-Latest state only; every change also goes to Activity (who, when, before and
-after), the same split as `checklistCompletions`. Supporting documents stay
-in the existing Documents tab (`caseDocuments`); no new collection.
+(Skipping steps 1–3 and only doing step 4 also works, following the
+`crematory` precedent; the field then stays undeclared.)
 
-Once approved, the remaining work is: the mapper read/write, a
-`POST /api/cases/[caseId]/service-preparation` route using
-`applyPreparationChange` (case.update, same organization, case revision
-check), Activity events, and turning on the card's controls.
+**Manors:** unaffected. Manors never has service preparation (profile flag
+off), its cases never get the field, the generic PATCH cannot write it, and
+an absent field maps to nothing.
+
+**Tenant isolation:** every read and write is scoped to the caller's
+organization (`loadCaseOnServer` / `loadCaseRow` filter on `organizationId`,
+and the conditional write is conditioned on it too). Viewing needs
+`case.read`; changing needs `case.update`.
+
+**Concurrent staff:** each save names what it was based on (the `at` of the
+item, choice or detail being changed). A change to an entry someone else
+changed since is refused with 409 and the latest is shown. Changes to other
+entries merge: the server re-reads and re-decides under the case revision
+check (`updateCaseWithRetry`), so no one's save is lost.
+
+**History:** the record holds the latest state; every change is an Activity
+event (`service_preparation.updated`) with the entry before and after, who
+and when. If writing the Activity event fails, the change is still saved
+and the failure is logged (the same as refunds).
+
+**Size:** the record is small (13 groups, under 30 items, short text limited
+to 300 characters).
 
 ## Release permission — gap
 

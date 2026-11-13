@@ -1,30 +1,52 @@
-import type { PreparationStatus, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
+import type { PreparationItemRecord, PreparationStatus, PreparationValueRecord, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
 /**
- * The rules a preparation change must pass (Gus Phase 5B, 2026-11) — for
- * the server route that will store preparation once the
- * `servicePreparation` case field is approved (docs/SERVICE_PREPARATION.md).
- * No route uses this yet.
+ * The rules every preparation change passes (Gus Phase 5B/5C, 2026-11),
+ * used by services/servicePreparationService.ts on the server.
  *
- * - Only this service's own preparation ids and choices are accepted: a
- *   change can never name a workflow or legal step (`cremation.…`).
+ * - Only this service's own preparation ids, choices and details are
+ *   accepted: a change can never name a workflow or legal step
+ *   (`cremation.…`), so it can never authorize cremation, complete a
+ *   permit or medical examiner step, send anything or move the workflow.
  * - An item is keyed by its id, so recording it again replaces its latest
- *   state — it is never added twice. Earlier states go to Activity.
+ *   state — it is never added twice. The earlier state goes to Activity.
  * - A required item cannot be marked Not requested.
  * - A date-dependent confirmation records the service start it is for, so
  *   a reschedule shows it as needing confirmation again.
+ * - Concurrent staff: a change says what it was made against (`basis`). If
+ *   someone else changed THAT item, choice or detail since, it is refused
+ *   (PreparationConflictError) rather than silently overwriting them.
+ *   Changes to anything else merge.
  */
 export type PreparationChange =
-  | { kind: 'item'; itemId: string; status: PreparationStatus; note?: string | null }
+  | { kind: 'item'; itemId: string; status: PreparationStatus; note?: string | null; documentId?: string | null }
   | { kind: 'choice'; choice: string; value: string }
   | { kind: 'detail'; key: string; value: string };
 
-export class PreparationChangeError extends Error {}
+/** What the person saw before making the change: the `at` of the item,
+    choice or detail they changed, or null when it had never been set. */
+export type PreparationChangeBasis = { at: string | null };
 
-const MAX_TEXT = 300;
+export class PreparationChangeError extends Error {}
+export class PreparationConflictError extends Error {}
+
+export const PREPARATION_TEXT_MAX = 300;
 
 export function emptyPreparationRecord(definition: ServicePreparationDefinition, serviceAppointmentId: string | null = null): ServicePreparationRecord {
   return { definitionKey: definition.key, definitionVersion: definition.version, serviceAppointmentId, choices: {}, details: {}, items: {}, release: null };
+}
+
+/** The current entry a change targets (for the conflict check and Activity). */
+export function currentEntryFor(record: ServicePreparationRecord | null, change: PreparationChange): PreparationItemRecord | PreparationValueRecord | null {
+  if (!record) return null;
+  if (change.kind === 'item') return record.items[change.itemId] ?? null;
+  if (change.kind === 'choice') return record.choices[change.choice] ?? null;
+  return record.details[change.key] ?? null;
+}
+
+function clean(text: string | null | undefined): string | null {
+  const trimmed = text?.trim();
+  return trimmed ? trimmed.slice(0, PREPARATION_TEXT_MAX) : null;
 }
 
 export function applyPreparationChange(params: {
@@ -32,6 +54,8 @@ export function applyPreparationChange(params: {
   record: ServicePreparationRecord | null;
   service: ServiceEvent | null;
   change: PreparationChange;
+  /** Omitted only by callers with no one to conflict with (tests, a first write). */
+  basis?: PreparationChangeBasis;
   actor: { id: string; name: string | null };
   now: string;
 }): ServicePreparationRecord {
@@ -39,8 +63,15 @@ export function applyPreparationChange(params: {
   if (params.record && params.record.definitionKey !== definition.key) {
     throw new PreparationChangeError('This preparation belongs to a different service.');
   }
-  const record: ServicePreparationRecord = structuredClone(params.record ?? emptyPreparationRecord(definition, params.service?.appointmentId ?? null));
   if (params.record?.release) throw new PreparationChangeError('The remains were already released for cremation; preparation can no longer change.');
+  if (params.basis) {
+    const current = currentEntryFor(params.record, change);
+    if ((current?.at ?? null) !== params.basis.at) {
+      throw new PreparationConflictError('Someone else changed this while you were working on it. The latest is shown — please check it and try again.');
+    }
+  }
+  const record: ServicePreparationRecord = structuredClone(params.record ?? emptyPreparationRecord(definition, params.service?.appointmentId ?? null));
+  const stamp = { at: params.now, by: params.actor.id, byName: params.actor.name };
 
   if (change.kind === 'item') {
     const item = definition.groups.flatMap((g) => g.items).find((i) => i.id === change.itemId);
@@ -52,29 +83,44 @@ export function applyPreparationChange(params: {
     if (item.dateDependent && recordsADate && !params.service) {
       throw new PreparationChangeError(`Schedule the ${definition.serviceName.toLowerCase()} first: "${item.label}" is for a date and time.`);
     }
-    const note = change.note?.trim() ? change.note.trim().slice(0, MAX_TEXT) : null;
+    const previous = record.items[item.id];
     record.items[item.id] = {
       status: change.status,
       forServiceStartAt: item.dateDependent && recordsADate ? (params.service as ServiceEvent).startAt : null,
-      note,
-      at: params.now,
-      by: params.actor.id,
-      byName: params.actor.name,
+      // A status change keeps the note and document unless they are changed too.
+      note: change.note === undefined ? (previous?.note ?? null) : clean(change.note),
+      documentId: change.documentId === undefined ? (previous?.documentId ?? null) : change.documentId,
+      ...stamp,
     };
   } else if (change.kind === 'choice') {
     const choice = definition.choices.find((c) => c.key === change.choice);
     if (!choice || !choice.options.some((o) => o.value === change.value)) {
       throw new PreparationChangeError(`"${change.value}" is not an answer to "${choice?.label ?? change.choice}".`);
     }
-    record.choices[choice.key] = change.value;
+    record.choices[choice.key] = { value: change.value, ...stamp };
   } else {
     const known = definition.groups.flatMap((g) => g.details ?? []).find((d) => d.key === change.key);
     if (!known) throw new PreparationChangeError(`"${change.key}" is not a detail of the ${definition.serviceName} preparation.`);
     if (known.kind === 'select' && !known.options?.some((o) => o.value === change.value)) {
       throw new PreparationChangeError(`"${change.value}" is not an option for ${known.label}.`);
     }
-    record.details[known.key] = change.value.trim().slice(0, MAX_TEXT);
+    record.details[known.key] = { value: clean(change.value) ?? '', ...stamp };
   }
   if (params.service) record.serviceAppointmentId = params.service.appointmentId;
   return record;
+}
+
+/** Plain-language summary of a change, for Activity. */
+export function describePreparationChange(definition: ServicePreparationDefinition, change: PreparationChange): string {
+  if (change.kind === 'item') {
+    const item = definition.groups.flatMap((g) => g.items).find((i) => i.id === change.itemId);
+    return `${definition.serviceName} preparation: "${item?.label ?? change.itemId}" set to ${change.status.replace(/_/g, ' ')}`;
+  }
+  if (change.kind === 'choice') {
+    const choice = definition.choices.find((c) => c.key === change.choice);
+    const answer = choice?.options.find((o) => o.value === change.value)?.label ?? change.value;
+    return `${definition.serviceName} preparation: ${choice?.label ?? change.choice} — ${answer}`;
+  }
+  const detail = definition.groups.flatMap((g) => g.details ?? []).find((d) => d.key === change.key);
+  return `${definition.serviceName} preparation: ${detail?.label ?? change.key} updated`;
 }
