@@ -1,0 +1,178 @@
+/* Service Readiness (Gus Phase 5B). A card of its own under Next step, so
+   preparation never reads as part of the cremation checklist. */
+
+.card {
+  margin-top: 16px;
+  padding: var(--space-9) var(--space-10);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.eyebrow,
+.sectionLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.sectionLabel {
+  margin: 14px 0 4px;
+}
+
+.title {
+  margin: 2px 0 0;
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-bold);
+}
+
+.service {
+  margin: 8px 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.separate,
+.note,
+.itemHint {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.separate {
+  margin: 0;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.kpis > div {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+}
+
+.kpis dt {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.kpis dd {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.kpiAlert dd,
+.dueAlert {
+  color: var(--color-danger, oklch(0.55 0.19 27));
+}
+
+.decisions,
+.requirements {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.requirements {
+  padding-left: 0;
+  list-style: none;
+}
+
+.met {
+  color: var(--color-text-muted);
+}
+
+.unmet {
+  font-weight: 500;
+}
+
+.items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 12.5px;
+}
+
+.item:last-child {
+  border-bottom: 0;
+}
+
+.itemLabel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.itemMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.due {
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+}
+
+.dueAlert {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.notice {
+  margin: 14px 0 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  background: var(--sx-subtle, oklch(0.97 0.003 255));
+  font-size: 12px;
+}
+
+.release {
+  margin-top: 6px;
+}
+
+.releaseButton {
+  margin-top: 10px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.releaseButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}

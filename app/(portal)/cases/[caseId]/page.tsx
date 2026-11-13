@@ -58,6 +58,7 @@ import { CaseTasksCard, type CaseTaskItem } from '@/components/case/CaseTasksCar
 import { CaseActivityTab } from '@/components/case/CaseActivityTab';
 import { CaseDocumentsTab } from '@/components/case/CaseDocumentsTab';
 import { CaseScheduleTab } from '@/components/case/CaseScheduleTab';
+import { ServiceReadinessCard } from '@/components/case/ServiceReadinessCard';
 import { CaseFamilyPortalTab } from '@/components/case/CaseFamilyPortalTab';
 import styles from './page.module.css';
 import { CaseSsnField } from '@/components/case/CaseSsnField';
@@ -623,6 +624,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
               <MarkCaseCompletedSection caseId={caseId} case_={case_} />
             </section>
             )}
+
+            {/* Gus Phase 5B: renders nothing unless the organization has
+                service preparation and this case's service has one. */}
+            <ServiceReadinessCard case_={case_} />
 
             <div className={styles.overviewPair}>
               <CaseLogCard

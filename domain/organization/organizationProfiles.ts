@@ -333,6 +333,13 @@ export type OrganizationFeaturePreferences = {
       Platform default: false — every version is usable as soon as it is
       saved, exactly as before. */
   workflowApprovalRequired: boolean;
+  /** Service preparation (Gus Phase 5B, 2026-11): the Service Readiness
+      section for services held before cremation (Viewing, Final Goodbye,
+      Mass) and the appointment types those services are scheduled with
+      (domain/servicePreparation/). Read-only until the case field that
+      stores preparation is approved (docs/SERVICE_PREPARATION.md).
+      Platform default: false. Manors: off. */
+  servicePreparation: boolean;
   /** Manatee County DC application fax bundles (2026-11): where saved
       applications are faxed, through the connected mailbox and NuSo's
       email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
@@ -441,6 +448,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   stagesFromWorkflowTemplates: true,
   enforceHiddenModulesServerSide: false,
   workflowApprovalRequired: false,
+  servicePreparation: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -660,6 +668,7 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // A workflow change is saved as a draft and used by cases only once an
     // administrator approves it.
     workflowApprovalRequired: true,
+    servicePreparation: true,
     enforceHiddenModulesServerSide: true,
     // Same certifier requirement as Manors, fax included (decided 2026-11).
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],

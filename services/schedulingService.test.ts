@@ -97,6 +97,15 @@ describe('createAppointment', () => {
     expect(appointment.status).toBe('draft');
   });
 
+  it('offers the Final Goodbye and Mass types only to organizations with service preparation (Gus Phase 5B)', async () => {
+    const input = (appointmentType: string) => ({ appointmentType, title: 'Fictional', startAt: '2026-09-01T14:00:00.000Z', endAt: '2026-09-01T15:00:00.000Z', timezone: 'America/New_York', idFactory });
+    for (const type of ['final.goodbye', 'funeral.mass']) {
+      await expect(createAppointment(input(type), ctx(), 'mock')).rejects.toThrow(SchedulingServiceError);
+      const gus = await createAppointment(input(type), ctx({ organizationId: 'gus-camacho-jr' }), 'mock');
+      expect(gus.appointmentType).toBe(type);
+    }
+  });
+
   it('creates a scheduled appointment and assigns every requested resource', async () => {
     const chapel = await makeChapel();
     const appointment = await createAppointment(

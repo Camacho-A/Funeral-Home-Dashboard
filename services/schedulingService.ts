@@ -10,7 +10,8 @@ import {
 import type { Appointment, NewAppointmentInput } from '../types/appointment';
 import { isTerminalAppointmentStatus } from '../types/appointment';
 import type { AppointmentResourceAssignment } from '../types/appointmentResourceAssignment';
-import { isValidAppointmentTypeKey } from '../domain/scheduling/appointmentTypeRegistry';
+import { isAppointmentTypeOffered } from '../domain/scheduling/appointmentTypeRegistry';
+import { getRegisteredOrganizationProfile } from '../domain/organization/organizationProfiles';
 import { checkConflicts, type ConflictDetail } from './scheduling/conflictEngine';
 import { createRecurrenceDefinition, computeOccurrences } from './scheduling/recurrenceEngine';
 import { listAppointments, getAppointment, listAppointmentsForCase } from './scheduling/appointmentReads';
@@ -287,7 +288,7 @@ export { listAppointments, getAppointment, listAppointmentsForCase };
 // ---------------------------------------------------------------------------
 
 export async function createAppointment(params: NewAppointmentInput & { idFactory: () => string; now?: string }, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<Appointment> {
-  if (!isValidAppointmentTypeKey(params.appointmentType)) {
+  if (!isAppointmentTypeOffered(params.appointmentType, getRegisteredOrganizationProfile(ctx.organizationId).features)) {
     throw new SchedulingServiceError(`Unrecognized appointment type: "${params.appointmentType}".`);
   }
 

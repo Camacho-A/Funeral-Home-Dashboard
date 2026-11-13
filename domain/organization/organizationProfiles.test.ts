@@ -52,6 +52,7 @@ describe('organization profile registry', () => {
       hiddenModules: ['accounting-chart-of-accounts', 'accounting-journal-entries', 'accounting-banking', 'reports-staff', 'reports-documents'],
       workflowByServiceType: true,
       workflowApprovalRequired: true,
+      servicePreparation: true,
       enforceHiddenModulesServerSide: true,
       certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
       cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },

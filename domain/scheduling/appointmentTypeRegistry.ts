@@ -26,6 +26,10 @@ export const APPOINTMENT_TYPES = {
   VISITATION: { key: 'visitation', category: 'family_facing' as AppointmentTypeCategory, displayName: 'Visitation' },
   FUNERAL_SERVICE: { key: 'funeral.service', category: 'family_facing' as AppointmentTypeCategory, displayName: 'Funeral Service' },
   GRAVESIDE_SERVICE: { key: 'graveside.service', category: 'family_facing' as AppointmentTypeCategory, displayName: 'Graveside Service' },
+  // Gus Phase 5B (2026-11): offered only to organizations with service
+  // preparation (see SERVICE_PREPARATION_APPOINTMENT_TYPE_KEYS below).
+  FINAL_GOODBYE: { key: 'final.goodbye', category: 'family_facing' as AppointmentTypeCategory, displayName: 'Final Goodbye' },
+  FUNERAL_MASS: { key: 'funeral.mass', category: 'family_facing' as AppointmentTypeCategory, displayName: 'Mass' },
 
   WITNESS_CREMATION: { key: 'witness.cremation', category: 'operational' as AppointmentTypeCategory, displayName: 'Witness Cremation' },
   CREMATORY_APPOINTMENT: { key: 'crematory.appointment', category: 'operational' as AppointmentTypeCategory, displayName: 'Crematory Appointment' },
@@ -56,6 +60,15 @@ export function isValidAppointmentTypeKey(key: string): key is AppointmentTypeKe
 
 export function getAppointmentTypeDefinition(key: string): AppointmentTypeDefinition | null {
   return APPOINTMENT_TYPES_BY_KEY[key] ?? null;
+}
+
+/** Gus Phase 5B (2026-11). Appointment types that exist only for service
+    preparation (domain/servicePreparation/): an organization without it
+    (Manors) is never offered them and cannot create one. */
+export const SERVICE_PREPARATION_APPOINTMENT_TYPE_KEYS: ReadonlySet<string> = new Set([APPOINTMENT_TYPES.FINAL_GOODBYE.key, APPOINTMENT_TYPES.FUNERAL_MASS.key]);
+
+export function isAppointmentTypeOffered(key: string, features: { servicePreparation: boolean }): boolean {
+  return isValidAppointmentTypeKey(key) && (features.servicePreparation || !SERVICE_PREPARATION_APPOINTMENT_TYPE_KEYS.has(key));
 }
 
 /** Display labels for the three broad `AppointmentTypeCategory` values —

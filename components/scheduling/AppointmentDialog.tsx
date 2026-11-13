@@ -7,7 +7,8 @@ import { TextArea } from '@/components/ui/TextArea';
 import { SelectField } from '@/components/ui/SelectField';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Badge } from '@/components/ui/Badge';
-import { APPOINTMENT_TYPES, APPOINTMENT_TYPE_CATEGORY_LABEL, type AppointmentTypeCategory } from '@/domain/scheduling/appointmentTypeRegistry';
+import { APPOINTMENT_TYPES, APPOINTMENT_TYPE_CATEGORY_LABEL, isAppointmentTypeOffered, type AppointmentTypeCategory } from '@/domain/scheduling/appointmentTypeRegistry';
+import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { resourceStatusVariant, RESOURCE_STATUS_LABEL } from '@/domain/scheduling/appointmentDisplay';
 import { useResources } from '@/hooks/useResources';
 import { useStaff } from '@/hooks/useStaff';
@@ -151,7 +152,7 @@ export function AppointmentDialog({
                 {CATEGORIES.map((category) => (
                   <optgroup key={category} label={APPOINTMENT_TYPE_CATEGORY_LABEL[category]}>
                     {Object.values(APPOINTMENT_TYPES)
-                      .filter((def) => def.category === category)
+                      .filter((def) => def.category === category && isAppointmentTypeOffered(def.key, getRegisteredOrganizationProfile(organizationId).features))
                       .map((def) => (
                         <option key={def.key} value={def.key}>
                           {def.displayName}
