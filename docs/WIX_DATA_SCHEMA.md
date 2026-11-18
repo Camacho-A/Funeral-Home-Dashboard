@@ -1800,11 +1800,11 @@ Organization-level generated documents (the General Price List, which has no cas
 
 ## Collection 99 — `funeralDirectorCredentials` (Gus Phase 5H.1, created 2026-11-18)
 
-**Purpose:** one funeral director credential record per organization + staff profile — license, verification, separate Funeral Director authorization, append-only audit history. **Ownership:** organization-owned. Written only by `services/funeralDirectorCredentialStore.ts`; **live reads and writes are OFF** (`services/funeralDirectorCredentialSwitch.ts`) until approved. No records exist.
+**Purpose:** one funeral director credential record per organization + staff profile — license, verification, separate Funeral Director authorization, append-only audit history. **Ownership:** organization-owned. Written only by `services/funeralDirectorCredentialStore.ts`; **live reads and writes are OFF** unless a deployment sets `SOLIS_FD_CREDENTIALS_STORAGE=wix` (`services/funeralDirectorCredentialSwitch.ts`; none does). No records exist.
 
 | Field | Type | Required | Mutable |
 |---|---|---|---|
-| `_id` | Text | Required | Immutable — deterministic `fdc:{organizationId}:{staffProfileId}` (each part letters, digits and hyphens only; ≤ 128 characters). Wix refuses a duplicate `_id` (409), so there is at most one record per pair |
+| `_id` | Text | Required | Immutable — deterministic `fdc.{organizationId}.{staffProfileId}` (Phase 5I: "." rather than ":" — "." already appears in live item ids on this site, ":" has no live precedent; each part letters, digits and hyphens only, so ids can't collide; ≤ 128 characters). Wix refuses a duplicate `_id` (409), so there is at most one record per pair |
 | `organizationId` | Text | Required | Immutable |
 | `staffProfileId` | Text | Required | Immutable — → `staffProfiles.beaconStaffProfileId`; established server-side (active profile in the caller's organization, active membership) |
 | `identityId` | Text | Required | Immutable — the licensee, from the staff profile (never from the browser); used to refuse self-service |

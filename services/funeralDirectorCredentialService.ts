@@ -16,7 +16,7 @@ import type { StaffProfile } from '../types/staffProfile';
 import { recordFuneralDirectorCredentialChange, type ActivityContext } from './activityService';
 import { assertStaffProfileIsActiveAndInOrganization, list as listStaffProfiles } from './staffProfileService';
 import { CredentialStorageUnreadableError, readCredentialRecord, writeCredentialRecord } from './funeralDirectorCredentialStore';
-import { FUNERAL_DIRECTOR_CREDENTIALS_LIVE } from './funeralDirectorCredentialSwitch';
+import { funeralDirectorCredentialsLive } from './funeralDirectorCredentialSwitch';
 
 /**
  * Funeral director credentials (Gus Phase 5G, 2026-11) — the one reader
@@ -24,9 +24,10 @@ import { FUNERAL_DIRECTOR_CREDENTIALS_LIVE } from './funeralDirectorCredentialSw
  * with `funeralDirectorCredentials` (Gus).
  *
  * Storage: services/funeralDirectorCredentialStore.ts. The live Wix
- * collection exists (2026-11-18) but live reads and writes are OFF
- * (FUNERAL_DIRECTOR_CREDENTIALS_LIVE): in Wix mode nobody is verified and
- * changes are refused before anything reaches Wix.
+ * collection exists (2026-11-18); live reads and writes happen only in a
+ * deployment that sets SOLIS_FD_CREDENTIALS_STORAGE=wix
+ * (services/funeralDirectorCredentialSwitch.ts). Elsewhere in Wix mode
+ * nobody is verified and changes are refused before anything reaches Wix.
  *
  * The person whose credentials change is established on the server: an
  * ACTIVE staff profile in the caller's organization with an active
@@ -104,7 +105,7 @@ export async function changeCredentials(
   const { organizationId } = ctx;
   if (!enabled(organizationId)) throw new CredentialServiceError('Funeral director credentials are not used by this funeral home.', 404);
   if (!ctx.actorIdentityId) throw new CredentialServiceError('Sign in to change credentials.', 403);
-  if (mode !== 'mock' && !FUNERAL_DIRECTOR_CREDENTIALS_LIVE) throw new CredentialServiceError(CREDENTIAL_STORAGE_UNAVAILABLE, 503);
+  if (mode !== 'mock' && !funeralDirectorCredentialsLive()) throw new CredentialServiceError(CREDENTIAL_STORAGE_UNAVAILABLE, 503);
   let staff;
   try {
     staff = await assertStaffProfileIsActiveAndInOrganization(organizationId, input.staffProfileId, mode);

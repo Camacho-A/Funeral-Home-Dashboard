@@ -43,18 +43,18 @@ afterEach(() => {
   organizationRoleAuditEntryFixtures.length = lengths.audit;
 });
 
-async function seedIdentityWithRole(role: string) {
+async function seedIdentityWithRole(role: string, organizationId: string = DEFAULT_ORGANIZATION_ID) {
   const { findOrCreateIdentity, updateIdentity } = await import('@/services/identityService');
   const { createMembership } = await import('@/services/membershipService');
   const { identity } = await findOrCreateIdentity({ email: `member-${idFactory()}@example.com`, displayName: 'Member', idFactory }, 'mock');
   await updateIdentity(identity.id, { status: 'active' }, 'mock');
-  await createMembership({ identityId: identity.id, organizationId: DEFAULT_ORGANIZATION_ID, role, status: 'active', invitedBy: null, idFactory }, 'mock');
+  await createMembership({ identityId: identity.id, organizationId, role, status: 'active', invitedBy: null, idFactory }, 'mock');
   return identity;
 }
 
-async function seedCallerSession(role: string) {
+async function seedCallerSession(role: string, organizationId: string = DEFAULT_ORGANIZATION_ID) {
   const { createIdentitySession } = await import('@/services/sessionService');
-  const identity = await seedIdentityWithRole(role);
+  const identity = await seedIdentityWithRole(role, organizationId);
   const session = await createIdentitySession({ identityId: identity.id, deviceId: 'd1', passwordVersionAtIssue: 0, idFactory }, 'mock');
   mockSession = { user: { id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, sessionId: session.id };
   return identity;
@@ -118,5 +118,31 @@ describe('DELETE /api/rbac/assignments', () => {
     const body = await response.json();
     expect(body.membership.role).toBe('readOnly');
     expect(body.auditEntry.action).toBe('role_removed');
+  });
+});
+
+describe('POST /api/rbac/assignments — release roles are never self-assigned (Gus Phase 5I)', () => {
+  const GUS = 'gus-camacho-jr';
+  const SELF_MESSAGE = 'You cannot give yourself the Funeral Director role. Another administrator must assign it.';
+
+  it('a Gus administrator cannot give themselves the Funeral Director role', async () => {
+    const caller = await seedCallerSession('administrator', GUS);
+    const response = await postRequest({ organizationId: GUS, targetIdentityId: caller.id, roleKey: 'funeralDirector' });
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe(SELF_MESSAGE);
+    expect(membershipFixtures.find((m) => m.identityId === caller.id && m.organizationId === GUS)!.role).toBe('administrator');
+  });
+
+  it('a Gus administrator can still assign the Funeral Director role to someone else', async () => {
+    await seedCallerSession('administrator', GUS);
+    const target = await seedIdentityWithRole('readOnly', GUS);
+    const response = await postRequest({ organizationId: GUS, targetIdentityId: target.id, roleKey: 'funeralDirector' });
+    expect(response.status).toBe(200);
+  });
+
+  it('Manors is unaffected: it has no release roles', async () => {
+    const caller = await seedCallerSession('administrator');
+    const response = await postRequest({ organizationId: DEFAULT_ORGANIZATION_ID, targetIdentityId: caller.id, roleKey: 'funeralDirector' });
+    expect(((await response.json()) as { error?: string }).error).not.toBe(SELF_MESSAGE);
   });
 });

@@ -9,7 +9,8 @@ import { funeralDirectorCredentialFixtures } from './__mocks__/funeralDirectorCr
  *
  * Live: the `funeralDirectorCredentials` Wix collection (created 2026-11-18,
  * ADMIN-only, ordinary index on organizationId + staffProfileId). Live reads
- * and writes stay OFF (FUNERAL_DIRECTOR_CREDENTIALS_LIVE) until approved.
+ * and writes stay OFF unless the deployment turns them on
+ * (services/funeralDirectorCredentialSwitch.ts).
  *
  * - One record per organization + staff profile, enforced by a
  *   DETERMINISTIC item id (credentialRecordId). Wix refuses a second insert
@@ -26,21 +27,25 @@ import { funeralDirectorCredentialFixtures } from './__mocks__/funeralDirectorCr
  * - A read is always re-checked against the organization and staff profile
  *   asked for, never trusted from the backend filter alone.
  */
-export { FUNERAL_DIRECTOR_CREDENTIALS_LIVE } from './funeralDirectorCredentialSwitch';
-import { FUNERAL_DIRECTOR_CREDENTIALS_LIVE } from './funeralDirectorCredentialSwitch';
+import { funeralDirectorCredentialsLive } from './funeralDirectorCredentialSwitch';
 export const FUNERAL_DIRECTOR_CREDENTIALS_COLLECTION = 'funeralDirectorCredentials';
 
 const ID_PART = /^[A-Za-z0-9-]+$/;
 const WIX_ITEM_ID_MAX = 128;
 
-/** `fdc:{organizationId}:{staffProfileId}`. Each part may hold only letters,
-    digits and hyphens, so the ":" separator can never appear inside a part
-    and two different pairs can never produce the same id. */
+/** `fdc.{organizationId}.{staffProfileId}` (Phase 5I). "." is used — not
+    ":" — because "." already appears in live item ids on this Wix site
+    (e.g. `rolePermissions`, `notifications`) while ":" has no live
+    precedent and Wix documents only the 128-character limit. Each part may
+    hold only letters, digits and hyphens, so "." can never appear inside a
+    part and two different pairs can never produce the same id. The parts
+    always come from server-side records (the caller's authorized
+    organization and a staff profile verified to belong to it). */
 export function credentialRecordId(organizationId: string, staffProfileId: string): string {
   if (!ID_PART.test(organizationId) || !ID_PART.test(staffProfileId)) {
     throw new Error('Organization and staff profile ids may contain only letters, digits and hyphens.');
   }
-  const id = `fdc:${organizationId}:${staffProfileId}`;
+  const id = `fdc.${organizationId}.${staffProfileId}`;
   if (id.length > WIX_ITEM_ID_MAX) throw new Error(`Credential record id is longer than ${WIX_ITEM_ID_MAX} characters.`);
   return id;
 }
@@ -86,7 +91,7 @@ export async function readCredentialRecord(organizationId: string, staffProfileI
     const found = funeralDirectorCredentialFixtures.find((r) => r.organizationId === organizationId && r.staffProfileId === staffProfileId);
     return found ? structuredClone(found) : null;
   }
-  if (!FUNERAL_DIRECTOR_CREDENTIALS_LIVE) return null;
+  if (!funeralDirectorCredentialsLive()) return null;
   const response = await queryWixDataItems<WixCredentialItem>(FUNERAL_DIRECTOR_CREDENTIALS_COLLECTION, { filter: { organizationId, staffProfileId }, paging: { limit: 2 } });
   const id = credentialRecordId(organizationId, staffProfileId);
   const item = response.dataItems.find((i) => i.id === id);
@@ -109,7 +114,7 @@ export async function writeCredentialRecord(current: FuneralDirectorCredentialRe
     else funeralDirectorCredentialFixtures[index] = structuredClone(next);
     return { result: 'applied', record: structuredClone(next) };
   }
-  if (!FUNERAL_DIRECTOR_CREDENTIALS_LIVE) return { result: 'not_saved' };
+  if (!funeralDirectorCredentialsLive()) return { result: 'not_saved' };
 
   const id = credentialRecordId(next.organizationId, next.staffProfileId);
   const eventId = next.history[next.history.length - 1]?.eventId;

@@ -231,22 +231,28 @@ active.
 The `funeralDirectorCredentials` collection was created on 2026-11-18 (approved
 design; see `docs/WIX_DATA_SCHEMA.md`, Collection 99): ADMIN-only, a regular
 `(organizationId, staffProfileId)` index, deterministic `_id`
-`fdc:{organizationId}:{staffProfileId}` for uniqueness (Wix unique indexes are
+`fdc.{organizationId}.{staffProfileId}` for uniqueness (Wix unique indexes are
 single-field only, so the originally proposed compound unique index was not
 possible), conditional patches on `revision` for concurrency, credentials and
 history saved in one patch. The adapter is `services/funeralDirectorCredentialStore.ts`;
-live reads and writes are OFF (`services/funeralDirectorCredentialSwitch.ts`).
-No records exist.
+live reads and writes happen only in a deployment that sets
+`SOLIS_FD_CREDENTIALS_STORAGE=wix` (`services/funeralDirectorCredentialSwitch.ts`);
+no existing deployment does. No records exist.
 
-Open before enabling live writes: no live item id on this site contains ":"
-yet (live ids use letters, digits, "-", "." and "_"). The first live insert
-should be verified, or the separator changed to ".", which has live precedent.
+Record id (Phase 5I): "." is the separator. Wix documents only the
+128-character limit; ":" has no live precedent on this site, while "." is in
+live ids today (`rolePermissions`, `notifications`, …).
+
+Self-privilege (Phase 5I): nobody can assign themselves a release role
+(`app/api/rbac/assignments/route.ts`, Gus only — organizations without
+release roles are unaffected), enter/verify their own license, or grant
+themselves Funeral Director authorization. Deployment variables:
+`docs/GUS_DEPLOYMENT_ENVIRONMENT.md`.
 
 ### Still needed before release can be activated
 
-- Approval to turn on live credential reads/writes
-  (`FUNERAL_DIRECTOR_CREDENTIALS_LIVE`), after confirming the ":" id
-  separator (see above).
+- A Gus Wix-connected deployment (none exists) and approval to set
+  `SOLIS_FD_CREDENTIALS_STORAGE=wix` on it.
 - Approval to write ME approvals to live case rows
   (`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING`).
 - Writing the release record (`servicePreparation.release`, with its

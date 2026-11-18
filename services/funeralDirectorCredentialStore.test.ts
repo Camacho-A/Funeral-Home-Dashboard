@@ -6,7 +6,7 @@ import type { FuneralDirectorCredentialRecord } from '../domain/staff/funeralDir
  * switch ON in this file only and every Wix call stubbed — nothing reaches
  * Wix. Fictional organization, staff and license data.
  */
-vi.mock('./funeralDirectorCredentialSwitch', () => ({ FUNERAL_DIRECTOR_CREDENTIALS_LIVE: true }));
+vi.mock('./funeralDirectorCredentialSwitch', () => ({ funeralDirectorCredentialsLive: () => true }));
 const wix = vi.hoisted(() => ({
   insert: vi.fn(),
   patch: vi.fn(),
@@ -21,7 +21,7 @@ const { WixDataApiError } = await import('../lib/wixDataApi');
 
 const ORG = 'gus-camacho-jr';
 const STAFF = 'staff-gus-director';
-const ID = 'fdc:gus-camacho-jr:staff-gus-director';
+const ID = 'fdc.gus-camacho-jr.staff-gus-director';
 const base = (revision: number, eventIds: string[] = []): FuneralDirectorCredentialRecord => ({
   organizationId: ORG,
   staffProfileId: STAFF,
@@ -41,14 +41,18 @@ beforeEach(() => {
 });
 
 describe('record id', () => {
-  it('is fdc:{organizationId}:{staffProfileId}, within Wix’s 128 characters', () => {
+  it('is fdc.{organizationId}.{staffProfileId}, within Wix’s 128 characters', () => {
     expect(credentialRecordId(ORG, STAFF)).toBe(ID);
     expect(credentialRecordId(ORG, '0f71609a-b21f-4691-9408-892390832bee').length).toBeLessThanOrEqual(128);
   });
 
   it('refuses parts that could collide or break the id (only letters, digits, hyphens)', () => {
+    expect(() => credentialRecordId('a.b', 'c')).toThrow();
+    expect(() => credentialRecordId('a', 'b.c')).toThrow();
     expect(() => credentialRecordId('a:b', 'c')).toThrow();
-    expect(() => credentialRecordId('a', 'b:c')).toThrow();
+    // Two different pairs can never meet on the same id.
+    const pairs = [['gus-camacho-jr', 'staff-1'], ['gus-camacho', 'jr-staff-1'], ['gus', 'camacho-jr-staff-1']] as const;
+    expect(new Set(pairs.map(([o, st]) => credentialRecordId(o, st))).size).toBe(pairs.length);
     expect(() => credentialRecordId('', STAFF)).toThrow();
     expect(() => credentialRecordId(ORG, 'x'.repeat(120))).toThrow(/128/);
   });
@@ -58,7 +62,7 @@ describe('reading', () => {
   it('maps only the record for the organization and staff member asked for', () => {
     expect(mapWixCredentialItem(ID, stored(base(1, ['e1'])).data, { organizationId: ORG, staffProfileId: STAFF })?.revision).toBe(1);
     expect(mapWixCredentialItem(ID, { ...stored(base(1)).data, organizationId: 'managed-cremations' }, { organizationId: ORG, staffProfileId: STAFF })).toBeNull();
-    expect(mapWixCredentialItem('fdc:managed-cremations:staff-gus-director', stored(base(1)).data, { organizationId: ORG, staffProfileId: STAFF })).toBeNull();
+    expect(mapWixCredentialItem('fdc.managed-cremations.staff-gus-director', stored(base(1)).data, { organizationId: ORG, staffProfileId: STAFF })).toBeNull();
   });
 
   it('a stored record that cannot be read is an error, never "no credentials"', async () => {

@@ -8,6 +8,8 @@ import { getMembership } from '@/services/membershipService';
 import { assignRole, removeRole, RoleServiceError } from '@/services/roleService';
 import { canManageRoles } from '@/services/authorizationPolicyService';
 import type { Membership } from '@/types/membership';
+import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
+import { resolveRoleKeyAlias } from '@/domain/rbac/legacyRoleAliases';
 import type { DataAdapterMode } from '@/lib/env';
 
 /**
@@ -69,6 +71,15 @@ export async function POST(request: Request) {
   const { roleKey } = parsed.body;
   if (typeof roleKey !== 'string' || roleKey.trim().length === 0) {
     return NextResponse.json({ error: 'roleKey is required.' }, { status: 400 });
+  }
+
+  // Gus Phase 5I (2026-11): a role that can approve release for cremation
+  // (the organization's Funeral Director role) is never self-assigned — an
+  // administrator cannot grant themselves release privileges. Organizations
+  // with no such roles (Manors) are unaffected.
+  const releaseRoleKeys = getRegisteredOrganizationProfile(targetMembership.organizationId).features.cremationReleaseApproverRoleKeys;
+  if (targetMembership.identityId === identityId && releaseRoleKeys.includes(resolveRoleKeyAlias(roleKey))) {
+    return NextResponse.json({ error: 'You cannot give yourself the Funeral Director role. Another administrator must assign it.' }, { status: 403 });
   }
 
   try {
