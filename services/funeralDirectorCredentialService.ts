@@ -5,6 +5,7 @@ import {
   applyCredentialChange,
   CREDENTIAL_ACTION_LABEL,
   CredentialChangeError,
+  CredentialRecordLimitError,
   SelfServiceCredentialError,
   emptyCredentialRecord,
   type CredentialChange,
@@ -13,18 +14,25 @@ import {
 import type { DataAdapterMode } from '../lib/env';
 import type { StaffProfile } from '../types/staffProfile';
 import { recordFuneralDirectorCredentialChange, type ActivityContext } from './activityService';
-import { funeralDirectorCredentialFixtures } from './__mocks__/funeralDirectorCredentialFixtures';
-import { getById as getStaffProfile, list as listStaffProfiles } from './staffProfileService';
+import { assertStaffProfileIsActiveAndInOrganization, list as listStaffProfiles } from './staffProfileService';
+import { CredentialStorageUnreadableError, readCredentialRecord, writeCredentialRecord } from './funeralDirectorCredentialStore';
+import { FUNERAL_DIRECTOR_CREDENTIALS_LIVE } from './funeralDirectorCredentialSwitch';
 
 /**
  * Funeral director credentials (Gus Phase 5G, 2026-11) — the one reader
  * and writer. Organization-scoped throughout; only for an organization
  * with `funeralDirectorCredentials` (Gus).
  *
- * SANDBOX ONLY. There is no live store yet: the proposed `funeralDirector
- * Credentials` Wix collection (docs/SERVICE_PREPARATION.md) does not exist,
- * so in Wix mode reads find no credentials (nobody is verified) and writes
- * are refused before anything reaches Wix.
+ * Storage: services/funeralDirectorCredentialStore.ts. The live Wix
+ * collection exists (2026-11-18) but live reads and writes are OFF
+ * (FUNERAL_DIRECTOR_CREDENTIALS_LIVE): in Wix mode nobody is verified and
+ * changes are refused before anything reaches Wix.
+ *
+ * The person whose credentials change is established on the server: an
+ * ACTIVE staff profile in the caller's organization with an active
+ * membership (assertStaffProfileIsActiveAndInOrganization). The browser
+ * names the staff profile; it never supplies the organization, the
+ * licensee identity or the record id.
  */
 export class CredentialServiceError extends Error {
   constructor(
@@ -43,9 +51,15 @@ function enabled(organizationId: string): boolean {
 
 /** The credential record for one staff profile, or null. Never another organization's. */
 export async function getCredentialRecord(organizationId: string, staffProfileId: string, mode: DataAdapterMode): Promise<FuneralDirectorCredentialRecord | null> {
-  if (mode !== 'mock' || !enabled(organizationId)) return null;
-  const found = funeralDirectorCredentialFixtures.find((r) => r.organizationId === organizationId && r.staffProfileId === staffProfileId);
-  return found ? structuredClone(found) : null;
+  if (!enabled(organizationId)) return null;
+  try {
+    return await readCredentialRecord(organizationId, staffProfileId, mode);
+  } catch (error) {
+    // Unreadable → treated as no credentials for the release check (fails
+    // closed); changes are refused separately in changeCredentials.
+    if (error instanceof CredentialStorageUnreadableError) return null;
+    throw error;
+  }
 }
 
 /** A staff profile with its credentials attached, for the release check. */
@@ -90,25 +104,39 @@ export async function changeCredentials(
   const { organizationId } = ctx;
   if (!enabled(organizationId)) throw new CredentialServiceError('Funeral director credentials are not used by this funeral home.', 404);
   if (!ctx.actorIdentityId) throw new CredentialServiceError('Sign in to change credentials.', 403);
-  if (mode !== 'mock') throw new CredentialServiceError(CREDENTIAL_STORAGE_UNAVAILABLE, 503);
-  const staff = await getStaffProfile(organizationId, input.staffProfileId, mode);
-  if (!staff) throw new CredentialServiceError('Staff member not found.', 404);
+  if (mode !== 'mock' && !FUNERAL_DIRECTOR_CREDENTIALS_LIVE) throw new CredentialServiceError(CREDENTIAL_STORAGE_UNAVAILABLE, 503);
+  let staff;
+  try {
+    staff = await assertStaffProfileIsActiveAndInOrganization(organizationId, input.staffProfileId, mode);
+  } catch {
+    throw new CredentialServiceError('That person is not an active staff member of this funeral home.', 404);
+  }
 
-  const index = funeralDirectorCredentialFixtures.findIndex((r) => r.organizationId === organizationId && r.staffProfileId === staff.id);
-  const current = index === -1 ? emptyCredentialRecord(staff) : funeralDirectorCredentialFixtures[index];
+  let current: FuneralDirectorCredentialRecord;
+  try {
+    current = (await readCredentialRecord(organizationId, staff.id, mode)) ?? emptyCredentialRecord(staff);
+  } catch (error) {
+    if (error instanceof CredentialStorageUnreadableError) throw new CredentialServiceError(error.message, 409);
+    throw error;
+  }
   if (current.revision !== input.expectedRevision) {
     throw new CredentialServiceError('Someone else changed these credentials while you were working. The latest is shown — please check and try again.', 409);
   }
+  const now = input.now ?? new Date().toISOString();
   const eventId = crypto.randomUUID();
   let next: FuneralDirectorCredentialRecord;
   try {
-    next = applyCredentialChange({ record: current, change: input.change, actor: { id: ctx.actorIdentityId, name: input.actorName }, now: input.now ?? new Date().toISOString(), eventId });
+    next = applyCredentialChange({ record: current, change: input.change, actor: { id: ctx.actorIdentityId, name: input.actorName }, now, eventId });
   } catch (error) {
+    if (error instanceof CredentialRecordLimitError) throw new CredentialServiceError(error.message, 413);
     if (error instanceof CredentialChangeError) throw new CredentialServiceError(error.message, error instanceof SelfServiceCredentialError ? 403 : 400);
     throw error;
   }
-  if (index === -1) funeralDirectorCredentialFixtures.push(next);
-  else funeralDirectorCredentialFixtures[index] = next;
+  const written = await writeCredentialRecord(current, next, mode, now);
+  if (written.result === 'conflict') throw new CredentialServiceError('Someone else changed these credentials while you were working. The latest is shown — please check and try again.', 409);
+  if (written.result === 'not_saved') throw new CredentialServiceError('This change was not saved. Please try again.', 503);
+  if (written.result === 'unclear') throw new CredentialServiceError('SOLIS could not confirm whether this change was saved. Refresh the page and check before trying again.', 503);
+  next = written.record;
 
   const entry = next.history[next.history.length - 1];
   try {

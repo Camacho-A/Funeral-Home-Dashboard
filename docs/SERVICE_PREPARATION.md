@@ -226,35 +226,27 @@ never permits release: release still needs the Funeral Director role or
 authorization, a verified license and every case prerequisite — and is not
 active.
 
-### Proposed live schema (NOT made — needs approval)
+### Live credential storage (Phase 5H/5H.1)
 
-Credentials cannot reuse `staffProfiles` safely: that collection has no
-`revision` field and is updated by whole-row writes (deactivation), so
-credential changes there could silently overwrite each other. Proposed new
-collection:
+The `funeralDirectorCredentials` collection was created on 2026-11-18 (approved
+design; see `docs/WIX_DATA_SCHEMA.md`, Collection 99): ADMIN-only, a regular
+`(organizationId, staffProfileId)` index, deterministic `_id`
+`fdc:{organizationId}:{staffProfileId}` for uniqueness (Wix unique indexes are
+single-field only, so the originally proposed compound unique index was not
+possible), conditional patches on `revision` for concurrency, credentials and
+history saved in one patch. The adapter is `services/funeralDirectorCredentialStore.ts`;
+live reads and writes are OFF (`services/funeralDirectorCredentialSwitch.ts`).
+No records exist.
 
-**`funeralDirectorCredentials`** — one row per staff profile.
-
-| Field | Type | Required | Mutable |
-|---|---|---|---|
-| `beaconCredentialId` | Text | Required | Immutable — the item `_id` |
-| `organizationId` | Text | Required | Immutable |
-| `staffProfileId` | Text | Required | Immutable — → `staffProfiles.beaconStaffProfileId` |
-| `identityId` | Text | Required | Immutable — the licensee (self-service refusal) |
-| `license` | Object, nullable | Optional | Server-written only |
-| `authorization` | Object, nullable | Optional | Server-written only |
-| `history` | Array (of objects) | Required | Append-only, server-written only |
-| `revision` | Number | Required | Conditional writes (`$eq` read value), like `cases.revision` |
-| `createdAt`, `updatedAt` | Date | Required | |
-
-Indexes: unique `(organizationId, staffProfileId)`. Permissions: ADMIN only
-(backend). Until it exists, Wix-mode reads find no credentials (nobody is
-verified) and writes are refused (503) before anything reaches Wix.
+Open before enabling live writes: no live item id on this site contains ":"
+yet (live ids use letters, digits, "-", "." and "_"). The first live insert
+should be verified, or the separator changed to ".", which has live precedent.
 
 ### Still needed before release can be activated
 
-- Approval and creation of the `funeralDirectorCredentials` collection, then
-  turning on its live reads/writes.
+- Approval to turn on live credential reads/writes
+  (`FUNERAL_DIRECTOR_CREDENTIALS_LIVE`), after confirming the ":" id
+  separator (see above).
 - Approval to write ME approvals to live case rows
   (`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING`).
 - Writing the release record (`servicePreparation.release`, with its

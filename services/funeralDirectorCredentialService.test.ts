@@ -5,6 +5,7 @@ import { buildGusCredentialFixtures } from './__mocks__/gusFixtures';
 import { DEFAULT_ORGANIZATION_ID } from './__mocks__/organizationIds';
 import { GUS_CAMACHO_ORGANIZATION_ID } from '../domain/organization/organizationProfiles';
 import { ACTIVITY_EVENT_TYPES } from '../types/activityEvent';
+import { staffFixtures } from './__mocks__/fixtures';
 
 const wix = vi.hoisted(() => ({ calls: 0 }));
 vi.mock('../lib/wixDataApi', async () => {
@@ -86,5 +87,27 @@ describe('funeral director credentials (server)', () => {
     await expect(changeCredentials({ ...adminCtx, organizationId: DEFAULT_ORGANIZATION_ID }, { staffProfileId: 'staff-gus-director', change: { kind: 'grant_authorization' }, expectedRevision: 2, actorName: null }, 'mock')).rejects.toMatchObject({ status: 404 });
     await expect(changeCredentials(adminCtx, { staffProfileId: 'staff-gus-director', change: { kind: 'grant_authorization' }, expectedRevision: 2, actorName: null }, 'wix')).rejects.toMatchObject({ status: 503 });
     expect(wix.calls).toBe(0);
+  });
+
+  it('the owner is established on the server: another organization’s staff member, or an inactive one, is refused', async () => {
+    const manorsStaff = staffFixtures.find((st) => st.organizationId === DEFAULT_ORGANIZATION_ID)!;
+    await expect(changeCredentials(adminCtx, { staffProfileId: manorsStaff.id, change: { kind: 'grant_authorization' }, expectedRevision: 0, actorName: null }, 'mock')).rejects.toMatchObject({ status: 404 });
+    const viewerIndex = staffFixtures.findIndex((st) => st.id === 'staff-gus-viewer');
+    const viewer = staffFixtures[viewerIndex];
+    staffFixtures[viewerIndex] = { ...viewer, isActive: false };
+    try {
+      await expect(changeCredentials(adminCtx, { staffProfileId: 'staff-gus-viewer', change: { kind: 'grant_authorization' }, expectedRevision: 0, actorName: null }, 'mock')).rejects.toMatchObject({ status: 404 });
+    } finally {
+      staffFixtures[viewerIndex] = viewer;
+    }
+  });
+
+  it('a record at the size limit refuses the change (413) and keeps its history', async () => {
+    const record = funeralDirectorCredentialFixtures[0];
+    const padded = { ...record, history: [...record.history, ...Array.from({ length: 400 }, (_, i) => ({ ...record.history[0], eventId: `pad-${i}`, reason: 'x'.repeat(300) }))] };
+    funeralDirectorCredentialFixtures[0] = padded;
+    await expect(changeCredentials(adminCtx, { staffProfileId: 'staff-gus-director', change: { kind: 'grant_authorization' }, expectedRevision: 2, actorName: null }, 'mock')).rejects.toMatchObject({ status: 413 });
+    expect(funeralDirectorCredentialFixtures[0]).toBe(padded);
+    expect(activityEventFixtures).toHaveLength(0);
   });
 });

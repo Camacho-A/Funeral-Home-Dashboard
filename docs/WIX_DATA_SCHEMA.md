@@ -283,7 +283,7 @@ Concretely: the six original fields (`beaconMembershipId`, `organizationId`, `us
 | `servicePreparation` | Object, nullable | Optional (Gus Phase 5C/5D, 2026-11) — **in live Wix since 2026-11-17** (create-field, revision 32→33); live saves still switched off in code (services/servicePreparationStorage.ts). Holds an append-only `history` (Phase 5E) | Server-written only by `services/servicePreparationService.ts`, under the revision check; never client-writable. Absent on every existing row |
 
 - **References:** `organizationId → organizations`; `workflowTemplateId → workflowTemplates`; `intakeOwnerId`/`caseHandlerId`/`createdBy` → the authenticated-identity space (see "Open design decision").
-- **Indexes:** unique composite `(beaconCaseId, organizationId)`; `(organizationId, currentStage)`; `(organizationId, caseHandlerId)`; `(organizationId, isArchived)` — already at the 3-regular-index cap; the Manors launch-prep fields above deliberately add none (tag-number search and pickup-status filtering both go through the existing in-memory/query-filter `matchesSearch` path, never a new index).
+- **Indexes:** `(organizationId, currentStage)`; `(organizationId, caseHandlerId)`; `(organizationId, isArchived)` — three regular indexes, already at the 3-regular-index cap. **There is no unique index on `cases`** (corrected 2026-11-18 against the live schema; an earlier version of this line listed a unique composite `(beaconCaseId, organizationId)`, which Wix cannot create — unique indexes are single-field). One case per id is guaranteed instead by the item's system `_id` being set to `beaconCaseId` at insert (Wix refuses a duplicate `_id`), with `organizationId` checked on every query; the Manors launch-prep fields above deliberately add none (tag-number search and pickup-status filtering both go through the existing in-memory/query-filter `matchesSearch` path, never a new index).
 - **Manors launch-prep (live, added via `POST /wix-data/v2/collections/create-field`):** `tagNumber`/`pickupStatus`/`pickupReleasedTo`/`pickupReleasedAt`/`pickupNote` are read defensively by `lib/wixCaseMapper.ts#mapWixCaseItem` — every pre-existing row (none of which had these fields until this change) maps with `tagNumber: null` and `pickupStatus: 'awaiting_pickup'` (the other three `null`), so no backfill/migration was required. `nextOfKinEmail`/`nextOfKinRelationship`/`nextOfKinRelationshipOther` were added the same way at Manors launch closeout — confirmed live and present on the collection schema; every pre-existing row (including Manor's one real case) maps all three to `null`, same no-backfill pattern. No index change for any of these six fields — still at the 3-regular/1-unique cap.
 - **Permissions:** backend/Admin only.
 - **TS type:** matches `types/case.ts`'s `Case` field-for-field (see mapping column above; `currentStage`/`caseHandlerId`/`isArchived` are the only renamed fields, mapping to `rawStage`/`assignedStaffId`/`isDeleted` respectively).
@@ -1797,6 +1797,26 @@ Organization-level generated documents (the General Price List, which has no cas
 | `caseDocuments` metadata | Superseded by Collection 34 (`caseDocuments`), Phase 25 | Originally not created because file bytes were considered entirely out of Wix's scope by the project's original architecture (`types/document.ts`'s "eventually the Postgres/object-storage service... not Wix Data"). Phase 25 reverses this for *metadata only* — see Collection 34 above and ADR-029's "Metadata vs. bytes" section for why: bytes still never live in Wix Data (they go to Vercel Blob), but the metadata row describing them now does, matching every other collection's own pattern. |
 | `auditEvents` | Superseded by Collection 31 (`activityEvents`), Phase 24 | See `caseTimelineEvents` above — same reversal, same reason. |
 | `staffProfiles` | Superseded by Collection 52 (`staffProfiles`), Phase 30 | Originally recommended for retirement in favor of unifying entirely on `organizationMemberships`. Phase 30 built a real, live `staffProfiles` collection instead, bridged into the identity chain rather than replaced by it — see the "Open design decision" resolution above and Collection 52. |
+
+## Collection 99 — `funeralDirectorCredentials` (Gus Phase 5H.1, created 2026-11-18)
+
+**Purpose:** one funeral director credential record per organization + staff profile — license, verification, separate Funeral Director authorization, append-only audit history. **Ownership:** organization-owned. Written only by `services/funeralDirectorCredentialStore.ts`; **live reads and writes are OFF** (`services/funeralDirectorCredentialSwitch.ts`) until approved. No records exist.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `_id` | Text | Required | Immutable — deterministic `fdc:{organizationId}:{staffProfileId}` (each part letters, digits and hyphens only; ≤ 128 characters). Wix refuses a duplicate `_id` (409), so there is at most one record per pair |
+| `organizationId` | Text | Required | Immutable |
+| `staffProfileId` | Text | Required | Immutable — → `staffProfiles.beaconStaffProfileId`; established server-side (active profile in the caller's organization, active membership) |
+| `identityId` | Text | Required | Immutable — the licensee, from the staff profile (never from the browser); used to refuse self-service |
+| `license` | Object, nullable | Optional | Number, state, type, status, expiry and `verification` (verifiedAt, verifiedBy, verifiedByName, method, reference) |
+| `authorization` | Object, nullable | Optional | Separate Funeral Director authorization (authorizedAt, authorizedBy, authorizedByName) |
+| `history` | Array | Required | Append-only audit entries (eventId, action, reason, before, after, actorId, actorName, at), written in the same patch as the change |
+| `revision` | Number | Required | Every update is a conditional patch on the read value (plus organizationId and staffProfileId); a stale write is refused (428) |
+| `createdAt`, `updatedAt` | Text (ISO-8601) | Required | |
+
+- **Indexes:** `idx_org_staff` — regular `(organizationId, staffProfileId)`. No unique index (a compound unique index is not possible in Wix; the deterministic `_id` gives uniqueness).
+- **Permissions:** ADMIN for read, insert, update and remove.
+- **Size:** a change that would take a record past 128 KB is refused (413); history is never trimmed.
 
 ## Permissions summary (all sixty-seven collections)
 

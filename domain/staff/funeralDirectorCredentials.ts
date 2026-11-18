@@ -61,6 +61,14 @@ export type CredentialChange =
   | { kind: 'revoke_authorization'; reason: string };
 
 export class CredentialChangeError extends Error {}
+/** The record (with its history) would be too large to save safely. */
+export class CredentialRecordLimitError extends CredentialChangeError {}
+
+/** Well under Wix's 512 KB item limit. A record grows by a few hundred
+    bytes per change; history is never trimmed — a change past this is
+    refused instead (Phase 5H.1). */
+export const CREDENTIAL_RECORD_MAX_BYTES = 128 * 1024;
+export const credentialRecordBytes = (record: unknown) => new TextEncoder().encode(JSON.stringify(record)).length;
 /** Someone tried to change, verify or authorize their own credentials. */
 export class SelfServiceCredentialError extends CredentialChangeError {}
 
@@ -119,7 +127,11 @@ export function applyCredentialChange(params: {
   }
 
   const entry: CredentialAuditEntry = { eventId: params.eventId, action, reason, before, after: { license, authorization }, actorId: actor.id, actorName: actor.name, at: now };
-  return { ...record, license, authorization, revision: record.revision + 1, history: [...record.history, entry] };
+  const next = { ...record, license, authorization, revision: record.revision + 1, history: [...record.history, entry] };
+  if (credentialRecordBytes(next) > CREDENTIAL_RECORD_MAX_BYTES) {
+    throw new CredentialRecordLimitError('This staff member’s credential record is full (including its history). Nothing was saved. Please contact SolisCode support.');
+  }
+  return next;
 }
 
 export const CREDENTIAL_ACTION_LABEL: Record<CredentialAuditEntry['action'], string> = {
