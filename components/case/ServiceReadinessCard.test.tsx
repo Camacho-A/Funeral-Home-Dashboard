@@ -21,7 +21,7 @@ function view(overrides: Partial<ServicePreparationView> = {}): ServicePreparati
   return { applies: true, definitionKey: 'prep.viewing', record: null, service: SERVICE, documents: [], isArchived: false, storageAvailable: true, ...overrides };
 }
 
-function stubFetch(get: { preparation: ServicePreparationView; canEdit: boolean }, postResponse?: (body: unknown) => { status: number; body: unknown }) {
+function stubFetch(get: { preparation: ServicePreparationView; canEdit: boolean; medicalExaminer?: unknown }, postResponse?: (body: unknown) => { status: number; body: unknown }) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') {
       const result = postResponse ? postResponse(JSON.parse(String(init.body))) : { status: 200, body: { preparation: get.preparation } };
@@ -160,5 +160,42 @@ describe('ServiceReadinessCard — preparation history (Phase 5E)', () => {
     const items = within(history).getAllByRole('listitem');
     expect(items[0].textContent).toMatch(/Not requested.*Avery Demo/);
     expect(items[1].textContent).toMatch(/Requested.*Jordan Demo/);
+  });
+});
+
+describe('ServiceReadinessCard — medical examiner approval (Phase 5G)', () => {
+  it('shows it is not recorded, and records it with the EDRS confirmation, date, reference and evidence', async () => {
+    const fetchMock = stubFetch({ preparation: view(), canEdit: true, medicalExaminer: { approval: null, history: [] } }, () => ({ status: 200, body: { medicalExaminer: { approval: null, history: [] } } }));
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const section = await screen.findByTestId('me-approval');
+    expect(within(section).getByText(/Not recorded/)).toBeTruthy();
+    fireEvent.click(within(section).getByRole('button', { name: 'Record the approval' }));
+    const save = within(section).getByRole('button', { name: 'Save approval' });
+    expect(save).toHaveProperty('disabled', true); // needs the EDRS confirmation first
+    fireEvent.click(within(section).getByRole('checkbox'));
+    fireEvent.change(within(section).getByLabelText('Approval date'), { target: { value: '2026-12-07' } });
+    fireEvent.change(within(section).getByLabelText('EDRS or medical examiner reference'), { target: { value: 'EDRS-FICTIONAL-1' } });
+    fireEvent.change(within(section).getByLabelText('Where it was verified (if no document)'), { target: { value: 'EDRS screen' } });
+    fireEvent.click(save);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('medical-examiner-approval'))).toBe(true));
+    const call = fetchMock.mock.calls.find(([url]) => String(url).includes('medical-examiner-approval'))!;
+    expect(JSON.parse(String(call[1]!.body))).toMatchObject({ confirmedInEdrs: true, approvalDate: '2026-12-07', reference: 'EDRS-FICTIONAL-1', evidenceSource: 'EDRS screen', reason: null });
+  });
+
+  it('shows a recorded approval, and asks for a reason to correct it', async () => {
+    const approval = { confirmedInEdrs: true, approvalDate: '2026-12-07', reference: 'EDRS-FICTIONAL-1', evidence: { documentId: null, source: 'EDRS screen' }, recordedBy: 'i', recordedByName: 'Jordan Demo', recordedAt: '2026-12-07T15:00:00.000Z', eventId: 'e' };
+    stubFetch({ preparation: view(), canEdit: true, medicalExaminer: { approval, history: [] } });
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const section = await screen.findByTestId('me-approval');
+    expect(within(section).getByText(/approved 2026-12-07, ref. EDRS-FICTIONAL-1/)).toBeTruthy();
+    fireEvent.click(within(section).getByRole('button', { name: 'Correct the approval' }));
+    expect(within(section).getByLabelText('Reason for the correction')).toBeTruthy();
+  });
+
+  it('read-only staff cannot record it', async () => {
+    stubFetch({ preparation: view(), canEdit: false, medicalExaminer: { approval: null, history: [] } });
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const section = await screen.findByTestId('me-approval');
+    expect(within(section).queryByRole('button', { name: 'Record the approval' })).toBeNull();
   });
 });

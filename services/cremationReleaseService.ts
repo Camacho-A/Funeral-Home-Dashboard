@@ -7,6 +7,7 @@ import { getOrganization } from './organizationProvisioningService';
 import { listAppointmentsForCase } from './scheduling/appointmentReads';
 import { loadCaseOnServer } from './serverCaseLoader';
 import { resolveStaffProfileForCaller } from './staffProfileService';
+import { withCredentials } from './funeralDirectorCredentialService';
 
 /**
  * Release for cremation on the server (Gus Phase 5F, 2026-11). Every
@@ -45,6 +46,8 @@ export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, c
     resolveStaffProfileForCaller({ organizationId: caller.organizationId, userId: caller.userId, role: caller.role }, mode),
     getOrganization(caller.organizationId, mode).catch(() => null),
   ]);
+  // Credentials come from their own store — never from the request.
+  const approverProfile = staffProfile ? await withCredentials(staffProfile, mode) : null;
   const service = selectServiceEvent(appointments, { organizationId: caller.organizationId, caseId, appointmentType: definition.serviceAppointmentType });
   const record = case_.servicePreparation && case_.servicePreparation.definitionKey === definition.key ? case_.servicePreparation : null;
   const readiness = summarizeServiceReadiness({ definition, record, service, now });
@@ -52,7 +55,7 @@ export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, c
     case_,
     definition,
     readiness,
-    approver: { identityId: caller.userId, roleKey: caller.role, staffProfile },
+    approver: { identityId: caller.userId, roleKey: caller.role, staffProfile: approverProfile },
     approverRoleKeys: profile.features.cremationReleaseApproverRoleKeys,
     licenseReverifyDays: profile.features.funeralDirectorLicenseReverifyDays,
     timeZone: organization?.timezone ?? DEFAULT_TIME_ZONE,

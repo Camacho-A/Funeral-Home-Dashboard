@@ -27,6 +27,7 @@ import type { SlaDelayRecord, SlaEventKey, SlaEventRecord } from './sla';
 import type { CaseWorkflowSnapshot } from './workflowTemplate';
 import type { CaseSsnSummary } from '../domain/cases/caseSsn';
 import type { ServicePreparationRecord } from '../domain/servicePreparation/types';
+import type { MedicalExaminerApprovalHistoryEntry, MedicalExaminerCremationApproval } from '../domain/crematory/medicalExaminerApproval';
 
 /** Manors launch-prep. The NOK's relationship to the deceased — a small,
     closed dropdown (never free text) distinct from
@@ -559,6 +560,11 @@ export type PreviousSendAnswer = {
 };
 
 export type CaseCrematoryRecord = {
+  /** Gus Phase 5G (2026-11): the medical examiner cremation approval staff
+      confirmed in EDRS, and every recording/correction of it (append-only).
+      Written only by services/medicalExaminerApprovalService.ts. */
+  medicalExaminerApproval?: MedicalExaminerCremationApproval | null;
+  medicalExaminerApprovalHistory?: MedicalExaminerApprovalHistoryEntry[];
   /** Staff confirmed THIS uploaded file is the approved state permit for
       this decedent. A different file later needs its own confirmation. */
   permitVerification?: {

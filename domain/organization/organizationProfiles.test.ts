@@ -54,6 +54,8 @@ describe('organization profile registry', () => {
       workflowApprovalRequired: true,
       servicePreparation: true,
       cremationReleaseApproverRoleKeys: ['funeralDirector'],
+      funeralDirectorLicenseReverifyDays: 365,
+      funeralDirectorCredentials: true,
       enforceHiddenModulesServerSide: true,
       certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
       cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },

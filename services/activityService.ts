@@ -1568,6 +1568,54 @@ export function recordServicePreparationChange(
   );
 }
 
+/** Gus Phase 5G: one change to a funeral director's credentials. */
+export function recordFuneralDirectorCredentialChange(
+  ctx: ActivityContext,
+  staffProfileId: string,
+  details: { description: string; previous: Record<string, unknown>; next: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'team_management',
+      eventType: ACTIVITY_EVENT_TYPES.FUNERAL_DIRECTOR_CREDENTIAL_CHANGED,
+      resourceType: 'staffProfile',
+      resourceId: staffProfileId,
+      previousValue: JSON.stringify(details.previous),
+      newValue: JSON.stringify(details.next),
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** Gus Phase 5G: a medical examiner cremation approval recorded on a case. */
+export function recordMedicalExaminerApprovalChange(
+  ctx: ActivityContext,
+  caseId: string,
+  details: { description: string; previous: Record<string, unknown> | null; next: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.MEDICAL_EXAMINER_APPROVAL_RECORDED,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: details.previous ? JSON.stringify(details.previous) : null,
+      newValue: JSON.stringify(details.next),
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

@@ -608,6 +608,13 @@ export const ACTIVITY_EVENT_TYPES = {
       hold that one entry before and after: the completion history. Never
       a workflow or legal step. */
   SERVICE_PREPARATION_UPDATED: 'service_preparation.updated',
+  /** Gus Phase 5G: an administrator entered, verified or changed a funeral
+      director's license, or granted/removed Funeral Director authorization.
+      Mirrors the entry in the credential record's own history. */
+  FUNERAL_DIRECTOR_CREDENTIAL_CHANGED: 'staff.funeral_director_credential_changed',
+  /** Gus Phase 5G: staff recorded (or corrected) the medical examiner
+      cremation approval they confirmed in EDRS. */
+  MEDICAL_EXAMINER_APPROVAL_RECORDED: 'case.medical_examiner_approval_recorded',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

@@ -352,6 +352,10 @@ export type OrganizationFeaturePreferences = {
       as pending). A configuration decision awaiting approval — 365 is only
       proposed (PROPOSED_LICENSE_REVERIFY_DAYS). */
   funeralDirectorLicenseReverifyDays: number | null;
+  /** Gus Phase 5G (2026-11): Settings › Funeral Director Credentials and
+      recording a medical examiner cremation approval on a case. Platform
+      default: off. Manors: off. */
+  funeralDirectorCredentials: boolean;
   /** Manatee County DC application fax bundles (2026-11): where saved
       applications are faxed, through the connected mailbox and NuSo's
       email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
@@ -463,6 +467,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   servicePreparation: false,
   cremationReleaseApproverRoleKeys: [],
   funeralDirectorLicenseReverifyDays: null,
+  funeralDirectorCredentials: false,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -686,6 +691,10 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // Gus policy (confirmed 2026-11): ONLY an authorized, verified Funeral
     // Director may release. Administrators are not a release role.
     cremationReleaseApproverRoleKeys: ['funeralDirector'],
+    // Gus's internal policy (Phase 5G): re-verify a funeral director
+    // license at least every 365 days. Configurable here.
+    funeralDirectorLicenseReverifyDays: 365,
+    funeralDirectorCredentials: true,
     enforceHiddenModulesServerSide: true,
     // Same certifier requirement as Manors, fax included (decided 2026-11).
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],

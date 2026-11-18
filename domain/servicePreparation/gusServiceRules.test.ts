@@ -119,7 +119,8 @@ describe('Cremation with Final Goodbye (Gus)', () => {
 });
 
 describe('funeral director license', () => {
-  const director = buildGusStaffFixtures().find((s) => s.displayName === 'Jordan Demo')!;
+  // The license lives in the credential store (Phase 5G); attach it here.
+  const director = { ...buildGusStaffFixtures().find((s) => s.displayName === 'Jordan Demo')!, funeralDirectorLicense: fictionalDirectorLicense() };
   const admin = buildGusStaffFixtures().find((s) => s.displayName === 'Avery Demo')!;
   const check = (staff: Parameters<typeof checkFuneralDirectorLicense>[0], now = new Date().toISOString()) =>
     checkFuneralDirectorLicense(staff, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: now.slice(0, 10), now, reverifyWithinDays: PROPOSED_LICENSE_REVERIFY_DAYS });
@@ -155,6 +156,16 @@ describe('release for cremation', () => {
   const approverRoleKeys = getRegisteredOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID).features.cremationReleaseApproverRoleKeys;
   const asDirector: ReleaseApprover = { identityId: director.identityId, roleKey: 'funeralDirector', staffProfile: { ...director, funeralDirectorLicense: fictionalDirectorLicense(new Date(NOW)) } };
 
+  const ME_APPROVAL = {
+    confirmedInEdrs: true as const,
+    approvalDate: '2026-12-09',
+    reference: 'EDRS-FICTIONAL-1001',
+    evidence: { documentId: null, source: 'EDRS case status screen (fictional)' },
+    recordedBy: 'identity-gus-director',
+    recordedByName: 'Jordan Demo',
+    recordedAt: '2026-12-09T13:00:00.000Z',
+    eventId: 'me-fictional-1',
+  };
   function legallyReadyCase(overrides: Partial<Case> = {}): Case {
     const stages = viewingCase.workflowSnapshot!.stages;
     const checklistState: Record<string, boolean> = { ...viewingCase.checklistState };
@@ -167,10 +178,11 @@ describe('release for cremation', () => {
       dateOfDeath: '12/08/2026',
       timeOfDeath: '09:00',
       checklistState,
-      crematory: { permitVerification: { documentId: 'doc-permit', checksumSha256: 'fictional', verifiedBy: 'identity-gus-admin', verifiedAt: '2026-12-09T12:00:00.000Z' } },
+      crematory: { permitVerification: { documentId: 'doc-permit', checksumSha256: 'fictional', verifiedBy: 'identity-gus-admin', verifiedAt: '2026-12-09T12:00:00.000Z' }, medicalExaminerApproval: ME_APPROVAL },
       ...overrides,
     };
   }
+  const withoutMe = (c: Case): Case => ({ ...c, crematory: { ...c.crematory, medicalExaminerApproval: null } });
   const prepDone = apply(VIEWING_PREPARATION, [
     { kind: 'item', itemId: 'prep.day_of.identification_verified', status: 'completed' },
     { kind: 'item', itemId: 'prep.embalming.written_permission', status: 'completed' },
@@ -178,7 +190,7 @@ describe('release for cremation', () => {
   ]);
   const evaluate = (params: { case_?: Case; record?: ServicePreparationRecord | null; service?: ServiceEvent | null; approver?: ReleaseApprover | null; me?: boolean; now?: string }) =>
     evaluateReleaseForCremation({
-      case_: params.case_ ?? legallyReadyCase(),
+      case_: params.me === false ? withoutMe(params.case_ ?? legallyReadyCase()) : (params.case_ ?? legallyReadyCase()),
       definition: VIEWING_PREPARATION,
       readiness: summarizeServiceReadiness({ definition: VIEWING_PREPARATION, record: params.record === undefined ? prepDone : params.record, service: params.service === undefined ? svc({ status: 'completed' }) : params.service, now: params.now ?? NOW }),
       approver: params.approver === undefined ? asDirector : params.approver,
@@ -186,7 +198,6 @@ describe('release for cremation', () => {
       licenseReverifyDays: PROPOSED_LICENSE_REVERIFY_DAYS,
       timeZone: TZ,
       now: params.now ?? NOW,
-      medicalExaminerApprovalRecorded: params.me ?? true,
     });
   const unmet = (e: ReturnType<typeof evaluate>) => e.prerequisites.filter((p) => !p.met).map((p) => p.key);
 
@@ -223,15 +234,15 @@ describe('release for cremation', () => {
     expect(unmet(evaluate({ case_: { ...ready, checklistState: { ...ready.checklistState, [checklistItemKey(at.displayStage, at.index)]: false } } }))).toEqual(['edrs_complete']);
     const af = findStep(ready.workflowSnapshot!.stages, CREMATION_STEPS.arrangementFormCompleted)!;
     expect(unmet(evaluate({ case_: { ...ready, checklistState: { ...ready.checklistState, [checklistItemKey(af.displayStage, af.index)]: false } } }))).toEqual(['cremation_authorization']);
-    expect(unmet(evaluate({ case_: { ...ready, crematory: {} } }))).toEqual(['state_permit']);
+    expect(unmet(evaluate({ case_: { ...ready, crematory: { medicalExaminerApproval: ready.crematory!.medicalExaminerApproval } } }))).toEqual(['state_permit']);
     expect(unmet(evaluate({ me: false }))).toEqual(['medical_examiner_approval']);
     expect(unmet(evaluate({ record: apply(VIEWING_PREPARATION, [{ kind: 'item', itemId: 'prep.embalming.written_permission', status: 'completed' }]) }))).toEqual(['identification']);
     expect(unmet(evaluate({ record: apply(VIEWING_PREPARATION, [{ kind: 'item', itemId: 'prep.day_of.identification_verified', status: 'completed' }]) }))).toEqual(['service_specific']);
   });
 
-  it('the medical examiner approval is never met today: SOLIS has nowhere to record it', () => {
+  it('without a recorded approval the medical examiner prerequisite blocks release', () => {
     const e = evaluateReleaseForCremation({
-      case_: legallyReadyCase(),
+      case_: withoutMe(legallyReadyCase()),
       definition: VIEWING_PREPARATION,
       readiness: summarizeServiceReadiness({ definition: VIEWING_PREPARATION, record: prepDone, service: svc({ status: 'completed' }), now: NOW }),
       approver: asDirector,
@@ -306,13 +317,13 @@ describe('release for cremation', () => {
     expect(e.allPrerequisitesMet).toBe(false);
   });
 
-  it('the re-verification interval is a pending decision: unset means age is not enforced, and it is reported', () => {
+  it('the re-verification interval is configurable: unset means age is not enforced (and reported); Gus uses 365 days', () => {
     const stale = { ...director, funeralDirectorLicense: { ...fictionalDirectorLicense(new Date(NOW)), verification: { ...fictionalDirectorLicense(new Date(NOW)).verification!, verifiedAt: '2024-01-01T00:00:00.000Z' } } };
     const unset = checkFuneralDirectorLicense(stale, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: NOW.slice(0, 10), now: NOW, reverifyWithinDays: null });
     expect(unset.verified).toBe(true);
     expect(unset.notes).toEqual(['No re-verification interval is set yet (pending approval).']);
     expect(checkFuneralDirectorLicense(stale, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: NOW.slice(0, 10), now: NOW, reverifyWithinDays: 365 }).verified).toBe(false);
-    expect(getRegisteredOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID).features.funeralDirectorLicenseReverifyDays).toBeNull();
+    expect(getRegisteredOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID).features.funeralDirectorLicenseReverifyDays).toBe(365);
   });
 
   it('Manors allows nobody to release', () => {
@@ -344,7 +355,6 @@ describe('release for cremation', () => {
       licenseReverifyDays: PROPOSED_LICENSE_REVERIFY_DAYS,
       timeZone: TZ,
       now: NOW,
-      medicalExaminerApprovalRecorded: true,
     });
     expect(e.prerequisites.map((p) => p.key)).not.toContain('service_specific');
     expect(e.allPrerequisitesMet).toBe(true);

@@ -66,6 +66,15 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       visible: permissions.includes('organization.manage') && sendToCrematoryConfig(organizationId) !== null,
     },
     {
+      // Gus Phase 5G (2026-11): funeral director licenses, verification
+      // and authorization. Managing them never permits release by itself.
+      key: 'funeral-director-credentials',
+      label: 'Funeral Director Credentials',
+      description: 'Funeral director licenses, their verification, and who is authorized to act as Funeral Director.',
+      href: '/settings/funeral-director-credentials',
+      visible: permissions.includes('organization.manage') && getRegisteredOrganizationProfile(organizationId).features.funeralDirectorCredentials,
+    },
+    {
       // Fax Settings (2026-11): destinations, provider, templates.
       key: 'fax',
       label: 'Fax Settings',

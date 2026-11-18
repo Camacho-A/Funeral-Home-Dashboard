@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
 import type { ServicePreparationView } from '@/services/servicePreparationService';
 import type { ReleaseEvaluation } from '@/domain/servicePreparation/releaseForCremation';
+import type { MedicalExaminerApprovalView } from '@/services/medicalExaminerApprovalService';
 
 /**
  * Service preparation (Gus Phase 5C). Reads and saves through
@@ -9,7 +10,13 @@ import type { ReleaseEvaluation } from '@/domain/servicePreparation/releaseForCr
  * saved is what comes back after a refresh. On a 409 the server's latest
  * preparation replaces what is shown.
  */
-export type ServicePreparationResponse = { preparation: ServicePreparationView; canEdit: boolean; release: ReleaseEvaluation | null };
+export type ServicePreparationResponse = {
+  preparation: ServicePreparationView;
+  canEdit: boolean;
+  release: ReleaseEvaluation | null;
+  /** Gus Phase 5G: the recorded ME cremation approval, when this organization records it. */
+  medicalExaminer?: MedicalExaminerApprovalView | null;
+};
 
 export class ServicePreparationSaveError extends Error {
   constructor(
@@ -57,5 +64,24 @@ export function useServicePreparation(organizationId: string, caseId: string, en
     },
   });
 
-  return { query, save };
+  // Gus Phase 5G: record (or correct) the ME cremation approval. The
+  // release check is re-read afterwards, so it reflects the new record.
+  const recordMedicalExaminer = useMutation({
+    mutationFn: async (input: { confirmedInEdrs: boolean; approvalDate: string; reference: string; evidenceDocumentId: string | null; evidenceSource: string | null; reason: string | null }) => {
+      const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/medical-examiner-approval`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId, ...input }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new ServicePreparationSaveError(body.error ?? 'Could not record the approval.', response.status);
+      return body.medicalExaminer as MedicalExaminerApprovalView;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: key });
+      queryClient.invalidateQueries({ queryKey: ['activityEvents'] });
+    },
+  });
+
+  return { query, save, recordMedicalExaminer };
 }

@@ -165,8 +165,12 @@ met — none unlocks release alone (a confirmed permit included):
 1. the scheduled service marked **completed**;
 2. cremation authorization (arrangement form) step done;
 3. EDRS submitted, cause of death and attestation done;
-4. **medical examiner cremation approval recorded** — SOLIS has no place to
-   record this yet, so it is never met today;
+4. **medical examiner cremation approval recorded** (Phase 5G) — a valid
+   approval in the case's `crematory.medicalExaminerApproval`: confirmed in
+   EDRS, approval date (not in the future, not before death), EDRS/ME
+   reference, evidence (a document on the case and/or the verification
+   source), who recorded it and when. Never inferred from the permit, EDRS
+   ticks or the ME jurisdiction flag;
 5. state burial-transit permit confirmed on the case;
 6. at least 48 hours since death (in the funeral home's time zone; a missing
    time counts from the end of that day, a missing date blocks);
@@ -194,23 +198,69 @@ defines what a release will record: case, organization, service appointment,
 time, the approving director (identity, staff profile, name, role, license
 number, state, expiry) and every satisfied prerequisite.
 
-### Data still needed before release can be activated
+### Phase 5G — implemented in the sandbox
 
-- **Staff profile license fields** — `StaffProfile.funeralDirectorLicense`
-  (license number, state, type, status, expiry, verification: verifiedAt,
-  verifiedBy, verifiedByName, method, reference). New optional OBJECT field
-  on the live `staffProfiles` collection, plus a Settings screen where an
-  administrator records and re-verifies it. Not added.
-- **Medical examiner cremation approval** — see "Medical examiner findings"
-  below. Not added; needs a decision.
-- **Funeral Director authorization** — `StaffProfile.funeralDirectorAuthorization`
-  (authorizedAt, authorizedBy, authorizedByName), for an administrator who
-  is also Gus's funeral director. Same new `staffProfiles` field work as the
-  license. Not added.
-- **The release record** — stored in `servicePreparation.release` (the
-  existing field) with an audit history entry. Not written by anything yet.
-- **Send to Crematory** must then refuse a Viewing/Final Goodbye case until
-  it is released — a separate, approved change.
+**Medical examiner cremation approval** — recorded from the Service
+Readiness card (`POST /api/cases/[caseId]/medical-examiner-approval`,
+case.update) by `services/medicalExaminerApprovalService.ts`, inside the
+case's EXISTING `crematory` record (`medicalExaminerApproval` +
+append-only `medicalExaminerApprovalHistory`), through the revision-checked,
+key-merged case write — so the permit and every other crematory key are
+untouched. A correction needs a reason; every recording stays in the
+history and is an Activity event (`case.medical_examiner_approval_recorded`).
+No new Wix field: `crematory` already exists on live rows (undeclared,
+written by Send to Crematory in Manors Production). Live writes are OFF
+(`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING = false`).
+
+**Funeral director credentials** — Settings › Funeral Director Credentials
+(Gus only, `organization.manage`), `GET/POST /api/settings/funeral-director-
+credentials`, `services/funeralDirectorCredentialService.ts`. Per staff
+profile: license number, state, type, status, expiry; verification (by,
+when, method, source); separate Funeral Director authorization; revision;
+append-only history (also an Activity event,
+`staff.funeral_director_credential_changed`). Nobody enters, verifies,
+authorizes or de-authorizes themselves. Changing license details clears the
+verification. Gus's re-verification policy: 365 days
+(`funeralDirectorLicenseReverifyDays`, configurable). Managing credentials
+never permits release: release still needs the Funeral Director role or
+authorization, a verified license and every case prerequisite — and is not
+active.
+
+### Proposed live schema (NOT made — needs approval)
+
+Credentials cannot reuse `staffProfiles` safely: that collection has no
+`revision` field and is updated by whole-row writes (deactivation), so
+credential changes there could silently overwrite each other. Proposed new
+collection:
+
+**`funeralDirectorCredentials`** — one row per staff profile.
+
+| Field | Type | Required | Mutable |
+|---|---|---|---|
+| `beaconCredentialId` | Text | Required | Immutable — the item `_id` |
+| `organizationId` | Text | Required | Immutable |
+| `staffProfileId` | Text | Required | Immutable — → `staffProfiles.beaconStaffProfileId` |
+| `identityId` | Text | Required | Immutable — the licensee (self-service refusal) |
+| `license` | Object, nullable | Optional | Server-written only |
+| `authorization` | Object, nullable | Optional | Server-written only |
+| `history` | Array (of objects) | Required | Append-only, server-written only |
+| `revision` | Number | Required | Conditional writes (`$eq` read value), like `cases.revision` |
+| `createdAt`, `updatedAt` | Date | Required | |
+
+Indexes: unique `(organizationId, staffProfileId)`. Permissions: ADMIN only
+(backend). Until it exists, Wix-mode reads find no credentials (nobody is
+verified) and writes are refused (503) before anything reaches Wix.
+
+### Still needed before release can be activated
+
+- Approval and creation of the `funeralDirectorCredentials` collection, then
+  turning on its live reads/writes.
+- Approval to write ME approvals to live case rows
+  (`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING`).
+- Writing the release record (`servicePreparation.release`, with its
+  history entry), then `RELEASE_FOR_CREMATION_AVAILABLE`.
+- Send to Crematory refusing a Viewing/Final Goodbye case until released —
+  a separate, approved change.
 
 ## Medical examiner findings (Phase 5F.1, read-only review)
 
@@ -265,9 +315,11 @@ unrecorded approval.
 - Viewing: what happens when the family brings no clothing? Rental or
   purchased casket, and who supplies it?
 - Final Goodbye: is 60 minutes the confirmed maximum?
-- Release: how often must a funeral director license be re-verified
-  (365 days proposed, not set)? Who grants the separate Funeral Director
-  authorization to an administrator?
-- Medical examiner cremation approval: which of the three options above?
+- License re-verification: 365 days set as Gus's internal policy
+  (configurable) — confirm.
+- Medical examiner cremation approval: decided (Phase 5G) — option 1,
+  recorded staff attestation in the existing `crematory` record.
+- Release: who at Gus may administer credentials (today: any administrator
+  with organization.manage, never for themselves)?
 - Prayer cards, register book, crucifix for a Final Goodbye: offered or not?
 - Are the default deadline targets right for Gus's vendors and parishes?

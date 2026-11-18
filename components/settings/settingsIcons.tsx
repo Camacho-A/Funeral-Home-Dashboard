@@ -37,6 +37,15 @@ const PATHS: Record<string, React.ReactNode> = {
       <path d="M7 14h10v6.5H7z" />
     </>
   ),
+  // Gus Phase 5G: an ID badge with a check — a verified credential.
+  'funeral-director-credentials': (
+    <>
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <circle cx="9" cy="11" r="2" />
+      <path d="M6.5 16c.6-1.4 1.5-2 2.5-2s1.9.6 2.5 2" />
+      <path d="M14 11l1.5 1.5L18 10" />
+    </>
+  ),
   'case-ssn': (
     <>
       <rect x="5" y="10" width="14" height="10" rx="2" />

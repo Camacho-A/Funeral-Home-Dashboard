@@ -83,8 +83,8 @@ describe('approveCremationRelease', () => {
     expect(forDirector.prerequisites.find((p) => p.key === 'approver_licensed')!.met).toBe(true);
     expect(forAdmin.prerequisites.find((p) => p.key === 'approver_licensed')!.met).toBe(false);
     expect(forAdmin.prerequisites.find((p) => p.key === 'approver_authorized')!.met).toBe(false);
-    // Gus has not decided a re-verification interval: reported, not enforced.
-    expect(forDirector.prerequisites.find((p) => p.key === 'approver_licensed')!.detail).toMatch(/pending approval/);
+    // Gus's internal policy: re-verified within 365 days (the seed was verified today).
+    expect(forDirector.prerequisites.find((p) => p.key === 'approver_licensed')!.detail).toBeUndefined();
     expect(forDirector.canRelease).toBe(false);
   });
 });

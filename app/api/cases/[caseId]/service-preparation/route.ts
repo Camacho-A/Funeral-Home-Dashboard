@@ -7,6 +7,9 @@ import { canEditCase, canReadCases } from '@/services/authorizationPolicyService
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { changeServicePreparation, getServicePreparation, ServicePreparationError } from '@/services/servicePreparationService';
 import { evaluateCremationReleaseForCaller } from '@/services/cremationReleaseService';
+import { medicalExaminerApprovalView } from '@/services/medicalExaminerApprovalService';
+import { loadCaseOnServer } from '@/services/serverCaseLoader';
+import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
 import type { PreparationStatus } from '@/domain/servicePreparation/types';
 
@@ -79,11 +82,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   try {
     const preparation = await getServicePreparation(organizationId, caseId, mode);
     if (!preparation) return NextResponse.json({ error: 'This case has no service preparation.' }, { status: 404 });
-    const [canEdit, release] = await Promise.all([
+    const [canEdit, release, case_] = await Promise.all([
       canEditCase({ identityId: userId, organizationId, roleKey: role }, mode),
       evaluateCremationReleaseForCaller({ organizationId, userId, role }, caseId, mode),
+      loadCaseOnServer(organizationId, caseId, mode),
     ]);
-    return NextResponse.json({ preparation, canEdit, release }, { headers: { 'Cache-Control': 'no-store' } });
+    const medicalExaminer = case_ && getRegisteredOrganizationProfile(organizationId).features.funeralDirectorCredentials ? medicalExaminerApprovalView(case_) : null;
+    return NextResponse.json({ preparation, canEdit, release, medicalExaminer }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
   }

@@ -1,6 +1,7 @@
 import type { Case } from '../../types/case';
 import type { Organization } from '../../types/organization';
 import type { OrganizationBranding } from '../../types/organizationBranding';
+import type { FuneralDirectorCredentialRecord } from '../../domain/staff/funeralDirectorCredentials';
 import type { StaffProfile } from '../../types/staffProfile';
 import type { CaseTask } from '../../types/task';
 import type { Membership } from '../../types/membership';
@@ -183,16 +184,15 @@ export function buildGusStaffFixtures(): StaffProfile[] {
     isActive: true,
     createdAt: NOW,
     updatedAt: NOW,
-    // Gus Phase 5F: a FICTIONAL, verified license for the demo funeral
-    // director only. The administrator's display role is also
-    // "funeral_director", but with no license on file — so SOLIS never
-    // treats them as licensed.
-    ...(seed.staffId === GUS_DIRECTOR_STAFF_ID ? { funeralDirectorLicense: fictionalDirectorLicense() } : {}),
   }));
 }
 
 /** Fictional — never a real license number. Verified "today" by the demo
-    administrator, so it stays within the re-verification window. */
+    administrator, so it stays within the re-verification window. Seeded
+    as the director's credential record (funeralDirectorCredentialFixtures,
+    Phase 5G). The administrator's display role is also "funeral_director",
+    but they have no credential record — SOLIS never treats them as
+    licensed or authorized. */
 export function fictionalDirectorLicense(now: Date = new Date()): NonNullable<StaffProfile['funeralDirectorLicense']> {
   return {
     licenseNumber: 'FD-FICTIONAL-0001',
@@ -332,5 +332,27 @@ export function buildGusTaskFixtures(now: Date = new Date()): CaseTask[] {
     { id: 'gus-task-1', organizationId: GUS_ORGANIZATION_ID, text: 'Call medical examiner re: release (demo task)', assigneeStaffId: GUS_DIRECTOR_STAFF_ID, isDone: false, caseId: 'gus-case-004', dueDate: null, createdAt: created },
     { id: 'gus-task-2', organizationId: GUS_ORGANIZATION_ID, text: 'Confirm Gus price list and service catalog (setup)', assigneeStaffId: GUS_ADMIN_STAFF_ID, isDone: false, caseId: null, dueDate: null, createdAt: created },
     { id: 'gus-task-3', organizationId: GUS_ORGANIZATION_ID, text: 'Upload organization logo in Settings (setup)', assigneeStaffId: GUS_ADMIN_STAFF_ID, isDone: true, caseId: null, dueDate: null, createdAt: created },
+  ];
+}
+
+/** Gus Phase 5G: the fictional director's credential record — license
+    entered and then verified by the demo administrator, with that history. */
+export function buildGusCredentialFixtures(now: Date = new Date()): FuneralDirectorCredentialRecord[] {
+  const license = fictionalDirectorLicense(now);
+  const at = now.toISOString();
+  const unverified = { ...license, verification: null };
+  return [
+    {
+      organizationId: GUS_ORGANIZATION_ID,
+      staffProfileId: GUS_DIRECTOR_STAFF_ID,
+      identityId: GUS_DIRECTOR_IDENTITY_ID,
+      license,
+      authorization: null,
+      revision: 2,
+      history: [
+        { eventId: 'seed-cred-1', action: 'license_set', reason: null, before: { license: null, authorization: null }, after: { license: unverified, authorization: null }, actorId: GUS_ADMIN_IDENTITY_ID, actorName: 'Avery Demo', at },
+        { eventId: 'seed-cred-2', action: 'license_verified', reason: null, before: { license: unverified, authorization: null }, after: { license, authorization: null }, actorId: GUS_ADMIN_IDENTITY_ID, actorName: 'Avery Demo', at },
+      ],
+    },
   ];
 }

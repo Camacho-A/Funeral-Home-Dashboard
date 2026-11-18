@@ -2,6 +2,7 @@ import { CREMATION_STEPS } from '../workflow/cremationFoundation';
 import { findStep } from '../workflow/workflowSteps';
 import { readChecklistValue } from '../workflow/checklistItemKey';
 import { checkFuneralDirectorLicense } from '../staff/funeralDirectorLicense';
+import { checkMedicalExaminerApproval } from '../crematory/medicalExaminerApproval';
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
 import type { ServiceReadiness } from './readiness';
@@ -18,8 +19,10 @@ import type { ServicePreparationDefinition } from './types';
  *   the service itself     — the scheduled service is marked completed
  *   cremation authorization — the arrangement form (authorization) step
  *   EDRS                   — submitted, cause of death, attestation
- *   medical examiner        — an explicit ME cremation approval (SOLIS has
- *                            no record of it yet, so this is never met)
+ *   medical examiner        — a valid ME cremation approval recorded on the
+ *                            case's crematory record (Phase 5G) — never
+ *                            inferred from the permit, EDRS ticks or the ME
+ *                            jurisdiction flag
  *   state permit           — confirmed on the case (necessary, never enough)
  *   48 hours since death   — Florida §872.03
  *   identification         — checked on the remains on the service day
@@ -139,10 +142,6 @@ export function evaluateReleaseForCremation(params: {
   licenseReverifyDays: number | null;
   timeZone: string;
   now: string;
-  /** Whether an explicit medical examiner cremation approval is recorded.
-      SOLIS has nowhere to record one yet, so every caller passes false
-      (the default); it exists so the rule is ready when that data is. */
-  medicalExaminerApprovalRecorded?: boolean;
 }): ReleaseEvaluation {
   const { case_, readiness, definition, approver } = params;
   const prepDone = (id: string) => readiness.items.find((i) => i.id === id)?.done === true;
@@ -153,6 +152,7 @@ export function evaluateReleaseForCremation(params: {
     : { verified: false, problems: ['No staff profile for this person.'], notes: [] };
   const authorized = approver ? approverAuthorization(approver, case_.organizationId, params.approverRoleKeys) : { ok: false, detail: 'No one is signed in.' };
   const serviceSpecific = definition.releasePrerequisiteItems ?? [];
+  const meApproval = checkMedicalExaminerApproval(case_.crematory?.medicalExaminerApproval, { dateOfDeath: case_.dateOfDeath, today: params.now.slice(0, 10) });
 
   const prerequisites: ReleasePrerequisite[] = [
     { key: 'service_completed', label: `${readiness.serviceName} marked completed`, met: readiness.service?.status === 'completed' },
@@ -165,8 +165,8 @@ export function evaluateReleaseForCremation(params: {
     {
       key: 'medical_examiner_approval',
       label: 'Medical examiner cremation approval recorded',
-      met: params.medicalExaminerApprovalRecorded === true,
-      ...(params.medicalExaminerApprovalRecorded ? {} : { detail: 'SOLIS does not record this approval yet.' }),
+      met: meApproval.valid,
+      ...(meApproval.valid ? {} : { detail: meApproval.problems.join(' ') }),
     },
     { key: 'state_permit', label: 'State burial-transit permit confirmed on the case', met: Boolean(case_.crematory?.permitVerification) },
     {

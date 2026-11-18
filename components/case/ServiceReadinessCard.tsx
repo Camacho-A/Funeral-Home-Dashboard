@@ -7,6 +7,7 @@ import { TextField } from '@/components/ui/TextField';
 import { useOrganization } from '@/hooks/useOrganization';
 import { useOrganizationRecord } from '@/hooks/useOrganizationRecord';
 import { useServicePreparation } from '@/hooks/useServicePreparation';
+import { MedicalExaminerApprovalSection } from './MedicalExaminerApprovalSection';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { servicePreparationFor } from '@/domain/servicePreparation/serviceDefinitions';
 import { summarizeServiceReadiness, type EvaluatedPreparationItem, type EffectivePreparationStatus } from '@/domain/servicePreparation/readiness';
@@ -214,7 +215,7 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
   const organizationRecord = useOrganizationRecord();
   const enabled = getRegisteredOrganizationProfile(organizationId).features.servicePreparation;
   const definition: ServicePreparationDefinition | null = enabled ? servicePreparationFor(case_.workflowSnapshot?.serviceTypeCode) : null;
-  const { query, save } = useServicePreparation(organizationId, case_.id, Boolean(definition));
+  const { query, save, recordMedicalExaminer } = useServicePreparation(organizationId, case_.id, Boolean(definition));
   if (!definition) return null;
 
   if (query.isPending) {
@@ -232,7 +233,7 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
     );
   }
 
-  const { preparation, canEdit, release } = query.data;
+  const { preparation, canEdit, release, medicalExaminer } = query.data;
   const timezone = organizationRecord.data?.timezone ?? 'America/New_York';
   const { record, service } = preparation;
   const readiness = summarizeServiceReadiness({ definition, record, service, now: now ?? new Date().toISOString() });
@@ -379,6 +380,17 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
             requirement below is met, and a verified, licensed funeral director approves.
           </p>
           {readiness.holdsCremation === 'undecided' && <p className={styles.note}>Whether cremation waits for this service depends on a choice above.</p>}
+          {medicalExaminer && (
+            <MedicalExaminerApprovalSection
+              view={medicalExaminer}
+              documents={preparation.documents}
+              canEdit={canEdit && !preparation.isArchived}
+              isSaving={recordMedicalExaminer.isPending}
+              error={recordMedicalExaminer.isError ? recordMedicalExaminer.error.message : null}
+              onRecord={(input, done) => recordMedicalExaminer.mutate(input, { onSuccess: done })}
+              formatWhen={(iso) => when(iso, timezone)}
+            />
+          )}
           {release && (
             <ul className={styles.requirements} data-testid="release-prerequisites">
               {release.prerequisites.map((r) => (
