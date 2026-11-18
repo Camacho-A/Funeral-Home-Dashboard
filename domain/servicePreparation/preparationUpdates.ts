@@ -123,6 +123,11 @@ export function applyPreparationChange(params: {
     if (known.kind === 'select' && !known.options?.some((o) => o.value === change.value)) {
       throw new PreparationChangeError(`"${change.value}" is not an option for ${known.label}.`);
     }
+    if (known.kind === 'number') {
+      const n = Number(change.value.trim());
+      if (!/^\d+$/.test(change.value.trim()) || !Number.isSafeInteger(n)) throw new PreparationChangeError(`${known.label}: enter a whole number.`);
+      if (known.max !== undefined && n > known.max) throw new PreparationChangeError(`${known.label}: no more than ${known.max}.`);
+    }
     record.details[known.key] = { value: clean(change.value) ?? '', ...stamp };
   }
   if (params.service) record.serviceAppointmentId = params.service.appointmentId;

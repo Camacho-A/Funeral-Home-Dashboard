@@ -86,7 +86,14 @@ export type PreparationChoiceDefinition = {
 
 /** Details recorded with an item (names, numbers, the card's language) —
     information, never a completion. */
-export type PreparationDetailDefinition = { key: string; label: string; kind: 'text' | 'phone' | 'select'; options?: readonly { value: string; label: string }[] };
+export type PreparationDetailDefinition = {
+  key: string;
+  label: string;
+  kind: 'text' | 'phone' | 'select' | 'number';
+  options?: readonly { value: string; label: string }[];
+  /** For 'number': the most allowed (e.g. 6 attendees). Refused above it. */
+  max?: number;
+};
 
 export type PreparationGroupKey =
   | 'service_schedule'
@@ -101,7 +108,9 @@ export type PreparationGroupKey =
   | 'clergy'
   | 'church'
   | 'transportation_staffing'
-  | 'day_of_service';
+  | 'day_of_service'
+  | 'final_goodbye_setup'
+  | 'face_viewing';
 
 export type PreparationGroupDefinition = {
   key: PreparationGroupKey;
@@ -132,6 +141,12 @@ export type ServicePreparationDefinition = {
   groups: readonly PreparationGroupDefinition[];
   /** Open questions shown with a draft. */
   openQuestions: readonly string[];
+  /** Limits the service itself must respect (Final Goodbye: 60 minutes,
+      provisional). A scheduled service past them is flagged for review. */
+  serviceLimits?: { maxDurationMinutes?: number; durationProvisional?: boolean };
+  /** Steps that must be done before release for cremation, beyond the
+      legal ones every cremation has (Viewing: embalming authorization). */
+  releasePrerequisiteItems?: readonly { itemId: string; label: string }[];
 };
 
 /** The latest decision about one item. Full history belongs in Activity. */

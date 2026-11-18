@@ -52,6 +52,9 @@ export const PREPARATION_CHOICES = {
   registerBook: requestedChoice('registerBook', 'Register book'),
   crucifix: requestedChoice('crucifix', 'Crucifix'),
   clergy: requestedChoice('clergy', 'Priest or pastor'),
+  /** Final Goodbye (Gus, confirmed 2026-11): the family may ask to see the
+      face only. */
+  faceViewing: requestedChoice('faceViewing', 'Face-only viewing'),
   /** Mass only, and unresolved: whether the body or the cremated remains
       are present decides whether cremation waits for the Mass. */
   massPresence: {
@@ -227,3 +230,86 @@ export const PREPARATION_GROUPS = {
     ],
   },
 } as const satisfies Record<string, PreparationGroupDefinition>;
+
+/**
+ * Gus Camacho Jr. Funeral Home — confirmed operational rules (Phase 5F,
+ * 2026-11). Groups used only by Gus's service definitions.
+ *
+ * Cremation with Viewing: embalming is mandatory for every formal Viewing
+ * (no waiver). The crematory embalms, dresses and caskets; Gus obtains the
+ * embalming authorization during arrangements and sends it to the
+ * crematory. These groups therefore always apply to a Viewing — no choice
+ * switches them off.
+ */
+export const GUS_VIEWING_GROUPS = {
+  embalming: {
+    key: 'embalming',
+    label: 'Embalming (required for every Viewing)',
+    items: [
+      {
+        id: 'prep.embalming.written_permission',
+        label: 'Embalming authorization signed during arrangements',
+        requirement: 'required',
+        kind: 'task',
+        dateDependent: false,
+        beforeFamilyArrives: true,
+        supportingDocument: 'Signed embalming authorization',
+      },
+      { id: 'prep.embalming.authorization_sent', label: 'Embalming authorization sent to the crematory', requirement: 'required', kind: 'task', dateDependent: false, beforeFamilyArrives: true },
+      { id: 'prep.embalming.completed', label: 'Embalming completed by the crematory', requirement: 'required', kind: 'confirmation', dateDependent: false, beforeFamilyArrives: true },
+    ],
+  },
+  clothing: {
+    key: 'clothing',
+    label: 'Family clothing',
+    items: [
+      { id: 'prep.clothing.received', label: 'Clothing received from the family', requirement: 'required', kind: 'task', dateDependent: false, beforeFamilyArrives: true },
+      { id: 'prep.clothing.delivered', label: 'Clothing delivered to the crematory', requirement: 'required', kind: 'task', dateDependent: false, beforeFamilyArrives: true },
+      { id: 'prep.clothing.dressed', label: 'Dressing completed by the crematory', requirement: 'required', kind: 'confirmation', dateDependent: false, beforeFamilyArrives: true },
+    ],
+  },
+  casket: {
+    key: 'casket',
+    label: 'Casket',
+    items: [
+      { id: 'prep.casket.selected', label: 'Casket selected with the family', requirement: 'required', kind: 'task', dateDependent: false, beforeFamilyArrives: true },
+      { id: 'prep.casket.ordered', label: 'Casket ordered', requirement: 'required', kind: 'task', dateDependent: false, target: 'casket_order', beforeFamilyArrives: true, supportingDocument: 'Casket order' },
+      { id: 'prep.casket.delivered_to_crematory', label: 'Casket delivered to the crematory', requirement: 'required', kind: 'confirmation', dateDependent: true, target: 'casket_order', beforeFamilyArrives: true },
+      { id: 'prep.casket.casketed', label: 'Casketing completed by the crematory', requirement: 'required', kind: 'confirmation', dateDependent: false, beforeFamilyArrives: true },
+    ],
+  },
+} as const satisfies Record<string, PreparationGroupDefinition>;
+
+/**
+ * Cremation with Final Goodbye (Gus, confirmed 2026-11): a short, private
+ * service in Gus's Miami chapel for at most six people, provisionally up to
+ * 60 minutes. The deceased stays in the cardboard cremation container,
+ * covered with a white sheet; the family may ask to see the face only. No
+ * embalming, dressing or casket.
+ */
+export const GUS_FINAL_GOODBYE_GROUPS = {
+  setup: {
+    key: 'final_goodbye_setup',
+    label: 'Final Goodbye in the Miami chapel',
+    details: [{ key: 'finalGoodbye.attendees', label: 'Number of attendees (up to 6)', kind: 'number', max: 6 }],
+    items: [
+      { id: 'prep.final_goodbye.chapel_reserved', label: 'Miami chapel reserved for the date and time', requirement: 'required', kind: 'confirmation', dateDependent: true, beforeFamilyArrives: true },
+      { id: 'prep.final_goodbye.attendees_confirmed', label: 'Attendees confirmed with the family (six or fewer)', requirement: 'required', kind: 'confirmation', dateDependent: true, beforeFamilyArrives: true },
+      {
+        id: 'prep.final_goodbye.container_prepared',
+        label: 'Remains in the cremation container, covered with a white sheet',
+        requirement: 'required',
+        kind: 'task',
+        dateDependent: true,
+        beforeFamilyArrives: true,
+      },
+    ],
+  },
+  faceViewing: {
+    key: 'face_viewing',
+    label: 'Face-only viewing',
+    requestedBy: PREPARATION_CHOICES.faceViewing.key,
+    items: [{ id: 'prep.final_goodbye.face_prepared', label: 'Face prepared for viewing; the rest stays covered', requirement: 'optional', kind: 'task', dateDependent: true, beforeFamilyArrives: true }],
+  },
+} as const satisfies Record<string, PreparationGroupDefinition>;
+

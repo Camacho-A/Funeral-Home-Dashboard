@@ -54,7 +54,7 @@ The Direct Cremation template, the Viewing and Final Goodbye templates (still
 the cremation foundation unchanged), Send to Crematory, prices, the catalog
 and every existing case are unchanged.
 
-## Storage (Phase 5C) — Wix change needs approval (not made)
+## Storage (Phase 5C–5E)
 
 **Code (done):** `servicePreparation` on the case (`types/case.ts`), read
 leniently by `lib/wixCaseMapper.ts` (`domain/servicePreparation/recordParsing.ts`),
@@ -132,34 +132,85 @@ never retried blindly.
 history. A typical service uses a small fraction of that (each entry is a
 few hundred bytes; the Wix item limit is 512 KB for the whole case row).
 
-## Release permission — gap
+## Gus's confirmed rules (Phase 5F, 2026-11)
 
-SOLIS cannot enforce "an authorized licensed funeral director" yet:
+**Cremation with Viewing** (`VIEWING_PREPARATION` v2, approved): embalming is
+mandatory for every formal Viewing — no waiver, no embalming choice, the
+steps can't be marked Not requested. The crematory embalms, dresses and
+caskets; Gus gets the embalming authorization at arrangements and sends it
+to the crematory. Always tracked: embalming authorization signed / sent /
+embalming done; family clothing received / delivered to the crematory /
+dressing done; casket selected / ordered / delivered to the crematory /
+casketing done; the scheduled Viewing; the crematory told about it and its
+hold confirmed. Casket spray, prayer cards, register book and crucifix stay
+optional.
 
-- Roles are assigned by an administrator. A `funeralDirector` role exists,
-  but holding it is not proof of a license, and no staff record stores a
-  license number or expiry.
-- Live permissions come from stored `rolePermissions` rows; a new
-  `service.releaseForCremation` permission would need RBAC writes in Wix.
-- The release would have nowhere to be saved until `servicePreparation` is
-  approved.
+**Cremation with Final Goodbye** (`FINAL_GOODBYE_PREPARATION` v2, approved):
+Miami chapel reserved; attendees confirmed (the attendee count is refused
+above 6); remains in the cardboard cremation container covered with a white
+sheet; optional face-only viewing; optional priest or pastor. No embalming,
+dressing or casket; no prayer cards, register book or crucifix. A Final
+Goodbye booked longer than 60 minutes is flagged (provisional limit), not
+blocked.
 
-So the release button is shown disabled with the reason, never as an
-approval that proves nothing. Needed decisions: which staff may release; whether
-SOLIS should record their license (number, expiry) on the staff profile;
-then a new permission granted to that role only.
+**Mass** stays a draft and is not offered anywhere.
 
-The release is **in addition** to the legal requirements, never instead of
-them. Authorization, permit, medical examiner approval, identification and
-the 48-hour wait stay where they are (the cremation workflow and Send to
-Crematory). Making Send to Crematory wait for the release is a later,
-separately approved change; today's sending behavior is untouched.
+## Release for cremation (Phase 5F) — rules built, NOT active
+
+`domain/servicePreparation/releaseForCremation.ts`, enforced on the server by
+`services/cremationReleaseService.ts`. Telling the crematory about the
+service is not a release and not a prerequisite. Every one of these must be
+met — none unlocks release alone (a confirmed permit included):
+
+1. the scheduled service marked **completed**;
+2. cremation authorization (arrangement form) step done;
+3. EDRS submitted, cause of death and attestation done;
+4. **medical examiner cremation approval recorded** — SOLIS has no place to
+   record this yet, so it is never met today;
+5. state burial-transit permit confirmed on the case;
+6. at least 48 hours since death (in the funeral home's time zone; a missing
+   time counts from the end of that day, a missing date blocks);
+7. identification checked on the remains (service day);
+8. Viewing only: embalming authorization signed;
+9. the approver's role is one the organization allows
+   (`cremationReleaseApproverRoleKeys`; Gus: funeralDirector, administrator;
+   Manors and the platform default: nobody), and
+10. the approver holds a **verified** funeral director license
+    (`domain/staff/funeralDirectorLicense.ts`): number, state and type on
+    file; status active; not expired; verified by someone else (who, when,
+    how, where) within the last 365 days; active profile in the same
+    organization. A "Funeral Director" role or display role is never enough.
+
+`approveCremationRelease` runs every check and then refuses with "not
+active yet" (`RELEASE_FOR_CREMATION_AVAILABLE = false`). Nothing is written
+or sent; Send to Crematory is unchanged. `buildCremationReleaseRecord`
+defines what a release will record: case, organization, service appointment,
+time, the approving director (identity, staff profile, name, role, license
+number, state, expiry) and every satisfied prerequisite.
+
+### Data still needed before release can be activated
+
+- **Staff profile license fields** — `StaffProfile.funeralDirectorLicense`
+  (license number, state, type, status, expiry, verification: verifiedAt,
+  verifiedBy, verifiedByName, method, reference). New optional OBJECT field
+  on the live `staffProfiles` collection, plus a Settings screen where an
+  administrator records and re-verifies it. Not added.
+- **Medical examiner cremation approval** — a recorded approval (date,
+  reference/case number, who recorded it) on the case. Not added.
+- **The release record** — stored in `servicePreparation.release` (the
+  existing field) with an audit history entry. Not written by anything yet.
+- **Send to Crematory** must then refuse a Viewing/Final Goodbye case until
+  it is released — a separate, approved change.
 
 ## Open decisions (funeral director)
 
-- Is Mass a service of its own or an optional part of another? Body present,
-  cremated remains, or both?
-- Is embalming required for every public Viewing? Rental or purchased casket?
-- What exactly is a Final Goodbye (attendance, length, place, presentation)?
-- Who may release remains for cremation after a service?
+- Mass: its own service or part of another? Body present, cremated remains,
+  or both? (Still a draft.)
+- Viewing: what happens when the family brings no clothing? Rental or
+  purchased casket, and who supplies it?
+- Final Goodbye: is 60 minutes the confirmed maximum?
+- Release: should administrators be allowed to release (with a verified
+  license), or funeral directors only? How often must a license be
+  re-verified (365 days assumed)?
+- Prayer cards, register book, crucifix for a Final Goodbye: offered or not?
 - Are the default deadline targets right for Gus's vendors and parishes?

@@ -103,12 +103,12 @@ describe('save and reload', () => {
     expect(before).toMatchObject({ applies: true, record: null, storageAvailable: true, isArchived: false });
     expect(before?.service?.appointmentId).toBe('appt-viewing');
 
-    await save({ kind: 'choice', choice: 'casket', value: 'rental' });
+    await save({ kind: 'choice', choice: 'prayerCards', value: 'requested' });
     await save({ kind: 'item', itemId: 'prep.casket.ordered', status: 'completed', note: 'Order #FICT-1' });
     await save({ kind: 'detail', key: 'prayerCards.language', value: 'spanish' });
 
     const after = (await getServicePreparation(GUS, VIEWING_CASE, 'mock'))!;
-    expect(after.record?.choices.casket).toMatchObject({ value: 'rental', by: 'identity-gus-director', byName: 'Jordan Demo', at: '2026-12-02T12:00:00.000Z' });
+    expect(after.record?.choices.prayerCards).toMatchObject({ value: 'requested', by: 'identity-gus-director', byName: 'Jordan Demo', at: '2026-12-02T12:00:00.000Z' });
     expect(after.record?.items['prep.casket.ordered']).toMatchObject({ status: 'completed', note: 'Order #FICT-1', byName: 'Jordan Demo' });
     expect(after.record?.details['prayerCards.language'].value).toBe('spanish');
   });
@@ -141,20 +141,20 @@ describe('save and reload', () => {
 
 describe('multiple staff', () => {
   it('a change to the same entry made against an older version is refused, with the latest returned', async () => {
-    const first = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
-    const stale = save({ kind: 'choice', choice: 'casket', value: 'purchase' }, null);
+    const first = await save({ kind: 'choice', choice: 'prayerCards', value: 'requested' });
+    const stale = save({ kind: 'choice', choice: 'prayerCards', value: 'not_requested' }, null);
     await expect(stale).rejects.toMatchObject({ status: 409 });
-    await stale.catch((error) => expect(error.current.record.choices.casket.value).toBe('rental'));
-    const fresh = await save({ kind: 'choice', choice: 'casket', value: 'purchase' }, first.record!.choices.casket.at, VIEWING_CASE, ctx(), '2026-12-02T13:00:00.000Z');
-    expect(fresh.record?.choices.casket.value).toBe('purchase');
+    await stale.catch((error) => expect(error.current.record.choices.prayerCards.value).toBe('requested'));
+    const fresh = await save({ kind: 'choice', choice: 'prayerCards', value: 'not_requested' }, first.record!.choices.prayerCards.at, VIEWING_CASE, ctx(), '2026-12-02T13:00:00.000Z');
+    expect(fresh.record?.choices.prayerCards.value).toBe('not_requested');
   });
 
   it('changes by two people to different entries both survive', async () => {
-    await save({ kind: 'choice', choice: 'casket', value: 'rental' });
-    await save({ kind: 'choice', choice: 'clothing', value: 'none' }, null, VIEWING_CASE, ctx({ actorIdentityId: 'identity-gus-admin' }));
+    await save({ kind: 'choice', choice: 'prayerCards', value: 'requested' });
+    await save({ kind: 'choice', choice: 'crucifix', value: 'requested' }, null, VIEWING_CASE, ctx({ actorIdentityId: 'identity-gus-admin' }));
     const view = (await getServicePreparation(GUS, VIEWING_CASE, 'mock'))!;
-    expect(view.record?.choices.casket.by).toBe('identity-gus-director');
-    expect(view.record?.choices.clothing.by).toBe('identity-gus-admin');
+    expect(view.record?.choices.prayerCards.by).toBe('identity-gus-director');
+    expect(view.record?.choices.crucifix.by).toBe('identity-gus-admin');
   });
 });
 
@@ -195,13 +195,13 @@ describe('history', () => {
 describe('where it applies', () => {
   it('another organization cannot read or change a Gus case', async () => {
     expect(await getServicePreparation(DEFAULT_ORGANIZATION_ID, VIEWING_CASE, 'mock')).toBeNull();
-    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' }, null, VIEWING_CASE, ctx({ organizationId: DEFAULT_ORGANIZATION_ID }))).rejects.toMatchObject({ status: 404 });
+    await expect(save({ kind: 'choice', choice: 'prayerCards', value: 'requested' }, null, VIEWING_CASE, ctx({ organizationId: DEFAULT_ORGANIZATION_ID }))).rejects.toMatchObject({ status: 404 });
     expect(caseFixtures.find((c) => c.id === VIEWING_CASE && c.organizationId === GUS)?.servicePreparation).toBeUndefined();
   });
 
   it('Direct Cremation has none and cannot be given any', async () => {
     expect(await getServicePreparation(GUS, DIRECT_CASE, 'mock')).toBeNull();
-    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' }, null, DIRECT_CASE)).rejects.toMatchObject({ status: 404 });
+    await expect(save({ kind: 'choice', choice: 'prayerCards', value: 'requested' }, null, DIRECT_CASE)).rejects.toMatchObject({ status: 404 });
   });
 
   it('Manors cases never have it, even with a Viewing service code', async () => {
@@ -209,13 +209,13 @@ describe('where it applies', () => {
     const manors = caseFixtures[index];
     caseFixtures[index] = { ...manors, workflowSnapshot: manors.workflowSnapshot ? { ...manors.workflowSnapshot, serviceTypeCode: 'CREMATION_WITH_VIEWING' } : manors.workflowSnapshot };
     expect(await getServicePreparation(DEFAULT_ORGANIZATION_ID, manors.id, 'mock')).toBeNull();
-    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' }, null, manors.id, ctx({ organizationId: DEFAULT_ORGANIZATION_ID }))).rejects.toMatchObject({ status: 404 });
+    await expect(save({ kind: 'choice', choice: 'prayerCards', value: 'requested' }, null, manors.id, ctx({ organizationId: DEFAULT_ORGANIZATION_ID }))).rejects.toMatchObject({ status: 404 });
   });
 
   it('an archived case is read-only', async () => {
     const index = caseFixtures.findIndex((c) => c.id === VIEWING_CASE && c.organizationId === GUS);
     caseFixtures[index] = { ...caseFixtures[index], isDeleted: true };
-    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' })).rejects.toMatchObject({ status: 409 });
+    await expect(save({ kind: 'choice', choice: 'prayerCards', value: 'requested' })).rejects.toMatchObject({ status: 409 });
   });
 
   it('cannot name a cremation step', async () => {
@@ -225,7 +225,7 @@ describe('where it applies', () => {
 
 describe('live Wix', () => {
   it('refuses to save until the field is added, without calling Wix', async () => {
-    await expect(changeServicePreparation(ctx(), VIEWING_CASE, { change: { kind: 'choice', choice: 'casket', value: 'rental' }, basis: { at: null }, actorName: null }, 'wix')).rejects.toMatchObject({
+    await expect(changeServicePreparation(ctx(), VIEWING_CASE, { change: { kind: 'choice', choice: 'prayerCards', value: 'requested' }, basis: { at: null }, actorName: null }, 'wix')).rejects.toMatchObject({
       status: 503,
       message: SERVICE_PREPARATION_STORAGE_UNAVAILABLE,
     });
@@ -237,17 +237,17 @@ describe('audit history (Phase 5E)', () => {
   const prepEvents = () => activityEventFixtures.filter((e) => e.eventType === ACTIVITY_EVENT_TYPES.SERVICE_PREPARATION_UPDATED && e.caseId === VIEWING_CASE);
 
   it('each save has one history entry and exactly one matching Activity event (same id)', async () => {
-    const first = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
-    const second = await save({ kind: 'choice', choice: 'casket', value: 'purchase' }, first.record!.choices.casket.at, VIEWING_CASE, ctx(), '2026-12-02T13:00:00.000Z');
+    const first = await save({ kind: 'choice', choice: 'prayerCards', value: 'requested' });
+    const second = await save({ kind: 'choice', choice: 'prayerCards', value: 'not_requested' }, first.record!.choices.prayerCards.at, VIEWING_CASE, ctx(), '2026-12-02T13:00:00.000Z');
     const history = second.record!.history!;
     expect(history).toHaveLength(2);
-    expect(history[1]).toMatchObject({ actorId: 'identity-gus-director', actorName: 'Jordan Demo', at: '2026-12-02T13:00:00.000Z', previous: { value: 'rental' }, next: { value: 'purchase' } });
+    expect(history[1]).toMatchObject({ actorId: 'identity-gus-director', actorName: 'Jordan Demo', at: '2026-12-02T13:00:00.000Z', previous: { value: 'requested' }, next: { value: 'not_requested' } });
     expect(prepEvents()).toHaveLength(2);
     expect(prepEvents().map((e) => e.correlationId)).toEqual(history.map((h) => h.eventId));
   });
 
   it('the server makes the event id and the time; they are unique per change', async () => {
-    const saved = await changeServicePreparation(ctx(), VIEWING_CASE, { change: { kind: 'choice', choice: 'casket', value: 'rental' }, basis: { at: null }, actorName: 'Jordan Demo' }, 'mock');
+    const saved = await changeServicePreparation(ctx(), VIEWING_CASE, { change: { kind: 'choice', choice: 'prayerCards', value: 'requested' }, basis: { at: null }, actorName: 'Jordan Demo' }, 'mock');
     const [entry] = saved.record!.history!;
     expect(entry.eventId).toMatch(/^[0-9a-f-]{36}$/);
     expect(Date.parse(entry.at)).toBeGreaterThan(Date.now() - 60_000);
@@ -256,28 +256,28 @@ describe('audit history (Phase 5E)', () => {
   it('if the Activity write fails, the change and its history entry are still saved, and the failure is logged', async () => {
     activityFailure.fail = true;
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const saved = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
-    expect(saved.record!.choices.casket.value).toBe('rental');
+    const saved = await save({ kind: 'choice', choice: 'prayerCards', value: 'requested' });
+    expect(saved.record!.choices.prayerCards.value).toBe('requested');
     expect(prepEvents()).toHaveLength(0);
     const reloaded = (await getServicePreparation(GUS, VIEWING_CASE, 'mock'))!;
     expect(reloaded.record!.history).toHaveLength(1);
-    expect(reloaded.record!.history![0].next).toMatchObject({ value: 'rental' });
+    expect(reloaded.record!.history![0].next).toMatchObject({ value: 'requested' });
     expect(errors.mock.calls.some(([message]) => String(message).includes('was not recorded'))).toBe(true);
     errors.mockRestore();
   });
 
   it('history survives a reload and a later save', async () => {
-    const first = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
+    const first = await save({ kind: 'choice', choice: 'prayerCards', value: 'requested' });
     await save({ kind: 'detail', key: 'prayerCards.image', value: 'Fictional sunrise' }, null, VIEWING_CASE, ctx(), '2026-12-02T14:00:00.000Z');
     const reloaded = (await getServicePreparation(GUS, VIEWING_CASE, 'mock'))!;
-    expect(reloaded.record!.history!.map((h) => h.target.key)).toEqual(['casket', 'prayerCards.image']);
+    expect(reloaded.record!.history!.map((h) => h.target.key)).toEqual(['prayerCards', 'prayerCards.image']);
     expect(reloaded.record!.history![0]).toEqual(first.record!.history![0]);
   });
 
   it('a stored preparation that cannot be read is never saved over', async () => {
     const index = caseFixtures.findIndex((c) => c.id === VIEWING_CASE && c.organizationId === GUS);
     caseFixtures[index] = { ...caseFixtures[index], servicePreparationUnreadable: true };
-    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' })).rejects.toMatchObject({ status: 409 });
+    await expect(save({ kind: 'choice', choice: 'prayerCards', value: 'requested' })).rejects.toMatchObject({ status: 409 });
     expect(caseFixtures[index].servicePreparation).toBeUndefined();
   });
 
@@ -304,7 +304,7 @@ describe('audit history (Phase 5E)', () => {
     };
     caseFixtures[index] = { ...caseFixtures[index], servicePreparation: full };
     const revision = caseFixtures[index].revision;
-    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' })).rejects.toMatchObject({ status: 413 });
+    await expect(save({ kind: 'choice', choice: 'prayerCards', value: 'requested' })).rejects.toMatchObject({ status: 413 });
     expect(caseFixtures[index].servicePreparation).toBe(full);
     expect(caseFixtures[index].revision).toBe(revision);
     expect(prepEvents()).toHaveLength(0);

@@ -183,7 +183,25 @@ export function buildGusStaffFixtures(): StaffProfile[] {
     isActive: true,
     createdAt: NOW,
     updatedAt: NOW,
+    // Gus Phase 5F: a FICTIONAL, verified license for the demo funeral
+    // director only. The administrator's display role is also
+    // "funeral_director", but with no license on file — so SOLIS never
+    // treats them as licensed.
+    ...(seed.staffId === GUS_DIRECTOR_STAFF_ID ? { funeralDirectorLicense: fictionalDirectorLicense() } : {}),
   }));
+}
+
+/** Fictional — never a real license number. Verified "today" by the demo
+    administrator, so it stays within the re-verification window. */
+export function fictionalDirectorLicense(now: Date = new Date()): NonNullable<StaffProfile['funeralDirectorLicense']> {
+  return {
+    licenseNumber: 'FD-FICTIONAL-0001',
+    state: 'FL',
+    licenseType: 'funeral_director_and_embalmer',
+    status: 'active',
+    expiresOn: `${now.getUTCFullYear() + 2}-01-31`,
+    verification: { verifiedAt: now.toISOString(), verifiedBy: GUS_ADMIN_IDENTITY_ID, verifiedByName: 'Avery Demo', method: 'state_license_lookup', reference: 'Fictional sandbox record — not a real lookup' },
+  };
 }
 
 type GusCaseSeed = {

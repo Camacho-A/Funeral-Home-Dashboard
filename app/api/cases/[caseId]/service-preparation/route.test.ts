@@ -25,7 +25,7 @@ const SAME_ORIGIN = { origin: 'http://localhost', host: 'localhost', 'content-ty
 const params = { params: Promise.resolve({ caseId: CASE_ID }) };
 const index = caseFixtures.findIndex((c) => c.id === CASE_ID && c.organizationId === GUS_CAMACHO_ORGANIZATION_ID);
 const original = caseFixtures[index];
-const choice = { kind: 'choice', choice: 'casket', value: 'rental' };
+const choice = { kind: 'choice', choice: 'prayerCards', value: 'requested' };
 const post = (body: Record<string, unknown>, headers: Record<string, string> = SAME_ORIGIN) =>
   POST(new Request(`http://localhost/api/cases/${CASE_ID}/service-preparation`, { method: 'POST', headers, body: JSON.stringify({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, ...body }) }), params);
 const get = (organizationId = GUS_CAMACHO_ORGANIZATION_ID) => GET(new Request(`http://localhost/api/cases/${CASE_ID}/service-preparation?organizationId=${organizationId}`), params);
@@ -47,7 +47,10 @@ describe('/api/cases/[caseId]/service-preparation', () => {
     expect(read.status).toBe(200);
     const body = await read.json();
     expect(body.canEdit).toBe(true);
-    expect(body.preparation.record.choices.casket.value).toBe('rental');
+    // The release check for the person asking (Phase 5F) — never active.
+    expect(body.release.canRelease).toBe(false);
+    expect(body.release.prerequisites.map((p: { key: string }) => p.key)).toEqual(expect.arrayContaining(['service_completed', 'state_permit', 'approver_licensed']));
+    expect(body.preparation.record.choices.prayerCards.value).toBe('requested');
   });
 
   it('staff without case.update can view but not change', async () => {
@@ -73,8 +76,8 @@ describe('/api/cases/[caseId]/service-preparation', () => {
 
   it('a stale change comes back as 409 with the latest preparation', async () => {
     await post({ change: choice, basis: { at: null } });
-    const stale = await post({ change: { ...choice, value: 'purchase' }, basis: { at: null } });
+    const stale = await post({ change: { ...choice, value: 'not_requested' }, basis: { at: null } });
     expect(stale.status).toBe(409);
-    expect((await stale.json()).preparation.record.choices.casket.value).toBe('rental');
+    expect((await stale.json()).preparation.record.choices.prayerCards.value).toBe('requested');
   });
 });

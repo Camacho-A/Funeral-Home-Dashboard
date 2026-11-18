@@ -56,7 +56,7 @@ const { changeServicePreparation } = await import('./servicePreparationService')
 
 const ctx = { organizationId: 'gus-camacho-jr', actorIdentityId: 'identity-gus-director', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'corr-fictional' };
 const EVENT = 'evt-fictional-1';
-const change = { kind: 'choice' as const, choice: 'casket', value: 'rental' };
+const change = { kind: 'choice' as const, choice: 'prayerCards', value: 'requested' };
 const run = () => changeServicePreparation(ctx, 'gus-case-010', { change, basis: { at: null }, actorName: 'Jordan Demo', eventId: EVENT }, 'wix');
 
 const rowWith = (record: ServicePreparationRecord | undefined): LoadedCaseRow => ({ id: 'wix-row', data: {} as never, case_: { ...viewingCase, servicePreparation: record } });
@@ -76,7 +76,7 @@ describe('unclear Wix answers are settled by reading the case back', () => {
     };
     state.readBack = () => rowWith(decided);
     const saved = await run();
-    expect(saved.record?.choices.casket.value).toBe('rental');
+    expect(saved.record?.choices.prayerCards.value).toBe('requested');
     expect(saved.record?.history?.[0].eventId).toBe(EVENT);
     expect(state.writes).toBe(1);
     expect(state.activity).toHaveLength(1);

@@ -6,13 +6,15 @@ import { getDataAdapterMode } from '@/lib/env';
 import { canEditCase, canReadCases } from '@/services/authorizationPolicyService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { changeServicePreparation, getServicePreparation, ServicePreparationError } from '@/services/servicePreparationService';
+import { evaluateCremationReleaseForCaller } from '@/services/cremationReleaseService';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
 import type { PreparationStatus } from '@/domain/servicePreparation/types';
 
 /**
  * Service preparation (Gus Phase 5C, 2026-11) — one case.
- *   GET  ?organizationId= → the case's preparation, its service appointment
- *        and its documents (case.read)
+ *   GET  ?organizationId= → the case's preparation, its service appointment,
+ *        its documents, and the release-for-cremation check for the person
+ *        asking (case.read). Release itself is not active.
  *   POST { organizationId, change, basis: { at } } → one change (case.update):
  *        change = { kind: 'item', itemId, status, note?, documentId? }
  *               | { kind: 'choice', choice, value }
@@ -77,8 +79,11 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
   try {
     const preparation = await getServicePreparation(organizationId, caseId, mode);
     if (!preparation) return NextResponse.json({ error: 'This case has no service preparation.' }, { status: 404 });
-    const canEdit = await canEditCase({ identityId: userId, organizationId, roleKey: role }, mode);
-    return NextResponse.json({ preparation, canEdit }, { headers: { 'Cache-Control': 'no-store' } });
+    const [canEdit, release] = await Promise.all([
+      canEditCase({ identityId: userId, organizationId, roleKey: role }, mode),
+      evaluateCremationReleaseForCaller({ organizationId, userId, role }, caseId, mode),
+    ]);
+    return NextResponse.json({ preparation, canEdit, release }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return errorResponse(error);
   }

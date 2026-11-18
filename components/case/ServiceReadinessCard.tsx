@@ -10,7 +10,7 @@ import { useServicePreparation } from '@/hooks/useServicePreparation';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { servicePreparationFor } from '@/domain/servicePreparation/serviceDefinitions';
 import { summarizeServiceReadiness, type EvaluatedPreparationItem, type EffectivePreparationStatus } from '@/domain/servicePreparation/readiness';
-import { evaluateReleaseForCremation, LEGAL_REQUIREMENTS_STILL_CHECKED } from '@/domain/servicePreparation/releaseForCremation';
+import { RELEASE_FOR_CREMATION_UNAVAILABLE_REASON } from '@/domain/servicePreparation/releaseForCremation';
 import { DEADLINE_STATE_LABEL } from '@/domain/servicePreparation/deadlines';
 import { PREPARATION_STATUS_LABEL, type PreparationDetailDefinition, type PreparationStatus, type PreparationValueRecord, type ServicePreparationDefinition } from '@/domain/servicePreparation/types';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
@@ -91,7 +91,8 @@ function DetailInput({ detail, entry, disabled, onSave }: { detail: PreparationD
       <span>{detail.label}</span>
       <TextField
         id={id}
-        type={detail.kind === 'phone' ? 'tel' : 'text'}
+        type={detail.kind === 'phone' ? 'tel' : detail.kind === 'number' ? 'number' : 'text'}
+        {...(detail.kind === 'number' ? { min: 0, max: detail.max, inputMode: 'numeric' as const } : {})}
         value={value}
         maxLength={300}
         disabled={disabled}
@@ -231,11 +232,10 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
     );
   }
 
-  const { preparation, canEdit } = query.data;
+  const { preparation, canEdit, release } = query.data;
   const timezone = organizationRecord.data?.timezone ?? 'America/New_York';
   const { record, service } = preparation;
   const readiness = summarizeServiceReadiness({ definition, record, service, now: now ?? new Date().toISOString() });
-  const release = evaluateReleaseForCremation({ readiness, record, actorMayRelease: false });
   const editable = canEdit && preparation.storageAvailable && !preparation.isArchived && !record?.release;
   const disabled = !editable || save.isPending;
   const groups = [...new Map(readiness.items.map((i) => [i.groupKey, i.groupLabel])).entries()];
@@ -365,23 +365,37 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
         </details>
       )}
 
-      {release.applies !== false && (
+      {readiness.warnings.map((w) => (
+        <p key={w} className={styles.notice} role="note">
+          {w}
+        </p>
+      ))}
+
+      {readiness.holdsCremation !== false && (
         <div className={styles.release} aria-label="Release for cremation">
           <div className={styles.sectionLabel}>Release for cremation</div>
-          {release.applies === 'undecided' && <p className={styles.note}>Whether cremation waits for this service depends on a choice above.</p>}
-          <ul className={styles.requirements}>
-            {release.requirements.map((r) => (
-              <li key={r.key} className={r.met ? styles.met : styles.unmet}>
-                {r.met ? '✓' : '○'} {r.label}
-                <span className="sr-only">{r.met ? ' — done' : ' — not yet'}</span>
-              </li>
-            ))}
-          </ul>
-          <p className={styles.note}>Still required and checked by the cremation steps, not by this release: {LEGAL_REQUIREMENTS_STILL_CHECKED.join('; ')}.</p>
+          <p className={styles.note}>
+            Telling the crematory about the service is not a release. The cremation paperwork is released only after the {readiness.serviceName.toLowerCase()} is completed, every
+            requirement below is met, and a verified, licensed funeral director approves.
+          </p>
+          {readiness.holdsCremation === 'undecided' && <p className={styles.note}>Whether cremation waits for this service depends on a choice above.</p>}
+          {release && (
+            <ul className={styles.requirements} data-testid="release-prerequisites">
+              {release.prerequisites.map((r) => (
+                <li key={r.key} className={r.met ? styles.met : styles.unmet}>
+                  {r.met ? '✓' : '○'} {r.label}
+                  {!r.met && r.detail && <span className={styles.itemHint}> — {r.detail}</span>}
+                  <span className="sr-only">{r.met ? ' — done' : ' — not yet'}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           <button type="button" className={styles.releaseButton} disabled aria-describedby={`release-unavailable-${case_.id}`}>
             Release for cremation
           </button>
-          <p id={`release-unavailable-${case_.id}`} className={styles.note}>{release.unavailableReason}</p>
+          <p id={`release-unavailable-${case_.id}`} className={styles.note}>
+            {release?.unavailableReason ?? RELEASE_FOR_CREMATION_UNAVAILABLE_REASON}
+          </p>
         </div>
       )}
     </section>

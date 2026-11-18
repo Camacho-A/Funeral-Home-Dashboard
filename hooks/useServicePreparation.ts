@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
 import type { ServicePreparationView } from '@/services/servicePreparationService';
+import type { ReleaseEvaluation } from '@/domain/servicePreparation/releaseForCremation';
 
 /**
  * Service preparation (Gus Phase 5C). Reads and saves through
@@ -8,7 +9,7 @@ import type { ServicePreparationView } from '@/services/servicePreparationServic
  * saved is what comes back after a refresh. On a 409 the server's latest
  * preparation replaces what is shown.
  */
-export type ServicePreparationResponse = { preparation: ServicePreparationView; canEdit: boolean };
+export type ServicePreparationResponse = { preparation: ServicePreparationView; canEdit: boolean; release: ReleaseEvaluation | null };
 
 export class ServicePreparationSaveError extends Error {
   constructor(

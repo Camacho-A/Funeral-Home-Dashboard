@@ -56,4 +56,35 @@ export type StaffProfile = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** Gus Phase 5F (2026-11) — DESIGN. The person's funeral director license,
+      and how the funeral home verified it. Holding a "Funeral Director" role
+      or display role says nothing about this; only a verified license does
+      (domain/staff/funeralDirectorLicense.ts). Not yet stored in Wix — see
+      docs/SERVICE_PREPARATION.md, "Release for cremation". */
+  funeralDirectorLicense?: FuneralDirectorLicense | null;
+};
+
+export type FuneralDirectorLicenseStatus = 'active' | 'inactive' | 'expired' | 'suspended' | 'revoked' | 'unknown';
+
+export type FuneralDirectorLicense = {
+  /** As issued by the state board, e.g. Florida's Division of Funeral,
+      Cemetery, and Consumer Services. */
+  licenseNumber: string;
+  /** Two-letter state code. */
+  state: string;
+  /** e.g. 'funeral_director', 'funeral_director_and_embalmer'. */
+  licenseType: string;
+  status: FuneralDirectorLicenseStatus;
+  /** YYYY-MM-DD. */
+  expiresOn: string;
+  verification: {
+    /** When the license was checked against the state's own record. */
+    verifiedAt: string;
+    /** Identity id of the staff member who checked it — never the licensee. */
+    verifiedBy: string;
+    verifiedByName: string | null;
+    method: 'state_license_lookup' | 'license_document';
+    /** Where it was checked (lookup page, document id). */
+    reference: string;
+  } | null;
 };

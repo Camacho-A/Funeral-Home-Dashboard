@@ -8,7 +8,6 @@ import { evaluateDeadline, resolvePreparationTargets } from './deadlines';
 import { applyPreparationChange, PREPARATION_RECORD_MAX_BYTES, PreparationChangeError, PreparationConflictError, PreparationLimitError, preparationRecordBytes, type PreparationChange } from './preparationUpdates';
 import { isServicePreparationReadable, readServicePreparationRecord } from './recordParsing';
 import { selectServiceEvent, summarizeServiceReadiness } from './readiness';
-import { evaluateReleaseForCremation, LEGAL_REQUIREMENTS_STILL_CHECKED } from './releaseForCremation';
 import { FINAL_GOODBYE_PREPARATION, MASS_PREPARATION, PROVISIONAL_MASS_SERVICE_TYPE_CODE, SERVICE_PREPARATION_DEFINITIONS, VIEWING_PREPARATION, servicePreparationFor } from './serviceDefinitions';
 import type { ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
@@ -81,7 +80,7 @@ describe('preparation is separate from the cremation steps', () => {
         expect(id.startsWith('prep.')).toBe(true);
         expect(cremationStepIds.has(id)).toBe(false);
       }
-      expect(definition.status).toBe('draft');
+      expect(definition.status).toBe(definition === MASS_PREPARATION ? 'draft' : 'approved');
     }
   });
 
@@ -95,34 +94,12 @@ describe('preparation is separate from the cremation steps', () => {
     expect(viewingCase.rawStage).toBeLessThan(3); // before EDRS
     const definition = servicePreparationFor(viewingCase.workflowSnapshot?.serviceTypeCode)!;
     const record = apply(definition, [
-      { kind: 'choice', choice: 'casket', value: 'rental' },
+      { kind: 'choice', choice: 'prayerCards', value: 'requested' },
       { kind: 'item', itemId: 'prep.casket.ordered', status: 'completed' },
     ]);
     expect(itemsOf(definition, record).items.find((i) => i.id === 'prep.casket.ordered')!.done).toBe(true);
   });
 
-  it('even with every requirement met and an authorized approver, release stays disabled', () => {
-    const svc = service({ status: 'completed' });
-    const record = apply(
-      VIEWING_PREPARATION,
-      [
-        { kind: 'item', itemId: 'prep.crematory.notified', status: 'completed' },
-        { kind: 'item', itemId: 'prep.crematory.hold_confirmed', status: 'confirmed' },
-      ],
-      svc,
-    );
-    const release = evaluateReleaseForCremation({ readiness: itemsOf(VIEWING_PREPARATION, record, svc), record, actorMayRelease: true });
-    expect(release.requirements.every((r) => r.met)).toBe(true);
-    expect(release.canRelease).toBe(false);
-    expect(release.unavailableReason).toMatch(/licensed funeral directors/);
-    expect(LEGAL_REQUIREMENTS_STILL_CHECKED).toContain('Burial-transit permit');
-  });
-
-  it('staff who may not release never meet the approver requirement', () => {
-    const release = evaluateReleaseForCremation({ readiness: itemsOf(VIEWING_PREPARATION, null), record: null, actorMayRelease: false });
-    expect(release.requirements.find((r) => r.key === 'authorized_approver')!.met).toBe(false);
-    expect(release.canRelease).toBe(false);
-  });
 });
 
 describe('optional and conditional items', () => {
@@ -157,16 +134,12 @@ describe('optional and conditional items', () => {
     expect(itemsOf(VIEWING_PREPARATION, stored).items.find((i) => i.id === 'prep.crematory.notified')!.status).toBe('pending');
   });
 
-  it('a Final Goodbye assumes neither embalming nor a casket', () => {
-    const none = itemsOf(FINAL_GOODBYE_PREPARATION, null).items.map((i) => i.id);
-    expect(none.some((id) => id.startsWith('prep.embalming.') || id.startsWith('prep.casket.'))).toBe(false);
-    const record = apply(FINAL_GOODBYE_PREPARATION, [
-      { kind: 'choice', choice: 'embalming', value: 'embalmed' },
-      { kind: 'choice', choice: 'casket', value: 'none' },
-    ]);
-    const ids = itemsOf(FINAL_GOODBYE_PREPARATION, record).items.map((i) => i.id);
-    expect(ids).toContain('prep.embalming.written_permission');
-    expect(ids.some((id) => id.startsWith('prep.casket.'))).toBe(false);
+  it('a Final Goodbye never asks for embalming, dressing or a casket, and offers no prayer cards, register book or crucifix', () => {
+    const ids = itemsOf(FINAL_GOODBYE_PREPARATION, null).items.map((i) => i.id);
+    expect(ids.some((id) => /^prep\.(embalming|casket|clothing|prayer_cards|register_book|crucifix)\./.test(id))).toBe(false);
+    for (const choice of ['embalming', 'casket', 'clothing', 'prayerCards', 'registerBook', 'crucifix']) {
+      expect(() => apply(FINAL_GOODBYE_PREPARATION, [{ kind: 'choice', choice, value: 'requested' }])).toThrow(PreparationChangeError);
+    }
   });
 
   it('a Mass does not assume the body is present', () => {
@@ -182,7 +155,7 @@ describe('optional and conditional items', () => {
   });
 
   it('unknown choices, answers and details are refused', () => {
-    expect(() => apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'gold' }])).toThrow(PreparationChangeError);
+    expect(() => apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'gold' }])).toThrow(PreparationChangeError);
     expect(() => apply(VIEWING_PREPARATION, [{ kind: 'detail', key: 'prayerCards.language', value: 'klingon' }])).toThrow(PreparationChangeError);
     expect(apply(VIEWING_PREPARATION, [{ kind: 'detail', key: 'prayerCards.language', value: 'spanish' }]).details['prayerCards.language'].value).toBe('spanish');
   });
@@ -226,7 +199,6 @@ describe('rescheduling', () => {
   const moved = service({ startAt: '2026-12-11T15:00:00.000Z', endAt: '2026-12-11T17:00:00.000Z' });
   const record = apply(VIEWING_PREPARATION, [
     { kind: 'item', itemId: 'prep.crematory.hold_confirmed', status: 'confirmed' },
-    { kind: 'choice', choice: 'clothing', value: 'family_provides' },
     { kind: 'item', itemId: 'prep.clothing.received', status: 'completed' },
   ], original);
 
@@ -282,16 +254,16 @@ describe('organization isolation', () => {
   });
 
   it("a record made for another service's preparation is ignored, and cannot be changed through it", () => {
-    const viewingRecord = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
+    const viewingRecord = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }]);
     expect(itemsOf(FINAL_GOODBYE_PREPARATION, viewingRecord).items.every((i) => i.record === null)).toBe(true);
-    expect(() => apply(FINAL_GOODBYE_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }], service(), viewingRecord)).toThrow(/different service/);
+    expect(() => apply(FINAL_GOODBYE_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }], service(), viewingRecord)).toThrow(/different service/);
   });
 });
 
 describe('saving (Phase 5C)', () => {
   it('records who set a choice or detail, and when', () => {
-    const record = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
-    expect(record.choices.casket).toEqual({ value: 'rental', at: '2026-12-02T12:00:00.000Z', by: actor.id, byName: actor.name });
+    const record = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }]);
+    expect(record.choices.prayerCards).toEqual({ value: 'requested', at: '2026-12-02T12:00:00.000Z', by: actor.id, byName: actor.name });
   });
 
   it('a status change keeps the note and linked document', () => {
@@ -303,14 +275,14 @@ describe('saving (Phase 5C)', () => {
   });
 
   it('refuses a change to an entry someone else changed since; other entries are unaffected', () => {
-    const base = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
-    const change: PreparationChange = { kind: 'choice', choice: 'casket', value: 'purchase' };
+    const base = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }]);
+    const change: PreparationChange = { kind: 'choice', choice: 'prayerCards', value: 'not_requested' };
     const run = (basisAt: string | null) =>
       applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change, basis: { at: basisAt }, actor, now: '2026-12-03T12:00:00.000Z', eventId: `evt-${++eventCounter}` });
     expect(() => run(null)).toThrow(PreparationConflictError);
-    expect(run(base.choices.casket.at).choices.casket.value).toBe('purchase');
-    const other = applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change: { kind: 'choice', choice: 'clothing', value: 'none' }, basis: { at: null }, actor, now: '2026-12-03T12:00:00.000Z', eventId: `evt-${++eventCounter}` });
-    expect(other.choices.casket.value).toBe('rental');
+    expect(run(base.choices.prayerCards.at).choices.prayerCards.value).toBe('not_requested');
+    const other = applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change: { kind: 'choice', choice: 'crucifix', value: 'requested' }, basis: { at: null }, actor, now: '2026-12-03T12:00:00.000Z', eventId: `evt-${++eventCounter}` });
+    expect(other.choices.prayerCards.value).toBe('requested');
   });
 
   it('reads a stored record leniently: absent or malformed is no record, bad entries are dropped', () => {
@@ -318,7 +290,7 @@ describe('saving (Phase 5C)', () => {
     expect(readServicePreparationRecord('nope')).toBeNull();
     expect(readServicePreparationRecord({ definitionKey: 'prep.viewing' })).toBeNull();
     const record = apply(VIEWING_PREPARATION, [
-      { kind: 'choice', choice: 'casket', value: 'rental' },
+      { kind: 'choice', choice: 'prayerCards', value: 'requested' },
       { kind: 'item', itemId: 'prep.crematory.notified', status: 'completed' },
     ]);
     const stored = JSON.parse(JSON.stringify(record));
@@ -335,27 +307,27 @@ describe('saving (Phase 5C)', () => {
 describe('audit history (Phase 5E)', () => {
   it('every change appends one entry: what, before, after, who, when, and its event id', () => {
     const record = apply(VIEWING_PREPARATION, [
-      { kind: 'choice', choice: 'casket', value: 'rental' },
-      { kind: 'choice', choice: 'casket', value: 'purchase' },
+      { kind: 'choice', choice: 'prayerCards', value: 'requested' },
+      { kind: 'choice', choice: 'prayerCards', value: 'not_requested' },
     ]);
     expect(record.history).toHaveLength(2);
     const [first, second] = record.history!;
-    expect(first).toMatchObject({ target: { kind: 'choice', key: 'casket' }, previous: null, next: { value: 'rental' }, actorId: actor.id, actorName: actor.name, at: '2026-12-02T12:00:00.000Z' });
-    expect(second.previous).toMatchObject({ value: 'rental' });
-    expect(second.next).toMatchObject({ value: 'purchase' });
-    expect(second.description).toMatch(/Casket — Purchase/);
+    expect(first).toMatchObject({ target: { kind: 'choice', key: 'prayerCards' }, previous: null, next: { value: 'requested' }, actorId: actor.id, actorName: actor.name, at: '2026-12-02T12:00:00.000Z' });
+    expect(second.previous).toMatchObject({ value: 'requested' });
+    expect(second.next).toMatchObject({ value: 'not_requested' });
+    expect(second.description).toMatch(/Prayer cards — Not requested/);
     expect(new Set(record.history!.map((e) => e.eventId)).size).toBe(2);
   });
 
   it('history is append-only: earlier entries are kept exactly', () => {
-    const one = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
+    const one = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }]);
     const two = apply(VIEWING_PREPARATION, [{ kind: 'detail', key: 'prayerCards.language', value: 'spanish' }], service(), one);
     expect(two.history!.slice(0, 1)).toEqual(one.history);
   });
 
   it('a change that would take the record past the safe size is refused, and nothing changes', () => {
     const big: ServicePreparationRecord = {
-      ...apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'clothing', value: 'none' }]),
+      ...apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'crucifix', value: 'requested' }]),
       history: Array.from({ length: 400 }, (_, i) => ({
         eventId: `old-${i}`,
         target: { kind: 'item' as const, key: 'prep.crematory.notified' },
@@ -369,7 +341,7 @@ describe('audit history (Phase 5E)', () => {
     };
     expect(preparationRecordBytes(big)).toBeGreaterThan(PREPARATION_RECORD_MAX_BYTES);
     const before = JSON.stringify(big);
-    expect(() => apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }], service(), big)).toThrow(PreparationLimitError);
+    expect(() => apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }], service(), big)).toThrow(PreparationLimitError);
     expect(JSON.stringify(big)).toBe(before);
   });
 
@@ -381,7 +353,7 @@ describe('audit history (Phase 5E)', () => {
   });
 
   it('stored history is read back exactly, and an unreadable history is flagged rather than dropped', () => {
-    const record = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
+    const record = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'prayerCards', value: 'requested' }]);
     const stored = JSON.parse(JSON.stringify(record));
     expect(readServicePreparationRecord(stored)!.history).toEqual(record.history);
     expect(isServicePreparationReadable(stored)).toBe(true);

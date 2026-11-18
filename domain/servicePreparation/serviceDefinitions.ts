@@ -1,13 +1,14 @@
 import { SERVICE_TYPE_CODES } from '../workflow/serviceWorkflows';
-import { PREPARATION_CHOICES as C, PREPARATION_GROUPS as G } from './preparationGroups';
+import { GUS_FINAL_GOODBYE_GROUPS as FG, GUS_VIEWING_GROUPS as GV, PREPARATION_CHOICES as C, PREPARATION_GROUPS as G } from './preparationGroups';
 import type { PreparationGroupDefinition, ServicePreparationDefinition } from './types';
 
 /**
  * The preparation for each service held before cremation (Gus Phase 5B,
- * 2026-11). ALL DRAFTS: built from the Phase 5A operational review and
- * shown to staff as provisional until the funeral home's licensed funeral
- * director approves them. They are not workflow templates — the case's
- * workflow (and Direct Cremation) is untouched by them.
+ * 2026-11). Viewing and Final Goodbye follow the rules Gus confirmed in
+ * Phase 5F; Mass is still a DRAFT (its procedure is pending) and is not
+ * offered anywhere. They are not workflow templates — the case's workflow
+ * (and Direct Cremation) is untouched by them; they are used only where
+ * the organization profile turns service preparation on (Gus).
  */
 
 /** Appointment types for the services (domain/scheduling/appointmentTypeRegistry.ts). */
@@ -26,36 +27,38 @@ const massBodyPresent = { choice: C.massPresence.key, equals: ['body_present'] }
 
 export const VIEWING_PREPARATION: ServicePreparationDefinition = {
   key: 'prep.viewing',
-  version: 1,
+  version: 2,
   serviceTypeCode: SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING,
   serviceName: 'Viewing',
   serviceAppointmentType: SERVICE_APPOINTMENT_TYPES.viewing,
-  status: 'draft',
+  status: 'approved',
   holdsCremation: 'always',
-  choices: [C.embalming, C.clothing, C.casket, C.casketSpray, C.prayerCards, C.registerBook, C.crucifix],
-  groups: [G.service_schedule, G.crematory_hold, G.embalming, G.clothing, G.casket, G.casket_spray, G.prayer_cards, G.register_book, G.crucifix, G.transportation_staffing, G.day_of_service],
+  // Embalming, clothing and casket are not choices for a Viewing (Gus
+  // policy: embalming mandatory, no waiver; the crematory embalms, dresses
+  // and caskets). The optional extras stay the family's choice.
+  choices: [C.casketSpray, C.prayerCards, C.registerBook, C.crucifix],
+  groups: [G.service_schedule, G.crematory_hold, GV.embalming, GV.clothing, GV.casket, G.casket_spray, G.prayer_cards, G.register_book, G.crucifix, G.transportation_staffing, G.day_of_service],
+  releasePrerequisiteItems: [{ itemId: 'prep.embalming.written_permission', label: 'Embalming authorization signed' }],
   openQuestions: [
-    'Is embalming required for every public viewing, or is a refrigerated viewing allowed?',
-    'Rental casket or purchased cremation casket for viewings?',
-    'Which staff may release the remains for cremation after the viewing?',
+    'What happens when the family does not bring clothing?',
+    'Rental or purchased casket for viewings, and who supplies it?',
   ],
 };
 
 export const FINAL_GOODBYE_PREPARATION: ServicePreparationDefinition = {
   key: 'prep.final_goodbye',
-  version: 1,
+  version: 2,
   serviceTypeCode: SERVICE_TYPE_CODES.CREMATION_WITH_FINAL_GOODBYE,
   serviceName: 'Final Goodbye',
   serviceAppointmentType: SERVICE_APPOINTMENT_TYPES.finalGoodbye,
-  status: 'draft',
+  status: 'approved',
   holdsCremation: 'always',
-  // Embalming, clothing and a casket are choices here, never assumed.
-  choices: [C.embalming, C.clothing, C.casket, C.clergy, C.prayerCards, C.registerBook, C.crucifix],
-  groups: [G.service_schedule, G.crematory_hold, G.embalming, G.clothing, G.casket, G.clergy, G.prayer_cards, G.register_book, G.crucifix, G.transportation_staffing, G.day_of_service],
-  openQuestions: [
-    'What exactly is a Final Goodbye: who attends, how long, where, and how the body is presented?',
-    'Is a casket or embalming ever part of a Final Goodbye?',
-  ],
+  // No embalming, dressing or casket. Prayer cards, register books and
+  // crucifixes are not offered until Gus confirms them.
+  choices: [C.faceViewing, C.clergy],
+  groups: [G.service_schedule, G.crematory_hold, FG.setup, FG.faceViewing, G.clergy, G.transportation_staffing, G.day_of_service],
+  serviceLimits: { maxDurationMinutes: 60, durationProvisional: true },
+  openQuestions: ['Is 60 minutes the confirmed maximum length of a Final Goodbye?'],
 };
 
 const MASS_CREMATORY_HOLD: PreparationGroupDefinition = { ...G.crematory_hold, appliesWhen: massBodyPresent };

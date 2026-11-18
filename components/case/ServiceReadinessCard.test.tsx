@@ -55,20 +55,22 @@ describe('ServiceReadinessCard', () => {
     renderCard(viewing, GUS_CAMACHO_ORGANIZATION_ID);
     const card = await screen.findByTestId('service-readiness');
     expect(within(card).getByText('Viewing preparation')).toBeTruthy();
-    expect(within(card).getByText(/Draft — awaiting funeral director approval/)).toBeTruthy();
+    // Viewing follows Gus's confirmed rules (Phase 5F): no longer a draft.
+    expect(within(card).queryByText(/Draft — awaiting funeral director approval/)).toBeNull();
     expect(within(screen.getByTestId('prep-item-prep.crematory.notified')).getByText(/Overdue/)).toBeTruthy();
     expect(within(card).getByRole('button', { name: 'Release for cremation' })).toHaveProperty('disabled', true);
-    expect(within(card).getByText(/licensed funeral directors/)).toBeTruthy();
+    expect(within(card).getByText(/not active yet/)).toBeTruthy();
+    expect(within(card).getByText(/Telling the crematory about the service is not a release/)).toBeTruthy();
   });
 
   it('saves a family choice and an item status, saying what each was based on', async () => {
     const fetchMock = stubFetch({ preparation: view(), canEdit: true });
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
     await screen.findByTestId('service-readiness');
-    fireEvent.change((document.getElementById('prep-choice-casket') as HTMLSelectElement), { target: { value: 'rental' } });
+    fireEvent.change((document.getElementById('prep-choice-prayerCards') as HTMLSelectElement), { target: { value: 'requested' } });
     await waitFor(() => expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true));
     const firstPost = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')!;
-    expect(JSON.parse(String(firstPost[1]!.body))).toMatchObject({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, change: { kind: 'choice', choice: 'casket', value: 'rental' }, basis: { at: null } });
+    expect(JSON.parse(String(firstPost[1]!.body))).toMatchObject({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, change: { kind: 'choice', choice: 'prayerCards', value: 'requested' }, basis: { at: null } });
 
     fireEvent.change(screen.getByLabelText('Status of Crematory told about the service'), { target: { value: 'completed' } });
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(2));
@@ -99,7 +101,7 @@ describe('ServiceReadinessCard', () => {
     stubFetch({ preparation: view(), canEdit: true }, () => ({ status: 409, body: { error: 'Someone else changed this while you were working on it.', preparation: view() } }));
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
     await screen.findByTestId('service-readiness');
-    fireEvent.change((document.getElementById('prep-choice-casket') as HTMLSelectElement), { target: { value: 'rental' } });
+    fireEvent.change((document.getElementById('prep-choice-prayerCards') as HTMLSelectElement), { target: { value: 'requested' } });
     expect((await screen.findByRole('alert')).textContent).toMatch(/Someone else changed this/);
   });
 
@@ -108,7 +110,7 @@ describe('ServiceReadinessCard', () => {
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
     await screen.findByTestId('service-readiness');
     expect(screen.queryByLabelText('Status of Crematory told about the service')).toBeNull();
-    expect((document.getElementById('prep-choice-casket') as HTMLSelectElement)).toHaveProperty('disabled', true);
+    expect((document.getElementById('prep-choice-prayerCards') as HTMLSelectElement)).toHaveProperty('disabled', true);
     expect(screen.getByText(/needs permission to edit cases/)).toBeTruthy();
   });
 
@@ -116,7 +118,7 @@ describe('ServiceReadinessCard', () => {
     stubFetch({ preparation: view({ storageAvailable: false }), canEdit: true });
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
     expect(await screen.findByText(/not available on this site yet/)).toBeTruthy();
-    expect((document.getElementById('prep-choice-casket') as HTMLSelectElement)).toHaveProperty('disabled', true);
+    expect((document.getElementById('prep-choice-prayerCards') as HTMLSelectElement)).toHaveProperty('disabled', true);
   });
 
   it('asks for the service to be scheduled when there is none', async () => {
@@ -147,8 +149,8 @@ describe('ServiceReadinessCard — preparation history (Phase 5E)', () => {
       items: {},
       release: null,
       history: [
-        { eventId: 'e1', target: { kind: 'choice', key: 'casket' }, description: 'Viewing preparation: Casket — Rental', previous: null, next: { value: 'rental', at: '2026-12-02T12:00:00.000Z', by: 'i' }, actorId: 'i', actorName: 'Jordan Demo', at: '2026-12-02T12:00:00.000Z' },
-        { eventId: 'e2', target: { kind: 'choice', key: 'casket' }, description: 'Viewing preparation: Casket — Purchase', previous: { value: 'rental', at: '2026-12-02T12:00:00.000Z', by: 'i' }, next: { value: 'purchase', at: '2026-12-02T13:00:00.000Z', by: 'i' }, actorId: 'i', actorName: 'Avery Demo', at: '2026-12-02T13:00:00.000Z' },
+        { eventId: 'e1', target: { kind: 'choice', key: 'prayerCards' }, description: 'Viewing preparation: Prayer cards — Requested', previous: null, next: { value: 'requested', at: '2026-12-02T12:00:00.000Z', by: 'i' }, actorId: 'i', actorName: 'Jordan Demo', at: '2026-12-02T12:00:00.000Z' },
+        { eventId: 'e2', target: { kind: 'choice', key: 'prayerCards' }, description: 'Viewing preparation: Prayer cards — Not requested', previous: { value: 'requested', at: '2026-12-02T12:00:00.000Z', by: 'i' }, next: { value: 'not_requested', at: '2026-12-02T13:00:00.000Z', by: 'i' }, actorId: 'i', actorName: 'Avery Demo', at: '2026-12-02T13:00:00.000Z' },
       ],
     };
     stubFetch({ preparation: view({ record }), canEdit: true });
@@ -156,7 +158,7 @@ describe('ServiceReadinessCard — preparation history (Phase 5E)', () => {
     const history = await screen.findByTestId('prep-history');
     expect(within(history).getByText('Preparation history (2)')).toBeTruthy();
     const items = within(history).getAllByRole('listitem');
-    expect(items[0].textContent).toMatch(/Purchase.*Avery Demo/);
-    expect(items[1].textContent).toMatch(/Rental.*Jordan Demo/);
+    expect(items[0].textContent).toMatch(/Not requested.*Avery Demo/);
+    expect(items[1].textContent).toMatch(/Requested.*Jordan Demo/);
   });
 });

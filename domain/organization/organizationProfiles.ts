@@ -340,6 +340,12 @@ export type OrganizationFeaturePreferences = {
       stores preparation is approved (docs/SERVICE_PREPARATION.md).
       Platform default: false. Manors: off. */
   servicePreparation: boolean;
+  /** Gus Phase 5F (2026-11): role keys allowed to approve release for
+      cremation after a service — and then ONLY with a verified funeral
+      director license (domain/staff/funeralDirectorLicense.ts); the role
+      alone is never enough. Empty = nobody. Platform default: empty.
+      Release itself is not active yet. */
+  cremationReleaseApproverRoleKeys: readonly string[];
   /** Manatee County DC application fax bundles (2026-11): where saved
       applications are faxed, through the connected mailbox and NuSo's
       email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
@@ -449,6 +455,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   enforceHiddenModulesServerSide: false,
   workflowApprovalRequired: false,
   servicePreparation: false,
+  cremationReleaseApproverRoleKeys: [],
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -669,6 +676,7 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // administrator approves it.
     workflowApprovalRequired: true,
     servicePreparation: true,
+    cremationReleaseApproverRoleKeys: ['funeralDirector', 'administrator'],
     enforceHiddenModulesServerSide: true,
     // Same certifier requirement as Manors, fax included (decided 2026-11).
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],

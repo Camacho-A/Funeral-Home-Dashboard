@@ -50,6 +50,9 @@ export type ServiceReadiness = {
       choice that decides it (Mass: body present?) is not made. */
   holdsCremation: boolean | 'undecided';
   decisions: PendingDecision[];
+  /** The scheduled service is outside the service's limits (Final Goodbye
+      past 60 minutes). For staff review — never a block on its own. */
+  warnings: string[];
   items: EvaluatedPreparationItem[];
   counts: {
     completed: number;
@@ -180,7 +183,17 @@ export function summarizeServiceReadiness(params: {
     outstandingBeforeArrival: items.filter((i) => i.blocking && i.beforeFamilyArrives).length,
   };
 
+  const warnings: string[] = [];
+  const maxMinutes = definition.serviceLimits?.maxDurationMinutes;
+  if (service && maxMinutes !== undefined) {
+    const minutes = Math.round((Date.parse(service.endAt) - Date.parse(service.startAt)) / 60_000);
+    if (minutes > maxMinutes) {
+      warnings.push(`Scheduled for ${minutes} minutes; a ${definition.serviceName} is up to ${maxMinutes} minutes${definition.serviceLimits?.durationProvisional ? ' (provisional)' : ''}.`);
+    }
+  }
+
   return {
+    warnings,
     definitionKey: definition.key,
     serviceName: definition.serviceName,
     provisional: definition.status === 'draft',
