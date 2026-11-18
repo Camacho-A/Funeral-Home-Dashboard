@@ -172,14 +172,20 @@ met — none unlocks release alone (a confirmed permit included):
    time counts from the end of that day, a missing date blocks);
 7. identification checked on the remains (service day);
 8. Viewing only: embalming authorization signed;
-9. the approver's role is one the organization allows
-   (`cremationReleaseApproverRoleKeys`; Gus: funeralDirector, administrator;
-   Manors and the platform default: nobody), and
+9. the approver is an **authorized Funeral Director** (Phase 5F.1, Gus
+   policy): the Funeral Director role (`cremationReleaseApproverRoleKeys`;
+   Gus: `funeralDirector` only; Manors and the platform default: nobody),
+   or — for anyone else, an administrator included — an explicit
+   `StaffProfile.funeralDirectorAuthorization` granted by someone else
+   (never self-granted). An Administrator role alone never qualifies; and
 10. the approver holds a **verified** funeral director license
     (`domain/staff/funeralDirectorLicense.ts`): number, state and type on
     file; status active; not expired; verified by someone else (who, when,
-    how, where) within the last 365 days; active profile in the same
-    organization. A "Funeral Director" role or display role is never enough.
+    how, where); active profile in the same organization. A "Funeral
+    Director" role or display role is never enough on its own.
+    Re-verification interval: `funeralDirectorLicenseReverifyDays` —
+    **pending decision** (null for Gus: age not enforced, shown as pending;
+    365 days is only proposed, `PROPOSED_LICENSE_REVERIFY_DAYS`).
 
 `approveCremationRelease` runs every check and then refuses with "not
 active yet" (`RELEASE_FOR_CREMATION_AVAILABLE = false`). Nothing is written
@@ -195,12 +201,62 @@ number, state, expiry) and every satisfied prerequisite.
   verifiedBy, verifiedByName, method, reference). New optional OBJECT field
   on the live `staffProfiles` collection, plus a Settings screen where an
   administrator records and re-verifies it. Not added.
-- **Medical examiner cremation approval** — a recorded approval (date,
-  reference/case number, who recorded it) on the case. Not added.
+- **Medical examiner cremation approval** — see "Medical examiner findings"
+  below. Not added; needs a decision.
+- **Funeral Director authorization** — `StaffProfile.funeralDirectorAuthorization`
+  (authorizedAt, authorizedBy, authorizedByName), for an administrator who
+  is also Gus's funeral director. Same new `staffProfiles` field work as the
+  license. Not added.
 - **The release record** — stored in `servicePreparation.release` (the
   existing field) with an audit history entry. Not written by anything yet.
 - **Send to Crematory** must then refuse a Viewing/Final Goodbye case until
   it is released — a separate, approved change.
+
+## Medical examiner findings (Phase 5F.1, read-only review)
+
+What SOLIS records today:
+
+- `Case.isMedicalExaminerCase` — a yes/no classification that the ME has
+  jurisdiction (the ME holds the decedent and certifies cause of death). It
+  is not an approval.
+- Manors only (profile `medicalExaminerStages`): on an ME case the EDRS
+  stage shows three verification items — "Medical Examiner EDRS entry
+  verified", "Medical Examiner cause of death verified", "Required ME
+  information confirmed". Gus has no ME variant.
+- Every cremation workflow: EDRS submitted, cause of death entered, and
+  attestation / hard-save for state approval — checklist ticks, no date or
+  reference.
+- The state cremation permit (`cremation_form.state_permit` document) and
+  its confirmation on the case (`crematory.permitVerification`).
+- Send to Crematory requires the permit and the EDRS (or ME verification)
+  steps; it has no separate ME-approval requirement.
+
+Nowhere does SOLIS record a medical examiner **cremation approval**
+(Florida §406.11(1)(c): the ME must determine the cause of death of every
+body to be cremated; approvals are requested through EDRS). It cannot be
+verified from existing records: the checklist ticks carry no approval, and
+whether a Florida burial-transit permit can only be issued after the ME's
+cremation approval was NOT confirmed (no source found that says so) — so
+the permit is not treated as proof of it.
+
+Options (each needs approval; none changes a legal safeguard until chosen):
+
+1. **Staff attestation in the existing `crematory` case record** (no new
+   Wix field — it is already a server-written record): "ME cremation
+   approval confirmed in EDRS", with the approval date, EDRS/ME reference,
+   who recorded it and when. Recommended: explicit, audited, no schema
+   change.
+2. **A new checklist step in Gus's EDRS stage** ("ME cremation approval
+   received") — a new workflow template version through Gus's approval
+   rule; a tick only, no reference.
+3. **Treat the confirmed state permit as the evidence** — only if Gus's
+   funeral director (or counsel) confirms that in Florida the permit cannot
+   be issued without the ME's cremation approval.
+
+Until one is chosen, the release prerequisite "Medical examiner cremation
+approval recorded" is never met, for every case — ME-jurisdiction cases
+included. That is the safe default: no case can be released on an
+unrecorded approval.
 
 ## Open decisions (funeral director)
 
@@ -209,8 +265,9 @@ number, state, expiry) and every satisfied prerequisite.
 - Viewing: what happens when the family brings no clothing? Rental or
   purchased casket, and who supplies it?
 - Final Goodbye: is 60 minutes the confirmed maximum?
-- Release: should administrators be allowed to release (with a verified
-  license), or funeral directors only? How often must a license be
-  re-verified (365 days assumed)?
+- Release: how often must a funeral director license be re-verified
+  (365 days proposed, not set)? Who grants the separate Funeral Director
+  authorization to an administrator?
+- Medical examiner cremation approval: which of the three options above?
 - Prayer cards, register book, crucifix for a Final Goodbye: offered or not?
 - Are the default deadline targets right for Gus's vendors and parishes?

@@ -4,7 +4,7 @@ import { GUS_CAMACHO_ORGANIZATION_ID, getRegisteredOrganizationProfile, MANORS_O
 import { CREMATION_STEPS } from '../workflow/cremationFoundation';
 import { findStep } from '../workflow/workflowSteps';
 import { checklistItemKey } from '../workflow/checklistItemKey';
-import { checkFuneralDirectorLicense, LICENSE_REVERIFY_DAYS } from '../staff/funeralDirectorLicense';
+import { checkFuneralDirectorLicense, PROPOSED_LICENSE_REVERIFY_DAYS } from '../staff/funeralDirectorLicense';
 import { applyPreparationChange, PreparationChangeError, type PreparationChange } from './preparationUpdates';
 import { summarizeServiceReadiness } from './readiness';
 import { buildCremationReleaseRecord, deathInstant, evaluateReleaseForCremation, type ReleaseApprover } from './releaseForCremation';
@@ -122,10 +122,10 @@ describe('funeral director license', () => {
   const director = buildGusStaffFixtures().find((s) => s.displayName === 'Jordan Demo')!;
   const admin = buildGusStaffFixtures().find((s) => s.displayName === 'Avery Demo')!;
   const check = (staff: Parameters<typeof checkFuneralDirectorLicense>[0], now = new Date().toISOString()) =>
-    checkFuneralDirectorLicense(staff, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: now.slice(0, 10), now });
+    checkFuneralDirectorLicense(staff, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: now.slice(0, 10), now, reverifyWithinDays: PROPOSED_LICENSE_REVERIFY_DAYS });
 
   it('a verified, active, unexpired license passes', () => {
-    expect(check(director)).toEqual({ verified: true, problems: [] });
+    expect(check(director)).toEqual({ verified: true, problems: [], notes: [] });
   });
 
   it('a "funeral director" role or display role is not a license', () => {
@@ -139,10 +139,10 @@ describe('funeral director license', () => {
     expect(check({ ...director, funeralDirectorLicense: { ...base, status: 'suspended' } }).problems.join()).toMatch(/suspended/);
     expect(check({ ...director, funeralDirectorLicense: { ...base, verification: null } }).problems.join()).toMatch(/not been verified/);
     expect(check({ ...director, funeralDirectorLicense: { ...base, verification: { ...base.verification!, verifiedBy: director.identityId } } }).problems.join()).toMatch(/someone other than/);
-    const old = new Date(Date.now() - (LICENSE_REVERIFY_DAYS + 1) * 86_400_000).toISOString();
+    const old = new Date(Date.now() - (PROPOSED_LICENSE_REVERIFY_DAYS + 1) * 86_400_000).toISOString();
     expect(check({ ...director, funeralDirectorLicense: { ...base, verification: { ...base.verification!, verifiedAt: old } } }).problems.join()).toMatch(/more than 365 days/);
     expect(check({ ...director, isActive: false }).verified).toBe(false);
-    expect(checkFuneralDirectorLicense(director, { organizationId: MANORS_ORGANIZATION_ID, today: NOW.slice(0, 10), now: NOW }).verified).toBe(false);
+    expect(checkFuneralDirectorLicense(director, { organizationId: MANORS_ORGANIZATION_ID, today: NOW.slice(0, 10), now: NOW, reverifyWithinDays: null }).verified).toBe(false);
   });
 });
 
@@ -183,6 +183,7 @@ describe('release for cremation', () => {
       readiness: summarizeServiceReadiness({ definition: VIEWING_PREPARATION, record: params.record === undefined ? prepDone : params.record, service: params.service === undefined ? svc({ status: 'completed' }) : params.service, now: params.now ?? NOW }),
       approver: params.approver === undefined ? asDirector : params.approver,
       approverRoleKeys,
+      licenseReverifyDays: PROPOSED_LICENSE_REVERIFY_DAYS,
       timeZone: TZ,
       now: params.now ?? NOW,
       medicalExaminerApprovalRecorded: params.me ?? true,
@@ -235,6 +236,7 @@ describe('release for cremation', () => {
       readiness: summarizeServiceReadiness({ definition: VIEWING_PREPARATION, record: prepDone, service: svc({ status: 'completed' }), now: NOW }),
       approver: asDirector,
       approverRoleKeys,
+      licenseReverifyDays: PROPOSED_LICENSE_REVERIFY_DAYS,
       timeZone: TZ,
       now: NOW,
     });
@@ -254,7 +256,7 @@ describe('release for cremation', () => {
 
   it('only an allowed role WITH a verified license may approve', () => {
     const adminApprover: ReleaseApprover = { identityId: admin.identityId, roleKey: 'administrator', staffProfile: admin };
-    expect(unmet(evaluate({ approver: adminApprover }))).toEqual(['approver_licensed']);
+    expect(unmet(evaluate({ approver: adminApprover }))).toEqual(['approver_authorized', 'approver_licensed']);
     const viewerWithLicense: ReleaseApprover = { identityId: viewer.identityId, roleKey: 'readOnly', staffProfile: { ...viewer, funeralDirectorLicense: fictionalDirectorLicense(new Date(NOW)) } };
     expect(unmet(evaluate({ approver: viewerWithLicense }))).toEqual(['approver_authorized']);
     expect(unmet(evaluate({ approver: null }))).toEqual(['approver_authorized', 'approver_licensed']);
@@ -262,8 +264,60 @@ describe('release for cremation', () => {
     expect(unmet(evaluate({ approver: someoneElsesProfile }))).toEqual(['approver_authorized']);
   });
 
+  it('Gus allows only the Funeral Director role; Administrator is not a release role', () => {
+    expect(approverRoleKeys).toEqual(['funeralDirector']);
+  });
+
+  // A license for the administrator, verified by someone else (the director).
+  const adminLicense = () => {
+    const base = fictionalDirectorLicense(new Date(NOW));
+    return { ...base, licenseNumber: 'FD-FICTIONAL-0002', verification: { ...base.verification!, verifiedBy: director.identityId, verifiedByName: 'Jordan Demo' } };
+  };
+
+  it('a license verified by its own holder never counts, even for an administrator', () => {
+    const selfVerified: ReleaseApprover = { identityId: admin.identityId, roleKey: 'administrator', staffProfile: { ...admin, funeralDirectorLicense: fictionalDirectorLicense(new Date(NOW)) } };
+    expect(evaluate({ approver: selfVerified }).prerequisites.find((p) => p.key === 'approver_licensed')!.detail).toMatch(/someone other than the licensee/);
+  });
+
+  it('an administrator WITH a verified license but no Funeral Director authorization is rejected', () => {
+    const licensedAdmin: ReleaseApprover = { identityId: admin.identityId, roleKey: 'administrator', staffProfile: { ...admin, funeralDirectorLicense: adminLicense() } };
+    const e = evaluate({ approver: licensedAdmin });
+    expect(unmet(e)).toEqual(['approver_authorized']);
+    expect(e.prerequisites.find((p) => p.key === 'approver_authorized')!.detail).toMatch(/Administrator, is not enough/);
+  });
+
+  it('an administrator separately authorized as Funeral Director (by someone else) AND licensed satisfies the role/license checks', () => {
+    const grant = { authorizedAt: '2026-11-17T12:00:00.000Z', authorizedBy: director.identityId, authorizedByName: 'Jordan Demo' };
+    const both: ReleaseApprover = { identityId: admin.identityId, roleKey: 'administrator', staffProfile: { ...admin, funeralDirectorLicense: adminLicense(), funeralDirectorAuthorization: grant } };
+    expect(unmet(evaluate({ approver: both }))).toEqual([]);
+    const authorizedButUnlicensed: ReleaseApprover = { identityId: admin.identityId, roleKey: 'administrator', staffProfile: { ...admin, funeralDirectorAuthorization: grant } };
+    expect(unmet(evaluate({ approver: authorizedButUnlicensed }))).toEqual(['approver_licensed']);
+    const selfGranted: ReleaseApprover = { ...both, staffProfile: { ...both.staffProfile!, funeralDirectorAuthorization: { ...grant, authorizedBy: admin.identityId } } };
+    const e = evaluate({ approver: selfGranted });
+    expect(unmet(e)).toEqual(['approver_authorized']);
+    expect(e.prerequisites.find((p) => p.key === 'approver_authorized')!.detail).toMatch(/self-granted/);
+  });
+
+  it('a Funeral Director with a verified license satisfies the role/license checks, and all other prerequisites still apply', () => {
+    const e = evaluate({ me: false, service: svc({ status: 'scheduled' }) });
+    expect(e.prerequisites.find((p) => p.key === 'approver_authorized')!.met).toBe(true);
+    expect(e.prerequisites.find((p) => p.key === 'approver_licensed')!.met).toBe(true);
+    expect(unmet(e)).toEqual(['service_completed', 'medical_examiner_approval']);
+    expect(e.allPrerequisitesMet).toBe(false);
+  });
+
+  it('the re-verification interval is a pending decision: unset means age is not enforced, and it is reported', () => {
+    const stale = { ...director, funeralDirectorLicense: { ...fictionalDirectorLicense(new Date(NOW)), verification: { ...fictionalDirectorLicense(new Date(NOW)).verification!, verifiedAt: '2024-01-01T00:00:00.000Z' } } };
+    const unset = checkFuneralDirectorLicense(stale, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: NOW.slice(0, 10), now: NOW, reverifyWithinDays: null });
+    expect(unset.verified).toBe(true);
+    expect(unset.notes).toEqual(['No re-verification interval is set yet (pending approval).']);
+    expect(checkFuneralDirectorLicense(stale, { organizationId: GUS_CAMACHO_ORGANIZATION_ID, today: NOW.slice(0, 10), now: NOW, reverifyWithinDays: 365 }).verified).toBe(false);
+    expect(getRegisteredOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID).features.funeralDirectorLicenseReverifyDays).toBeNull();
+  });
+
   it('Manors allows nobody to release', () => {
     expect(getRegisteredOrganizationProfile(MANORS_ORGANIZATION_ID).features.cremationReleaseApproverRoleKeys).toEqual([]);
+    expect(getRegisteredOrganizationProfile(MANORS_ORGANIZATION_ID).features.funeralDirectorLicenseReverifyDays).toBeNull();
   });
 
   it('the release record names the director, license, case, time and every satisfied prerequisite — and is refused otherwise', () => {
@@ -287,6 +341,7 @@ describe('release for cremation', () => {
       readiness: summarizeServiceReadiness({ definition: FINAL_GOODBYE_PREPARATION, record: fgRecord, service: svc({ status: 'completed' }), now: NOW }),
       approver: asDirector,
       approverRoleKeys,
+      licenseReverifyDays: PROPOSED_LICENSE_REVERIFY_DAYS,
       timeZone: TZ,
       now: NOW,
       medicalExaminerApprovalRecorded: true,

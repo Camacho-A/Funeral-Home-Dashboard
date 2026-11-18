@@ -62,6 +62,12 @@ export type StaffProfile = {
       (domain/staff/funeralDirectorLicense.ts). Not yet stored in Wix — see
       docs/SERVICE_PREPARATION.md, "Release for cremation". */
   funeralDirectorLicense?: FuneralDirectorLicense | null;
+  /** Gus Phase 5F.1 (2026-11) — DESIGN. Explicit authorization to act as a
+      Funeral Director for this funeral home, for someone whose role is NOT
+      Funeral Director (e.g. an administrator who is also the funeral
+      director). Granted by someone else; never self-granted. A license is
+      still required on top of it. Not yet stored in Wix. */
+  funeralDirectorAuthorization?: { authorizedAt: string; authorizedBy: string; authorizedByName: string | null } | null;
 };
 
 export type FuneralDirectorLicenseStatus = 'active' | 'inactive' | 'expired' | 'suspended' | 'revoked' | 'unknown';

@@ -59,9 +59,10 @@ describe('approveCremationRelease', () => {
     expect(activityEventFixtures).toHaveLength(0);
   });
 
-  it('the administrator (allowed role, display role "funeral director", no license) is refused as unauthorized', async () => {
+  it('an administrator (display role "funeral director", no Funeral Director authorization, no license) is refused on the server', async () => {
     const error = await refusal(approveCremationRelease(admin, 'gus-case-010', 'mock'));
     expect(error.status).toBe(403);
+    expect(error.evaluation!.prerequisites.find((p) => p.key === 'approver_authorized')!.met).toBe(false);
     expect(error.evaluation!.prerequisites.find((p) => p.key === 'approver_licensed')!.detail).toMatch(/No funeral director license/);
   });
 
@@ -81,6 +82,9 @@ describe('approveCremationRelease', () => {
     const forAdmin = (await evaluateCremationReleaseForCaller(admin, 'gus-case-010', 'mock'))!;
     expect(forDirector.prerequisites.find((p) => p.key === 'approver_licensed')!.met).toBe(true);
     expect(forAdmin.prerequisites.find((p) => p.key === 'approver_licensed')!.met).toBe(false);
+    expect(forAdmin.prerequisites.find((p) => p.key === 'approver_authorized')!.met).toBe(false);
+    // Gus has not decided a re-verification interval: reported, not enforced.
+    expect(forDirector.prerequisites.find((p) => p.key === 'approver_licensed')!.detail).toMatch(/pending approval/);
     expect(forDirector.canRelease).toBe(false);
   });
 });

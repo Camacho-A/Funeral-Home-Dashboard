@@ -24,8 +24,12 @@ import type { ServicePreparationDefinition } from './types';
  *   48 hours since death   — Florida §872.03
  *   identification         — checked on the remains on the service day
  *   service-specific       — Viewing: embalming authorization signed
- *   approver               — role allowed by the organization AND a
- *                            verified funeral director license
+ *   approver               — a Funeral Director: the organization's
+ *                            Funeral Director role, or (for anyone else,
+ *                            an administrator included) an explicit
+ *                            authorization granted by someone else — AND,
+ *                            either way, a verified license. An
+ *                            administrator role alone never qualifies.
  *
  * Telling the crematory about the service (a preparation item) is NOT a
  * release and is not a prerequisite of one.
@@ -67,7 +71,12 @@ export type ReleaseEvaluation = {
 export type ReleaseApprover = {
   identityId: string;
   roleKey: string;
-  staffProfile: (Pick<StaffProfile, 'id' | 'identityId' | 'organizationId' | 'isActive' | 'displayName'> & { funeralDirectorLicense?: StaffProfile['funeralDirectorLicense'] }) | null;
+  staffProfile:
+    | (Pick<StaffProfile, 'id' | 'identityId' | 'organizationId' | 'isActive' | 'displayName'> & {
+        funeralDirectorLicense?: StaffProfile['funeralDirectorLicense'];
+        funeralDirectorAuthorization?: StaffProfile['funeralDirectorAuthorization'];
+      })
+    | null;
 };
 
 const HOUR = 60 * 60 * 1000;
@@ -103,14 +112,31 @@ export function deathInstant(dateOfDeath: string, timeOfDeath: string, timeZone:
   return guess - zoneOffset(guess, timeZone);
 }
 
+/** Is this person an authorized Funeral Director for the case's
+    organization? Their own profile, in that organization, and either the
+    Funeral Director role or an explicit authorization someone ELSE granted. */
+export function approverAuthorization(approver: ReleaseApprover, organizationId: string, funeralDirectorRoleKeys: readonly string[]): { ok: boolean; detail: string } {
+  const profile = approver.staffProfile;
+  if (!profile || profile.organizationId !== organizationId || profile.identityId !== approver.identityId) {
+    return { ok: false, detail: 'No staff profile for this person in this funeral home.' };
+  }
+  if (funeralDirectorRoleKeys.includes(approver.roleKey)) return { ok: true, detail: '' };
+  const grant = profile.funeralDirectorAuthorization;
+  if (grant && grant.authorizedBy && grant.authorizedBy !== approver.identityId && !Number.isNaN(Date.parse(grant.authorizedAt))) return { ok: true, detail: '' };
+  if (grant && grant.authorizedBy === approver.identityId) return { ok: false, detail: 'Funeral Director authorization cannot be self-granted.' };
+  return { ok: false, detail: 'Not authorized as a Funeral Director (the role alone, e.g. Administrator, is not enough).' };
+}
+
 export function evaluateReleaseForCremation(params: {
   case_: Case;
   definition: ServicePreparationDefinition;
   readiness: ServiceReadiness;
   /** null when evaluated for display without a signed-in approver. */
   approver: ReleaseApprover | null;
-  /** Role keys the organization allows to release (profile). */
+  /** The organization's Funeral Director role key(s) (profile). */
   approverRoleKeys: readonly string[];
+  /** License re-verification interval in days; null = not decided yet. */
+  licenseReverifyDays: number | null;
   timeZone: string;
   now: string;
   /** Whether an explicit medical examiner cremation approval is recorded.
@@ -123,8 +149,9 @@ export function evaluateReleaseForCremation(params: {
   const death = deathInstant(case_.dateOfDeath, case_.timeOfDeath, params.timeZone);
   const hours = death === null ? null : (Date.parse(params.now) - death) / HOUR;
   const license = approver?.staffProfile
-    ? checkFuneralDirectorLicense(approver.staffProfile, { organizationId: case_.organizationId, today: params.now.slice(0, 10), now: params.now })
-    : { verified: false, problems: ['No staff profile for this person.'] };
+    ? checkFuneralDirectorLicense(approver.staffProfile, { organizationId: case_.organizationId, today: params.now.slice(0, 10), now: params.now, reverifyWithinDays: params.licenseReverifyDays })
+    : { verified: false, problems: ['No staff profile for this person.'], notes: [] };
+  const authorized = approver ? approverAuthorization(approver, case_.organizationId, params.approverRoleKeys) : { ok: false, detail: 'No one is signed in.' };
   const serviceSpecific = definition.releasePrerequisiteItems ?? [];
 
   const prerequisites: ReleasePrerequisite[] = [
@@ -154,10 +181,16 @@ export function evaluateReleaseForCremation(params: {
       : []),
     {
       key: 'approver_authorized',
-      label: 'Approved by staff the funeral home allows to release',
-      met: Boolean(approver) && params.approverRoleKeys.includes(approver!.roleKey) && approver!.staffProfile?.organizationId === case_.organizationId && approver!.staffProfile?.identityId === approver!.identityId,
+      label: 'Approved by an authorized Funeral Director',
+      met: authorized.ok,
+      ...(authorized.ok ? {} : { detail: authorized.detail }),
     },
-    { key: 'approver_licensed', label: 'Approver is a verified, licensed funeral director', met: license.verified, ...(license.verified ? {} : { detail: license.problems.join(' ') }) },
+    {
+      key: 'approver_licensed',
+      label: 'Approver is a verified, licensed funeral director',
+      met: license.verified,
+      ...(license.verified ? (license.notes.length ? { detail: license.notes.join(' ') } : {}) : { detail: license.problems.join(' ') }),
+    },
   ];
 
   const released = Boolean(case_.servicePreparation?.release);

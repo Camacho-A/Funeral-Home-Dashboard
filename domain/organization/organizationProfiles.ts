@@ -340,12 +340,18 @@ export type OrganizationFeaturePreferences = {
       stores preparation is approved (docs/SERVICE_PREPARATION.md).
       Platform default: false. Manors: off. */
   servicePreparation: boolean;
-  /** Gus Phase 5F (2026-11): role keys allowed to approve release for
-      cremation after a service — and then ONLY with a verified funeral
-      director license (domain/staff/funeralDirectorLicense.ts); the role
-      alone is never enough. Empty = nobody. Platform default: empty.
-      Release itself is not active yet. */
+  /** Gus Phase 5F/5F.1 (2026-11): the Funeral Director role key(s) whose
+      holders may approve release for cremation after a service — and then
+      ONLY with a verified license (domain/staff/funeralDirectorLicense.ts).
+      Anyone else (an administrator included) needs an explicit, separately
+      granted StaffProfile.funeralDirectorAuthorization PLUS the license.
+      Empty = nobody. Platform default: empty. Release is not active yet. */
   cremationReleaseApproverRoleKeys: readonly string[];
+  /** Gus Phase 5F.1: how often a funeral director license must be
+      re-verified, in days. null = NOT DECIDED (age not enforced; reported
+      as pending). A configuration decision awaiting approval — 365 is only
+      proposed (PROPOSED_LICENSE_REVERIFY_DAYS). */
+  funeralDirectorLicenseReverifyDays: number | null;
   /** Manatee County DC application fax bundles (2026-11): where saved
       applications are faxed, through the connected mailbox and NuSo's
       email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
@@ -456,6 +462,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   workflowApprovalRequired: false,
   servicePreparation: false,
   cremationReleaseApproverRoleKeys: [],
+  funeralDirectorLicenseReverifyDays: null,
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({
@@ -676,7 +683,9 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // administrator approves it.
     workflowApprovalRequired: true,
     servicePreparation: true,
-    cremationReleaseApproverRoleKeys: ['funeralDirector', 'administrator'],
+    // Gus policy (confirmed 2026-11): ONLY an authorized, verified Funeral
+    // Director may release. Administrators are not a release role.
+    cremationReleaseApproverRoleKeys: ['funeralDirector'],
     enforceHiddenModulesServerSide: true,
     // Same certifier requirement as Manors, fax included (decided 2026-11).
     certifierRequiredCaseFields: ['certifierName', 'certifierFax'],

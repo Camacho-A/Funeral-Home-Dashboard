@@ -54,6 +54,7 @@ export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, c
     readiness,
     approver: { identityId: caller.userId, roleKey: caller.role, staffProfile },
     approverRoleKeys: profile.features.cremationReleaseApproverRoleKeys,
+    licenseReverifyDays: profile.features.funeralDirectorLicenseReverifyDays,
     timeZone: organization?.timezone ?? DEFAULT_TIME_ZONE,
     now,
   });
@@ -63,7 +64,7 @@ export async function approveCremationRelease(caller: ReleaseCaller, caseId: str
   const evaluation = await evaluateCremationReleaseForCaller(caller, caseId, mode, now);
   if (!evaluation) throw new CremationReleaseError('This case has no release for cremation.', 404);
   const approverProblems = evaluation.prerequisites.filter((p) => (p.key === 'approver_authorized' || p.key === 'approver_licensed') && !p.met);
-  if (approverProblems.length > 0) throw new CremationReleaseError('Only a verified, licensed funeral director the funeral home allows may release for cremation.', 403, evaluation);
+  if (approverProblems.length > 0) throw new CremationReleaseError('Only an authorized Funeral Director with a verified license may release for cremation.', 403, evaluation);
   if (evaluation.released) throw new CremationReleaseError('Already released for cremation.', 409, evaluation);
   if (!evaluation.allPrerequisitesMet) throw new CremationReleaseError('Not every requirement for release is met.', 409, evaluation);
   if (!RELEASE_FOR_CREMATION_AVAILABLE) throw new CremationReleaseError('Release for cremation is not active yet. Nothing was released.', 423, evaluation);
