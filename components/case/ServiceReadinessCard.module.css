@@ -260,3 +260,28 @@
   text-decoration: underline;
   cursor: pointer;
 }
+
+.history {
+  margin-top: 14px;
+  font-size: 12.5px;
+}
+
+.history summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.historyList {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.historyList li {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

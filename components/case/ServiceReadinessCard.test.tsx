@@ -135,3 +135,28 @@ describe('ServiceReadinessCard', () => {
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('service-preparation'))).toHaveLength(0);
   });
 });
+
+describe('ServiceReadinessCard — preparation history (Phase 5E)', () => {
+  it('lists the saved history, newest first, with who and when', async () => {
+    const record: ServicePreparationRecord = {
+      definitionKey: 'prep.viewing',
+      definitionVersion: 1,
+      serviceAppointmentId: null,
+      choices: {},
+      details: {},
+      items: {},
+      release: null,
+      history: [
+        { eventId: 'e1', target: { kind: 'choice', key: 'casket' }, description: 'Viewing preparation: Casket — Rental', previous: null, next: { value: 'rental', at: '2026-12-02T12:00:00.000Z', by: 'i' }, actorId: 'i', actorName: 'Jordan Demo', at: '2026-12-02T12:00:00.000Z' },
+        { eventId: 'e2', target: { kind: 'choice', key: 'casket' }, description: 'Viewing preparation: Casket — Purchase', previous: { value: 'rental', at: '2026-12-02T12:00:00.000Z', by: 'i' }, next: { value: 'purchase', at: '2026-12-02T13:00:00.000Z', by: 'i' }, actorId: 'i', actorName: 'Avery Demo', at: '2026-12-02T13:00:00.000Z' },
+      ],
+    };
+    stubFetch({ preparation: view({ record }), canEdit: true });
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const history = await screen.findByTestId('prep-history');
+    expect(within(history).getByText('Preparation history (2)')).toBeTruthy();
+    const items = within(history).getAllByRole('listitem');
+    expect(items[0].textContent).toMatch(/Purchase.*Avery Demo/);
+    expect(items[1].textContent).toMatch(/Rental.*Jordan Demo/);
+  });
+});

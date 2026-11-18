@@ -5,8 +5,8 @@ import { GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID, getRegisteredOrgan
 import { isAppointmentTypeOffered, isValidAppointmentTypeKey } from '../scheduling/appointmentTypeRegistry';
 import { buildGusCaseFixtures } from '../../services/__mocks__/gusFixtures';
 import { evaluateDeadline, resolvePreparationTargets } from './deadlines';
-import { applyPreparationChange, PreparationChangeError, PreparationConflictError, type PreparationChange } from './preparationUpdates';
-import { readServicePreparationRecord } from './recordParsing';
+import { applyPreparationChange, PREPARATION_RECORD_MAX_BYTES, PreparationChangeError, PreparationConflictError, PreparationLimitError, preparationRecordBytes, type PreparationChange } from './preparationUpdates';
+import { isServicePreparationReadable, readServicePreparationRecord } from './recordParsing';
 import { selectServiceEvent, summarizeServiceReadiness } from './readiness';
 import { evaluateReleaseForCremation, LEGAL_REQUIREMENTS_STILL_CHECKED } from './releaseForCremation';
 import { FINAL_GOODBYE_PREPARATION, MASS_PREPARATION, PROVISIONAL_MASS_SERVICE_TYPE_CODE, SERVICE_PREPARATION_DEFINITIONS, VIEWING_PREPARATION, servicePreparationFor } from './serviceDefinitions';
@@ -25,10 +25,11 @@ const service = (overrides: Partial<ServiceEvent> = {}): ServiceEvent => ({
 });
 const hoursBefore = (iso: string, hours: number) => new Date(Date.parse(iso) - hours * 3_600_000).toISOString();
 const actor = { id: 'identity-fictional', name: 'Fictional Director' };
+let eventCounter = 0;
 
 function apply(definition: ServicePreparationDefinition, changes: PreparationChange[], svc: ServiceEvent | null = service(), start: ServicePreparationRecord | null = null) {
   return changes.reduce<ServicePreparationRecord | null>(
-    (record, change) => applyPreparationChange({ definition, record, service: svc, change, actor, now: '2026-12-02T12:00:00.000Z' }),
+    (record, change) => applyPreparationChange({ definition, record, service: svc, change, actor, now: '2026-12-02T12:00:00.000Z', eventId: `evt-${++eventCounter}` }),
     start,
   ) as ServicePreparationRecord;
 }
@@ -305,10 +306,10 @@ describe('saving (Phase 5C)', () => {
     const base = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
     const change: PreparationChange = { kind: 'choice', choice: 'casket', value: 'purchase' };
     const run = (basisAt: string | null) =>
-      applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change, basis: { at: basisAt }, actor, now: '2026-12-03T12:00:00.000Z' });
+      applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change, basis: { at: basisAt }, actor, now: '2026-12-03T12:00:00.000Z', eventId: `evt-${++eventCounter}` });
     expect(() => run(null)).toThrow(PreparationConflictError);
     expect(run(base.choices.casket.at).choices.casket.value).toBe('purchase');
-    const other = applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change: { kind: 'choice', choice: 'clothing', value: 'none' }, basis: { at: null }, actor, now: '2026-12-03T12:00:00.000Z' });
+    const other = applyPreparationChange({ definition: VIEWING_PREPARATION, record: base, service: service(), change: { kind: 'choice', choice: 'clothing', value: 'none' }, basis: { at: null }, actor, now: '2026-12-03T12:00:00.000Z', eventId: `evt-${++eventCounter}` });
     expect(other.choices.casket.value).toBe('rental');
   });
 
@@ -328,5 +329,65 @@ describe('saving (Phase 5C)', () => {
     expect(read.items['prep.bad']).toBeUndefined();
     expect(read.choices.bad).toBeUndefined();
     expect(read.items['prep.crematory.notified'].status).toBe('completed');
+  });
+});
+
+describe('audit history (Phase 5E)', () => {
+  it('every change appends one entry: what, before, after, who, when, and its event id', () => {
+    const record = apply(VIEWING_PREPARATION, [
+      { kind: 'choice', choice: 'casket', value: 'rental' },
+      { kind: 'choice', choice: 'casket', value: 'purchase' },
+    ]);
+    expect(record.history).toHaveLength(2);
+    const [first, second] = record.history!;
+    expect(first).toMatchObject({ target: { kind: 'choice', key: 'casket' }, previous: null, next: { value: 'rental' }, actorId: actor.id, actorName: actor.name, at: '2026-12-02T12:00:00.000Z' });
+    expect(second.previous).toMatchObject({ value: 'rental' });
+    expect(second.next).toMatchObject({ value: 'purchase' });
+    expect(second.description).toMatch(/Casket — Purchase/);
+    expect(new Set(record.history!.map((e) => e.eventId)).size).toBe(2);
+  });
+
+  it('history is append-only: earlier entries are kept exactly', () => {
+    const one = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
+    const two = apply(VIEWING_PREPARATION, [{ kind: 'detail', key: 'prayerCards.language', value: 'spanish' }], service(), one);
+    expect(two.history!.slice(0, 1)).toEqual(one.history);
+  });
+
+  it('a change that would take the record past the safe size is refused, and nothing changes', () => {
+    const big: ServicePreparationRecord = {
+      ...apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'clothing', value: 'none' }]),
+      history: Array.from({ length: 400 }, (_, i) => ({
+        eventId: `old-${i}`,
+        target: { kind: 'item' as const, key: 'prep.crematory.notified' },
+        description: 'x'.repeat(300),
+        previous: null,
+        next: { status: 'pending' as const, at: '2026-12-01T12:00:00.000Z', by: 'identity-fictional', note: 'n'.repeat(300) },
+        actorId: 'identity-fictional',
+        actorName: 'Fictional Director',
+        at: '2026-12-01T12:00:00.000Z',
+      })),
+    };
+    expect(preparationRecordBytes(big)).toBeGreaterThan(PREPARATION_RECORD_MAX_BYTES);
+    const before = JSON.stringify(big);
+    expect(() => apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }], service(), big)).toThrow(PreparationLimitError);
+    expect(JSON.stringify(big)).toBe(before);
+  });
+
+  it('a typical service stays far below the limit', () => {
+    const changes: PreparationChange[] = [];
+    for (const group of VIEWING_PREPARATION.groups) for (const item of group.items) changes.push({ kind: 'item', itemId: item.id, status: 'pending', note: 'n'.repeat(120) }, { kind: 'item', itemId: item.id, status: item.kind === 'task' ? 'completed' : 'confirmed' });
+    const record = apply(VIEWING_PREPARATION, changes);
+    expect(preparationRecordBytes(record)).toBeLessThan(PREPARATION_RECORD_MAX_BYTES / 2);
+  });
+
+  it('stored history is read back exactly, and an unreadable history is flagged rather than dropped', () => {
+    const record = apply(VIEWING_PREPARATION, [{ kind: 'choice', choice: 'casket', value: 'rental' }]);
+    const stored = JSON.parse(JSON.stringify(record));
+    expect(readServicePreparationRecord(stored)!.history).toEqual(record.history);
+    expect(isServicePreparationReadable(stored)).toBe(true);
+    expect(isServicePreparationReadable(undefined)).toBe(true);
+    expect(isServicePreparationReadable({ ...stored, history: [{ no: 'id' }] })).toBe(false);
+    expect(isServicePreparationReadable({ ...stored, history: 'oops' })).toBe(false);
+    expect(isServicePreparationReadable({ broken: true })).toBe(false);
   });
 });

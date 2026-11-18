@@ -1413,3 +1413,18 @@ describe('servicePreparation (Gus Phase 5C)', () => {
     expect(buildCaseFieldPatch(validItem as never, { servicePreparation: stored } as never)).toEqual({ servicePreparation: stored });
   });
 });
+
+describe('servicePreparation history (Gus Phase 5E)', () => {
+  const base = { definitionKey: 'prep.viewing', definitionVersion: 1, serviceAppointmentId: null, choices: {}, details: {}, items: {}, release: null };
+  it('history is read back exactly as stored', () => {
+    const history = [{ eventId: 'e1', target: { kind: 'choice', key: 'casket' }, description: 'd', previous: null, next: { value: 'rental', at: 't', by: 'i' }, actorId: 'i', actorName: null, at: 't', futureField: 'kept' }];
+    const mapped = mapWixCaseItem({ ...validItem, servicePreparation: { ...base, history } } as never);
+    expect(mapped?.servicePreparation?.history).toEqual(history);
+    expect(mapped?.servicePreparationUnreadable).toBeUndefined();
+  });
+  it('a stored value that cannot be read is flagged, so it is never saved over', () => {
+    expect(mapWixCaseItem({ ...validItem, servicePreparation: { ...base, history: [{ noId: true }] } } as never)?.servicePreparationUnreadable).toBe(true);
+    expect(mapWixCaseItem({ ...validItem, servicePreparation: 'garbage' } as never)?.servicePreparationUnreadable).toBe(true);
+    expect(mapWixCaseItem(validItem as never)?.servicePreparationUnreadable).toBeUndefined();
+  });
+});

@@ -350,6 +350,21 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
         </p>
       )}
 
+      {(record?.history?.length ?? 0) > 0 && (
+        <details className={styles.history} data-testid="prep-history">
+          <summary>Preparation history ({record!.history!.length})</summary>
+          <p className={styles.note}>Saved with each change on the case itself — complete even if an entry is missing from the Activity tab.</p>
+          <ol className={styles.historyList}>
+            {[...record!.history!].reverse().map((entry) => (
+              <li key={entry.eventId}>
+                <span>{entry.description}</span>
+                <span className={styles.itemHint}>{byLine({ at: entry.at, byName: entry.actorName }, timezone)}</span>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
+
       {release.applies !== false && (
         <div className={styles.release} aria-label="Release for cremation">
           <div className={styles.sectionLabel}>Release for cremation</div>

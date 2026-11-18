@@ -265,6 +265,10 @@ export type Case = {
       services/servicePreparationService.ts — never by the generic case
       update (not in its allowlist). Absent on every case without it. */
   servicePreparation?: ServicePreparationRecord | null;
+  /** Set by the mapper when a stored `servicePreparation` (or its history)
+      cannot be read. Saving is then refused so nothing stored is lost.
+      Never persisted. */
+  servicePreparationUnreadable?: boolean;
   /** Case SSN (2026-10): the last four digits and their source, never the
       number (domain/cases/caseSsn.ts). Set only by the server. */
   ssnOnFile?: CaseSsnSummary | null;

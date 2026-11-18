@@ -72,11 +72,13 @@ them on the rows anyway. `checklistState` is declared as `OBJECT`.
 So Wix would accept `servicePreparation` without any schema change. That is
 why saving is switched off in code for live Wix
 (`SERVICE_PREPARATION_WIX_FIELD_ADDED = false` in
-`services/servicePreparationService.ts`): until approval, a Wix-mode save is
+`services/servicePreparationStorage.ts`): until approval, a Wix-mode save is
 refused before anything is sent to Wix, and reads simply find no
 preparation.
 
-**Recommended change** (additive; existing rows read it as absent):
+**Done 2026-11-17 (Phase 5D, approved):** the field below was added with `create-field` — `cases` revision 32 → 33, 64 → 65 fields, nothing else changed (permissions, indexes, settings identical; the 19 existing case rows untouched). Live saving is still switched off (`services/servicePreparationStorage.ts`).
+
+Field (additive; existing rows read it as absent):
 
 | Field | Type | Required | Mutable |
 |---|---|---|---|
@@ -112,13 +114,23 @@ changed since is refused with 409 and the latest is shown. Changes to other
 entries merge: the server re-reads and re-decides under the case revision
 check (`updateCaseWithRetry`), so no one's save is lost.
 
-**History:** the record holds the latest state; every change is an Activity
-event (`service_preparation.updated`) with the entry before and after, who
-and when. If writing the Activity event fails, the change is still saved
-and the failure is logged (the same as refunds).
+**History (Phase 5E):** every change appends one entry to the record's own
+`history` — target, entry before and after, staff id and name, server time,
+and a server-generated event id — in the SAME revision-checked write as the
+change, so a change can never be saved without its entry. History is never
+trimmed or repaired; if a stored record or its history cannot be read, saves
+are refused rather than writing over it. The Activity event
+(`service_preparation.updated`) is written afterwards with the event id as
+its correlationId — one event per change. If it fails, the failure is
+logged and the history entry (shown on the card as "Preparation history")
+still has the change. When Wix's answer to a save is unclear, the case is
+read back and the event id decides "saved" or "not saved"; the write is
+never retried blindly.
 
-**Size:** the record is small (13 groups, under 30 items, short text limited
-to 300 characters).
+**Size:** a change that would take the record (with its history) past
+128 KB is refused with nothing saved (HTTP 413) — never by deleting
+history. A typical service uses a small fraction of that (each entry is a
+few hundred bytes; the Wix item limit is 512 KB for the whole case row).
 
 ## Release permission — gap
 

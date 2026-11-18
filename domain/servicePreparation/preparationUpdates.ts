@@ -1,4 +1,4 @@
-import type { PreparationItemRecord, PreparationStatus, PreparationValueRecord, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
+import type { PreparationAuditEntry, PreparationItemRecord, PreparationStatus, PreparationValueRecord, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
 /**
  * The rules every preparation change passes (Gus Phase 5B/5C, 2026-11),
@@ -17,6 +17,12 @@ import type { PreparationItemRecord, PreparationStatus, PreparationValueRecord, 
  *   someone else changed THAT item, choice or detail since, it is refused
  *   (PreparationConflictError) rather than silently overwriting them.
  *   Changes to anything else merge.
+ * - Audit (Phase 5E): every change appends one entry to the record's own
+ *   `history` — what changed, before and after, who, when, and a
+ *   server-generated event id — so the change and its audit entry are
+ *   saved together or not at all. History is never trimmed: a change that
+ *   would take the record past PREPARATION_RECORD_MAX_BYTES is refused
+ *   (PreparationLimitError) and nothing is saved.
  */
 export type PreparationChange =
   | { kind: 'item'; itemId: string; status: PreparationStatus; note?: string | null; documentId?: string | null }
@@ -29,11 +35,22 @@ export type PreparationChangeBasis = { at: string | null };
 
 export class PreparationChangeError extends Error {}
 export class PreparationConflictError extends Error {}
+/** The record (with its history) would be too large to save safely. */
+export class PreparationLimitError extends Error {}
+
+/** Well under the 512 KB Wix item limit, leaving room for the rest of the
+    case row (workflow snapshot, checklist, crematory record). A typical
+    service is far below it: each history entry is a few hundred bytes. */
+export const PREPARATION_RECORD_MAX_BYTES = 128 * 1024;
+
+export function preparationRecordBytes(record: ServicePreparationRecord): number {
+  return new TextEncoder().encode(JSON.stringify(record)).length;
+}
 
 export const PREPARATION_TEXT_MAX = 300;
 
 export function emptyPreparationRecord(definition: ServicePreparationDefinition, serviceAppointmentId: string | null = null): ServicePreparationRecord {
-  return { definitionKey: definition.key, definitionVersion: definition.version, serviceAppointmentId, choices: {}, details: {}, items: {}, release: null };
+  return { definitionKey: definition.key, definitionVersion: definition.version, serviceAppointmentId, choices: {}, details: {}, items: {}, release: null, history: [] };
 }
 
 /** The current entry a change targets (for the conflict check and Activity). */
@@ -58,6 +75,8 @@ export function applyPreparationChange(params: {
   basis?: PreparationChangeBasis;
   actor: { id: string; name: string | null };
   now: string;
+  /** Server-generated, unique per change; recorded in the history entry. */
+  eventId: string;
 }): ServicePreparationRecord {
   const { definition, change } = params;
   if (params.record && params.record.definitionKey !== definition.key) {
@@ -107,7 +126,33 @@ export function applyPreparationChange(params: {
     record.details[known.key] = { value: clean(change.value) ?? '', ...stamp };
   }
   if (params.service) record.serviceAppointmentId = params.service.appointmentId;
+
+  const target = targetOf(change);
+  const entry: PreparationAuditEntry = {
+    eventId: params.eventId,
+    target,
+    description: describePreparationChange(definition, change),
+    previous: currentEntryFor(params.record, change),
+    next: currentEntryFor(record, change) as PreparationItemRecord | PreparationValueRecord,
+    actorId: params.actor.id,
+    actorName: params.actor.name,
+    at: params.now,
+  };
+  record.history = [...(record.history ?? []), entry];
+
+  const bytes = preparationRecordBytes(record);
+  if (bytes > PREPARATION_RECORD_MAX_BYTES) {
+    throw new PreparationLimitError(
+      `This case's preparation record is full (${Math.ceil(bytes / 1024)} KB of ${PREPARATION_RECORD_MAX_BYTES / 1024} KB, including its history). Nothing was saved. Please contact SolisCode support.`,
+    );
+  }
   return record;
+}
+
+export function targetOf(change: PreparationChange): PreparationAuditEntry['target'] {
+  if (change.kind === 'item') return { kind: 'item', key: change.itemId };
+  if (change.kind === 'choice') return { kind: 'choice', key: change.choice };
+  return { kind: 'detail', key: change.key };
 }
 
 /** Plain-language summary of a change, for Activity. */

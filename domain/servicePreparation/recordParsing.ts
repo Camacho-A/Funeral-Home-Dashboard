@@ -1,10 +1,15 @@
-import type { PreparationItemRecord, PreparationStatus, PreparationValueRecord, ReleaseForCremationRecord, ServicePreparationRecord } from './types';
+import type { PreparationAuditEntry, PreparationItemRecord, PreparationStatus, PreparationValueRecord, ReleaseForCremationRecord, ServicePreparationRecord } from './types';
 
 /**
  * Reading the stored `servicePreparation` case field (Gus Phase 5C). Read
  * leniently, like `checklistCompletions`: a case without the field (every
  * case so far, every Manors case) has none; a malformed entry is dropped
  * rather than trusted; a malformed record as a whole is absent.
+ *
+ * History is the exception (Phase 5E): it is never dropped or repaired on
+ * read, because whatever is read is what the next save writes back. Its
+ * entries are kept exactly as stored; if it cannot be read
+ * (isServicePreparationReadable is false), saving is refused instead.
  */
 const STATUSES: ReadonlySet<string> = new Set<PreparationStatus>(['pending', 'awaiting_confirmation', 'confirmed', 'completed', 'not_requested', 'attention_needed']);
 
@@ -44,9 +49,24 @@ function readRelease(raw: unknown): ReleaseForCremationRecord | null {
   return { releasedAt: raw.releasedAt, releasedBy: raw.releasedBy, releasedByName: textOrNull(raw.releasedByName), roleKey: raw.roleKey };
 }
 
+function readHistory(raw: unknown): PreparationAuditEntry[] | null {
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw) || !raw.every((e) => isObject(e) && typeof e.eventId === 'string')) return null;
+  return raw as PreparationAuditEntry[];
+}
+
+/** False when a stored value exists but cannot be read safely — the record
+    itself, or its history. Saving over it would lose what is stored. */
+export function isServicePreparationReadable(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  return readServicePreparationRecord(value) !== null && readHistory((value as Record<string, unknown>).history) !== null;
+}
+
 export function readServicePreparationRecord(value: unknown): ServicePreparationRecord | null {
   if (!isObject(value) || typeof value.definitionKey !== 'string' || typeof value.definitionVersion !== 'number') return null;
+  const history = readHistory(value.history);
   return {
+    ...(history && history.length > 0 ? { history } : {}),
     definitionKey: value.definitionKey,
     definitionVersion: value.definitionVersion,
     serviceAppointmentId: textOrNull(value.serviceAppointmentId),

@@ -22,6 +22,18 @@ vi.mock('../lib/wixDataApi', async () => {
   return { ...actual, queryWixDataItems: count, conditionalPatchWixDataItemFields: count, queryAllWixDataItems: count };
 });
 
+const activityFailure = vi.hoisted(() => ({ fail: false }));
+vi.mock('./activityService', async () => {
+  const actual = await vi.importActual<typeof import('./activityService')>('./activityService');
+  return {
+    ...actual,
+    recordServicePreparationChange: vi.fn(async (...args: Parameters<typeof actual.recordServicePreparationChange>) => {
+      if (activityFailure.fail) throw new Error('Activity store unavailable (fictional)');
+      return actual.recordServicePreparationChange(...args);
+    }),
+  };
+});
+
 const { changeServicePreparation, getServicePreparation, SERVICE_PREPARATION_STORAGE_UNAVAILABLE } = await import('./servicePreparationService');
 
 /** Service preparation storage (Gus Phase 5C). Mock data mode, fictional cases only. */
@@ -75,6 +87,7 @@ beforeEach(() => {
   caseDocumentFixtures.length = 0;
   activityEventFixtures.length = 0;
   wixDataApi.calls = 0;
+  activityFailure.fail = false;
 });
 afterEach(() => {
   for (const [i, c] of originals) caseFixtures[i] = c;
@@ -217,5 +230,83 @@ describe('live Wix', () => {
       message: SERVICE_PREPARATION_STORAGE_UNAVAILABLE,
     });
     expect(wixDataApi.calls).toBe(0);
+  });
+});
+
+describe('audit history (Phase 5E)', () => {
+  const prepEvents = () => activityEventFixtures.filter((e) => e.eventType === ACTIVITY_EVENT_TYPES.SERVICE_PREPARATION_UPDATED && e.caseId === VIEWING_CASE);
+
+  it('each save has one history entry and exactly one matching Activity event (same id)', async () => {
+    const first = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
+    const second = await save({ kind: 'choice', choice: 'casket', value: 'purchase' }, first.record!.choices.casket.at, VIEWING_CASE, ctx(), '2026-12-02T13:00:00.000Z');
+    const history = second.record!.history!;
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({ actorId: 'identity-gus-director', actorName: 'Jordan Demo', at: '2026-12-02T13:00:00.000Z', previous: { value: 'rental' }, next: { value: 'purchase' } });
+    expect(prepEvents()).toHaveLength(2);
+    expect(prepEvents().map((e) => e.correlationId)).toEqual(history.map((h) => h.eventId));
+  });
+
+  it('the server makes the event id and the time; they are unique per change', async () => {
+    const saved = await changeServicePreparation(ctx(), VIEWING_CASE, { change: { kind: 'choice', choice: 'casket', value: 'rental' }, basis: { at: null }, actorName: 'Jordan Demo' }, 'mock');
+    const [entry] = saved.record!.history!;
+    expect(entry.eventId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(Date.parse(entry.at)).toBeGreaterThan(Date.now() - 60_000);
+  });
+
+  it('if the Activity write fails, the change and its history entry are still saved, and the failure is logged', async () => {
+    activityFailure.fail = true;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const saved = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
+    expect(saved.record!.choices.casket.value).toBe('rental');
+    expect(prepEvents()).toHaveLength(0);
+    const reloaded = (await getServicePreparation(GUS, VIEWING_CASE, 'mock'))!;
+    expect(reloaded.record!.history).toHaveLength(1);
+    expect(reloaded.record!.history![0].next).toMatchObject({ value: 'rental' });
+    expect(errors.mock.calls.some(([message]) => String(message).includes('was not recorded'))).toBe(true);
+    errors.mockRestore();
+  });
+
+  it('history survives a reload and a later save', async () => {
+    const first = await save({ kind: 'choice', choice: 'casket', value: 'rental' });
+    await save({ kind: 'detail', key: 'prayerCards.image', value: 'Fictional sunrise' }, null, VIEWING_CASE, ctx(), '2026-12-02T14:00:00.000Z');
+    const reloaded = (await getServicePreparation(GUS, VIEWING_CASE, 'mock'))!;
+    expect(reloaded.record!.history!.map((h) => h.target.key)).toEqual(['casket', 'prayerCards.image']);
+    expect(reloaded.record!.history![0]).toEqual(first.record!.history![0]);
+  });
+
+  it('a stored preparation that cannot be read is never saved over', async () => {
+    const index = caseFixtures.findIndex((c) => c.id === VIEWING_CASE && c.organizationId === GUS);
+    caseFixtures[index] = { ...caseFixtures[index], servicePreparationUnreadable: true };
+    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' })).rejects.toMatchObject({ status: 409 });
+    expect(caseFixtures[index].servicePreparation).toBeUndefined();
+  });
+
+  it('a record at the size limit refuses the change, saves nothing, and records no Activity', async () => {
+    const index = caseFixtures.findIndex((c) => c.id === VIEWING_CASE && c.organizationId === GUS);
+    const full = {
+      definitionKey: 'prep.viewing',
+      definitionVersion: 1,
+      serviceAppointmentId: null,
+      choices: {},
+      details: {},
+      items: {},
+      release: null,
+      history: Array.from({ length: 400 }, (_, i) => ({
+        eventId: `old-${i}`,
+        target: { kind: 'detail' as const, key: 'clergy.name' },
+        description: 'x'.repeat(300),
+        previous: null,
+        next: { value: 'y'.repeat(300), at: '2026-12-01T12:00:00.000Z', by: 'identity-fictional' },
+        actorId: 'identity-fictional',
+        actorName: null,
+        at: '2026-12-01T12:00:00.000Z',
+      })),
+    };
+    caseFixtures[index] = { ...caseFixtures[index], servicePreparation: full };
+    const revision = caseFixtures[index].revision;
+    await expect(save({ kind: 'choice', choice: 'casket', value: 'rental' })).rejects.toMatchObject({ status: 413 });
+    expect(caseFixtures[index].servicePreparation).toBe(full);
+    expect(caseFixtures[index].revision).toBe(revision);
+    expect(prepEvents()).toHaveLength(0);
   });
 });
