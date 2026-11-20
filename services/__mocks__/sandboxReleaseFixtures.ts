@@ -6,6 +6,7 @@ import { applyPreparationChange, type PreparationChange } from '../../domain/ser
 import { appendReleaseEvent } from '../../domain/servicePreparation/releaseHolds';
 import { formatCaseNumber } from '../../domain/cases/caseNumber';
 import { isSandboxEnabled } from '../../lib/sandbox';
+import { releaseReadyViewingCase } from './gusReleaseFixtures';
 import {
   buildGusCaseFixtures,
   fictionalDirectorLicense,
@@ -30,6 +31,14 @@ import {
  *   M<year>-903 Reauthorization requested
  *   M<year>-904 Reauthorized
  *   M<year>-905 Correction awaiting independent confirmation
+ *   M<year>-906 Not released yet — every requirement met, ready for a
+ *               licensed sign-off (the full workflow can be walked through
+ *               in tests; in the sandbox the buttons stay disabled while
+ *               release is switched off)
+ *
+ * Every case carries the legal steps, the permit and the ME approval
+ * (releaseReadyViewingCase), so its requirement list reads as it would in
+ * real use.
  *
  * Numbered 901+ so they never collide with a case the sandbox creates.
  */
@@ -64,6 +73,7 @@ const SEEDS: readonly Seed[] = [
     nextOfKinName: 'SAMPLE FAMILY FIVE',
     steps: [{ type: 'released', actor: DIRECTOR }, { type: 'correction_requested', actor: ADMIN, reason: 'Sign-off recorded against the wrong viewing (fictional example)', corrects: 'last_sign_off' }],
   },
+  { number: 906, decedentName: 'EXAMPLE READY FOR RELEASE', nextOfKinName: 'SAMPLE FAMILY SIX', steps: [] },
 ];
 
 const HOUR = 60 * 60 * 1000;
@@ -166,8 +176,9 @@ export function sandboxReleaseStateCases(now: Date = new Date()): Case[] {
   const year = startOfUtcDay(now).getUTCFullYear();
   return SEEDS.map((seed) => {
     const appointment = viewingFor(seed, now);
+    const ready = releaseReadyViewingCase({ ...structuredClone(base), id: caseIdOf(seed) }, now.toISOString());
     return {
-      ...structuredClone(base),
+      ...ready,
       id: caseIdOf(seed),
       caseNumber: formatCaseNumber(year, seed.number, GUS_CASE_NUMBER_PREFIX),
       decedentName: seed.decedentName,

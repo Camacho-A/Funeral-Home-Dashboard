@@ -11,8 +11,10 @@ this repository, in chat, or in logs.
 | Vercel project | `gus-solis` (`prj_xUFSQTCLeRiyfGJsuMZmfpeWHcqP`), shared repo `Camacho-A/Funeral-Home-Dashboard` |
 | Production branch | `release/gus` |
 | Ignored Build Step | `exit 0` — every build skipped |
-| Environment variables | none |
-| Domain | none (no deployment, so no `.vercel.app` alias assigned) |
+| Environment variables | Production (2026-11-20, approved): `SESSION_JWT_SECRET`, `MFA_ENCRYPTION_KEY`, `CRON_SECRET` (fresh, Gus-only, stored as Sensitive), `DATA_ADAPTER=wix`, `AUTH_ADAPTER=identity`, `DEPLOYMENT_ORGANIZATION_IDS` / `LOGIN_ORGANIZATION_ID` = `gus-camacho-jr`, `APP_BASE_URL=https://gus-solis.vercel.app`, `LOGIN_ORGANIZATION_HOSTS=gus-solis.vercel.app=gus-camacho-jr`. **Missing: `WIX_SITE_ID`, `WIX_API_KEY`** (owner to supply a Gus-specific key). No Blob, email, SMS, JotForm, Outlook or payment variables. |
+| Node.js | 24.x (matches Manors Production) |
+| Vercel Authentication | on — all deployments except custom domains (covers `gus-solis.vercel.app`) |
+| Domain | `gus-solis.vercel.app` reserved for the project (no deployment yet); no custom domain |
 | Deployments | only CANCELED entries from the branch pushes (never built) |
 | Sandboxes | `manors-solis-sandbox`, `gus-solis-sandbox` skip `release/*`; mock data only |
 | Manors Production | `manors-cremation-dashboard`, branch `master`, unchanged |

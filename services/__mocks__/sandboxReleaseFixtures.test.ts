@@ -27,7 +27,7 @@ describe('sandbox release-state examples', () => {
     expect(appointments).toEqual([]);
   });
 
-  it('with it: five fictional Gus Viewing cases, one per release state, preparation complete', async () => {
+  it('with it: six fictional Gus Viewing cases, one per release state plus one ready for release, preparation complete', async () => {
     const { cases, appointments } = await load(true);
     const examples = cases.filter((c) => /^gus-case-9\d\d$/.test(c.id));
     expect(examples.map((c) => [c.id, releaseStatusOf(c.servicePreparation)])).toEqual([
@@ -36,6 +36,7 @@ describe('sandbox release-state examples', () => {
       ['gus-case-903', 'awaiting_reauthorization'],
       ['gus-case-904', 'reauthorized'],
       ['gus-case-905', 'correction_pending'],
+      ['gus-case-906', 'not_released'],
     ]);
     for (const c of examples) {
       expect(c.organizationId).toBe(GUS_ORGANIZATION_ID);
