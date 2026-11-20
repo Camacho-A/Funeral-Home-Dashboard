@@ -1,7 +1,7 @@
 import { getRegisteredOrganizationProfile } from '../domain/organization/organizationProfiles';
 import { SERVICE_PREPARATION_DEFINITIONS, servicePreparationFor } from '../domain/servicePreparation/serviceDefinitions';
 import { selectServiceEvent, summarizeServiceReadiness } from '../domain/servicePreparation/readiness';
-import { isReleasedStatus, releaseStatusOf } from '../domain/servicePreparation/releaseHolds';
+import { isHeldStatus, isReleasedStatus, releaseStatusOf } from '../domain/servicePreparation/releaseHolds';
 import type { DataAdapterMode } from '../lib/env';
 import { listAppointments } from './scheduling/appointmentReads';
 import { loadCaseOnServer } from './serverCaseLoader';
@@ -63,7 +63,7 @@ export async function listUpcomingServices(organizationId: string, mode: DataAda
       const readiness = summarizeServiceReadiness({ definition, record, service, now });
       const status = releaseStatusOf(record);
       const released = isReleasedStatus(status);
-      const onHold = status === 'on_hold' || status === 'awaiting_reauthorization';
+      const onHold = isHeldStatus(status);
       // A completed service drops off once released (or if cremation doesn't wait for it).
       if (service.status === 'completed' && (released || readiness.holdsCremation === false)) return null;
       const applicable = readiness.items.filter((i) => i.status !== 'not_requested');

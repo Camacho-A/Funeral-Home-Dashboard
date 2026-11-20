@@ -299,7 +299,7 @@ them (`domain/servicePreparation/releaseHolds.ts`):
 - A hold placed after paperwork reached (or may have reached) the crematory is marked `paperworkAlreadyTransmitted`, and the case says the crematory must be contacted — a hold never recalls anything.
 - Preparation (approved 2026-11-20): read-only while Released / Reauthorized. **While On hold it may change again**, each change with a required reason, recorded in its history entry (`duringHold`, `reason`) and as a warning-level Activity event; the hold is lifted only by reauthorization with a licensed sign-off, which rechecks every requirement against the changed preparation. While a reauthorization request is pending, preparation is read-only (withdraw the request first), so the sign-off is always on what was asked for.
 - The status is computed by one fold over the events (`domain/servicePreparation/releaseStatus.ts`).
-- `POST /api/cases/[caseId]/cremation-release { action: 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct', reason?, correctsEventId? }`; all refused (423) while `RELEASE_FOR_CREMATION_AVAILABLE` is off.
+- `POST /api/cases/[caseId]/cremation-release { action: 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct' | 'confirm_correction' | 'withdraw_correction', reason?, correctsEventId? }`; all refused (423) while `RELEASE_FOR_CREMATION_AVAILABLE` is off.
 
 ### Release corrections (approved 2026-11-20) — built, NOT active
 
@@ -312,9 +312,28 @@ removed. It moves the status only in the safe direction: correcting the
 sign-off in force puts the release on hold (sending blocked; the hold notice
 says to contact the crematory if paperwork may already be there); lifting it
 is the normal reauthorization with a licensed sign-off. Correcting an
-earlier, superseded sign-off only annotates it. A sign-off can be corrected
-once. Administrators, Managers and Funeral Directors may record one; no
-second-person confirmation is required (not requested — can be added).
+earlier, superseded sign-off (or one while the release is already on hold)
+only annotates it. A sign-off can be corrected once. Administrators,
+Managers and Funeral Directors may record one.
+
+**Independent confirmation (approved 2026-11-20, final safety pass).** A
+correction of the sign-off in force on an **active** release (Released or
+Reauthorized) is first only requested (`correction_requested`): the status
+becomes *Correction awaiting independent confirmation — sending blocked*,
+the crematory gate refuses, preparation is read-only, and no hold, other
+correction or release step can be recorded meanwhile. It takes effect only
+when a different person confirms it (`release_corrected` with
+`confirmsEventId`) — someone other than whoever requested the correction,
+and other than the people responsible for the release being corrected (the
+licensed director who signed it **and** whoever requested that release;
+`responsibleForSignOff`, `correctionConfirmationRefusal`). Checked in the
+pure rules and again by the server (403). Once confirmed, the release is on
+hold; lifting it needs the normal reauthorization with a licensed,
+authorized director's sign-off. The requester may withdraw the request
+(`correction_withdrawn`); anyone else may decline it with a reason. Either
+way the release stands as signed — the sign-off was never invalidated —
+and the request stays in the history. The person who signed may report
+their own mistake but can never confirm it.
 
 ### Send to Crematory release gate (Phase 5K) — built, NOT enforced
 
@@ -415,5 +434,5 @@ unrecorded approval.
 - Reversing a release: decided 2026-11 — handled by holds (above).
 - While on hold, preparation may be edited with reasons (approved and built 2026-11-20).
 - Withdrawing a pending request: the three leadership roles (approved and built 2026-11-20).
-- Release corrections: appended, never overwriting (approved and built 2026-11-20).
+- Release corrections: appended, never overwriting (approved and built 2026-11-20); independent confirmation when the release is active (approved and built 2026-11-20).
 

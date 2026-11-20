@@ -17,12 +17,19 @@ import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
  *   'withdraw'    — withdraw the request awaiting sign-off (reason optional);
  *   'correct'     — append a correction to a recorded sign-off
  *                   (`correctsEventId`, reason required); never edits it.
+ *                   Correcting the release in force records a request that
+ *                   blocks sending until someone independent confirms it;
+ *   'confirm_correction'  — confirm that request (a different person from
+ *                   the requester and from those responsible for the
+ *                   release); the release goes on hold;
+ *   'withdraw_correction' — withdraw it (the requester) or decline it
+ *                   (anyone else, reason required).
  * Who, when, and every requirement are decided on the server from the
  * session, the case and the caller's own credentials. NOT ACTIVE: refused
  * with 423 while RELEASE_FOR_CREMATION_AVAILABLE (or preparation saving on
  * this site) is off. Records only; sends nothing, recalls nothing.
  */
-const ACTIONS: readonly ReleaseAction[] = ['release', 'sign_off', 'hold', 'reauthorize', 'withdraw', 'correct'];
+const ACTIONS: readonly ReleaseAction[] = ['release', 'sign_off', 'hold', 'reauthorize', 'withdraw', 'correct', 'confirm_correction', 'withdraw_correction'];
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
   const csrfResponse = requireSameOrigin(request);
   if (csrfResponse) return csrfResponse;

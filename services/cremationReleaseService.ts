@@ -13,7 +13,16 @@ import {
   type ReleaseEvaluation,
 } from '../domain/servicePreparation/releaseForCremation';
 import { PreparationLimitError } from '../domain/servicePreparation/preparationUpdates';
-import { appendReleaseEvent, correctableSignOffs, ReleaseTransitionError, RELEASE_STATUS_LABEL, type ReleaseStatus } from '../domain/servicePreparation/releaseHolds';
+import {
+  appendReleaseEvent,
+  correctableSignOffs,
+  correctionConfirmationRefusal,
+  correctionNeedsConfirmation,
+  pendingCorrection,
+  ReleaseTransitionError,
+  RELEASE_STATUS_LABEL,
+  type ReleaseStatus,
+} from '../domain/servicePreparation/releaseHolds';
 import { crematoryPaperworkMayHaveBeenSent } from '../domain/crematory/sentChecklistItems';
 import type { ReleaseEvent, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from '../domain/servicePreparation/types';
 import { buildCaseFieldPatch } from '../lib/wixCaseMapper';
@@ -126,13 +135,14 @@ export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, c
   if (!context) return null;
   const evaluation = evaluateFor(context, context.case_, now);
   const active = cremationReleaseRecordingAvailable(mode);
-  const capabilities = releaseCapabilities(evaluation, caller.role, context.operatorRoleKeys, correctableSignOffs(recordOf(context, context.case_)).length > 0);
+  const record = recordOf(context, context.case_);
+  const capabilities = releaseCapabilities(evaluation, caller.role, context.operatorRoleKeys, correctableSignOffs(record).length > 0, confirmRefusalOf(record, caller.userId), pendingCorrection(record)?.actorId === caller.userId);
   // Release also needs preparation saving on this site.
   if (!active) return { ...evaluation, canRelease: false, unavailableReason: RELEASE_FOR_CREMATION_UNAVAILABLE_REASON, capabilities, active };
   return { ...evaluation, capabilities, active };
 }
 
-export type ReleaseAction = 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct';
+export type ReleaseAction = 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct' | 'confirm_correction' | 'withdraw_correction';
 
 export const RELEASE_NOT_ACTIVE_MESSAGE = 'Release for cremation is not active yet. Nothing was released.';
 
@@ -152,11 +162,29 @@ export type ReleaseCapabilities = {
   canReauthorize: boolean;
   canWithdraw: boolean;
   canCorrect: boolean;
+  /** A correction of the release in force awaits confirmation: whether this person may confirm it, or why not. */
+  canConfirmCorrection: boolean;
+  confirmCorrectionRefusal: string | null;
+  canWithdrawCorrection: boolean;
+  /** This person asked for the pending correction (may withdraw it without a reason). */
+  isCorrectionRequester: boolean;
   isOperator: boolean;
   isLicensedSigner: boolean;
 };
 
-export function releaseCapabilities(evaluation: ReleaseEvaluation, roleKey: string, operatorRoleKeys: readonly string[], hasCorrectableSignOff = false): ReleaseCapabilities {
+/** Why this person may not confirm the pending correction (null when they may, or when none is pending). */
+function confirmRefusalOf(record: ServicePreparationRecord | null, actorId: string): string | null {
+  return pendingCorrection(record) ? correctionConfirmationRefusal(record, actorId) : null;
+}
+
+export function releaseCapabilities(
+  evaluation: ReleaseEvaluation,
+  roleKey: string,
+  operatorRoleKeys: readonly string[],
+  hasCorrectableSignOff = false,
+  confirmCorrectionRefusal: string | null = null,
+  isCorrectionRequester = false,
+): ReleaseCapabilities {
   const isOperator = operatorRoleKeys.includes(roleKey);
   const isLicensedSigner = signerQualified(evaluation);
   const s = evaluation.status;
@@ -168,7 +196,11 @@ export function releaseCapabilities(evaluation: ReleaseEvaluation, roleKey: stri
     canHold: isOperator && (s === 'released' || s === 'reauthorized' || s === 'awaiting_reauthorization'),
     canReauthorize: (isOperator || isLicensedSigner) && s === 'on_hold' && evaluation.casePrerequisitesMet,
     canWithdraw: (isOperator || isLicensedSigner) && (s === 'awaiting_signoff' || s === 'awaiting_reauthorization'),
-    canCorrect: isOperator && hasCorrectableSignOff,
+    canCorrect: isOperator && hasCorrectableSignOff && s !== 'correction_pending',
+    canConfirmCorrection: isOperator && s === 'correction_pending' && confirmCorrectionRefusal === null,
+    confirmCorrectionRefusal: s === 'correction_pending' ? confirmCorrectionRefusal : null,
+    canWithdrawCorrection: isOperator && s === 'correction_pending',
+    isCorrectionRequester: s === 'correction_pending' && isCorrectionRequester,
   };
 }
 
@@ -185,8 +217,9 @@ function decideEvent(
   current: Case,
   base: { eventId: string; now: string; actorName: string | null; reason: string | null; correctsEventId: string | null },
 ): ReleaseEvent {
-  const correctable = correctableSignOffs(recordOf(context, current));
-  const caps = releaseCapabilities(evaluation, context.approver.roleKey, context.operatorRoleKeys, correctable.length > 0);
+  const record = recordOf(context, current);
+  const correctable = correctableSignOffs(record);
+  const caps = releaseCapabilities(evaluation, context.approver.roleKey, context.operatorRoleKeys, correctable.length > 0, confirmRefusalOf(record, context.approver.identityId), pendingCorrection(record)?.actorId === context.approver.identityId);
   const status: ReleaseStatus = evaluation.status;
   const stamp = { eventId: base.eventId, at: base.now, actorId: context.approver.identityId, actorName: base.actorName, roleKey: context.approver.roleKey };
   const wrongState = () => new CremationReleaseError(`This can't be done while the release is "${RELEASE_STATUS_LABEL[status]}".`, 409, evaluation);
@@ -218,10 +251,31 @@ function decideEvent(
   if (action === 'correct') {
     if (!caps.isOperator) throw new CremationReleaseError('Only an Administrator, Manager or Funeral Director may correct a recorded sign-off.', 403, evaluation);
     if (!base.reason?.trim()) throw new CremationReleaseError('Give a reason for the correction.', 400, evaluation);
+    if (status === 'correction_pending') throw new CremationReleaseError('A correction is already awaiting confirmation.', 409, evaluation);
     if (!correctable.some((e) => e.eventId === base.correctsEventId)) {
       throw new CremationReleaseError('Choose a recorded sign-off that has not already been corrected.', 409, evaluation);
     }
-    return { ...stamp, type: 'release_corrected', reason: base.reason, correctsEventId: base.correctsEventId!, paperworkAlreadyTransmitted: crematoryPaperworkMayHaveBeenSent(current) };
+    // Correcting the release in force: only requested until someone independent confirms it.
+    const type = correctionNeedsConfirmation(record, base.correctsEventId) ? 'correction_requested' : 'release_corrected';
+    return { ...stamp, type, reason: base.reason, correctsEventId: base.correctsEventId!, paperworkAlreadyTransmitted: crematoryPaperworkMayHaveBeenSent(current) };
+  }
+  if (action === 'confirm_correction' || action === 'withdraw_correction') {
+    if (!caps.isOperator) throw new CremationReleaseError('Only an Administrator, Manager or Funeral Director may do this.', 403, evaluation);
+    const request = pendingCorrection(record);
+    if (status !== 'correction_pending' || !request) throw wrongState();
+    if (action === 'withdraw_correction') {
+      if (!caps.isCorrectionRequester && !base.reason?.trim()) throw new CremationReleaseError('Give a reason for declining this correction.', 400, evaluation);
+      return { ...stamp, type: 'correction_withdrawn', reason: base.reason };
+    }
+    if (caps.confirmCorrectionRefusal) throw new CremationReleaseError(caps.confirmCorrectionRefusal, 403, evaluation);
+    return {
+      ...stamp,
+      type: 'release_corrected',
+      reason: base.reason?.trim() ? base.reason : request.reason,
+      correctsEventId: request.correctsEventId,
+      confirmsEventId: request.eventId,
+      paperworkAlreadyTransmitted: crematoryPaperworkMayHaveBeenSent(current),
+    };
   }
   const requested = action === 'release' ? 'release_requested' : 'reauthorization_requested';
   const signed = action === 'release' ? 'released' : 'reauthorized';

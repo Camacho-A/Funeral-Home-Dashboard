@@ -4,6 +4,7 @@ import type { RecurrenceDefinition } from '../../types/recurrenceDefinition';
 import type { Appointment } from '../../types/appointment';
 import type { AppointmentResourceAssignment } from '../../types/appointmentResourceAssignment';
 import { mockCollection } from './mockStore';
+import { sandboxReleaseStateAppointments } from './sandboxReleaseFixtures';
 
 /**
  * Phase 27 (Scheduling & Resource Management). Mock-mode, in-process
@@ -16,5 +17,6 @@ import { mockCollection } from './mockStore';
 export const resourceFixtures: Resource[] = mockCollection('resourceFixtures', (): Resource[] => []);
 export const resourceUnavailabilityFixtures: ResourceUnavailability[] = mockCollection('resourceUnavailabilityFixtures', (): ResourceUnavailability[] => []);
 export const recurrenceDefinitionFixtures: RecurrenceDefinition[] = mockCollection('recurrenceDefinitionFixtures', (): RecurrenceDefinition[] => []);
-export const appointmentFixtures: Appointment[] = mockCollection('appointmentFixtures', (): Appointment[] => []);
+// Empty except in the sandbox (the release-state examples' completed viewings).
+export const appointmentFixtures: Appointment[] = mockCollection('appointmentFixtures', (): Appointment[] => sandboxReleaseStateAppointments());
 export const appointmentResourceAssignmentFixtures: AppointmentResourceAssignment[] = mockCollection('appointmentResourceAssignmentFixtures', (): AppointmentResourceAssignment[] => []);

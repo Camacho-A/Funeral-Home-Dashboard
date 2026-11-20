@@ -18,16 +18,15 @@ while a decision is open, it is the more restrictive option and is listed.
 8. Credential administration — **Administrators, Managers and Funeral Directors**, never their own; verification independent of the holder.
 9. Editing preparation while on hold — **allowed**, reason required, audited, reauthorization required.
 10. Withdrawing a pending request — **allowed** for the three leadership roles.
-11. Release corrections — **appended**, never overwriting; any of the three roles; no second-person confirmation (not requested).
+11. Release corrections — **appended**, never overwriting; any of the three roles; a correction of an **active** release needs **independent confirmation** (a different person from the requester and from the signer/requester of that release); sending is blocked meanwhile (approved 2026-11-20, final safety pass).
 12. Recording a send made outside SOLIS — **only with a valid release not on hold** (once the gate is on), marked as an external send.
 13. Workflow and template management — **granted** to Funeral Directors.
-14. Vendor payments (`ap.manage`, `ap.pay`) — **kept restricted** pending separate approval. Case-number management — **granted** to Managers, audited.
+14. Vendor bills — Funeral Directors **create, correct and review** (`ap.manage`); vendor **payment** authority (`ap.pay`) **not granted**. Case-number management — **granted** to Managers, audited.
 15. Checking the "sent to crematory" steps by hand — **all three roles**, release gate enforced on the server. (Correcting an earlier-send record stays Administrator-only.)
 
 ## Still open
 
-- Vendor payment authorization (`ap.manage`, `ap.pay`) for Funeral Directors — awaiting a separate decision.
-- Should a release correction need a second person to confirm it? (Not requested; easy to add.)
+- Vendor payment authority (`ap.pay`) for Funeral Directors — not granted; a future decision if wanted.
 
 ## Inputs Gus must supply
 

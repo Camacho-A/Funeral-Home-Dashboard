@@ -322,3 +322,11 @@
   font-weight: 600;
   color: var(--color-text);
 }
+
+/* Long release statuses ("Correction awaiting independent confirmation —
+   sending blocked") wrap on a phone instead of being cut off. */
+.statusBadge {
+  white-space: normal;
+  max-width: 100%;
+  line-height: 1.35;
+}

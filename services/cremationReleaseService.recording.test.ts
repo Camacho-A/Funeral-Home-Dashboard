@@ -217,19 +217,49 @@ describe('withdrawing requests, corrections, and editing while on hold (switch o
     expect((await refusal(performReleaseAction({ ...admin, role: 'readOnly' }, 'gus-case-010', 'mock', { action: 'correct', reason: 'x', correctsEventId: 'x', now: NOW }))).status).toBe(403);
   });
 
-  it('a Manager corrects the sign-off in force: appended, release on hold, sending blocked, original untouched; a licensed reauthorization lifts it', async () => {
+  it('a Manager asks to correct the sign-off in force: sending blocked at once; only someone independent confirms; then on hold until a licensed reauthorization', async () => {
     await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'release', now: NOW, eventId: 'rel-1' });
     const original = structuredClone(stored().servicePreparation!.release);
     expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', correctsEventId: 'rel-1', now: NOW }))).status).toBe(400);
     expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'x', correctsEventId: 'nope', now: NOW }))).status).toBe(409);
-    const corrected = await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'Recorded against the wrong appointment', correctsEventId: 'rel-1', now: NOW, eventId: 'cor-1' });
-    expect(corrected).toMatchObject({ status: 'on_hold', event: { type: 'release_corrected', correctsEventId: 'rel-1' } });
-    expect(corrected.evaluation.released).toBe(false);
+    const requested = await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'Recorded against the wrong appointment', correctsEventId: 'rel-1', now: NOW, eventId: 'cor-req-1' });
+    expect(requested).toMatchObject({ status: 'correction_pending', event: { type: 'correction_requested', correctsEventId: 'rel-1' } });
+    expect(requested.evaluation.released).toBe(false);
+    expect(stored().servicePreparation!.release).toEqual(original);
+
+    // What each person sees.
+    const asManager = (await evaluateCremationReleaseForCaller(manager, 'gus-case-010', 'mock', NOW))!.capabilities;
+    expect(asManager).toMatchObject({ canConfirmCorrection: false, canWithdrawCorrection: true, isCorrectionRequester: true, canCorrect: false, canHold: false });
+    expect(asManager.confirmCorrectionRefusal).toMatch(/You asked/);
+    const asDirector = (await evaluateCremationReleaseForCaller(director, 'gus-case-010', 'mock', NOW))!.capabilities;
+    expect(asDirector.canConfirmCorrection).toBe(false);
+    expect(asDirector.confirmCorrectionRefusal).toMatch(/responsible for the release/);
+    expect((await evaluateCremationReleaseForCaller(admin, 'gus-case-010', 'mock', NOW))!.capabilities).toMatchObject({ canConfirmCorrection: true, confirmCorrectionRefusal: null });
+
+    // The requester and the signer are refused (403); nothing is written.
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'confirm_correction', now: NOW }))).status).toBe(403);
+    expect((await refusal(performReleaseAction(director, 'gus-case-010', 'mock', { action: 'confirm_correction', now: NOW }))).status).toBe(403);
+    // Declining by someone else needs a reason.
+    expect((await refusal(performReleaseAction(director, 'gus-case-010', 'mock', { action: 'withdraw_correction', now: NOW }))).status).toBe(400);
+    expect(stored().servicePreparation!.releaseEvents!.map((e) => e.type)).toEqual(['released', 'correction_requested']);
+
+    const confirmed = await performReleaseAction(admin, 'gus-case-010', 'mock', { action: 'confirm_correction', now: NOW, eventId: 'cor-1' });
+    expect(confirmed).toMatchObject({ status: 'on_hold', event: { type: 'release_corrected', correctsEventId: 'rel-1', confirmsEventId: 'cor-req-1', reason: 'Recorded against the wrong appointment' } });
     expect(stored().servicePreparation!.release).toEqual(original);
     expect(stored().servicePreparation!.releaseEvents![0].eventId).toBe('rel-1');
     // The same sign-off cannot be corrected twice.
     expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'again', correctsEventId: 'rel-1', now: NOW }))).status).toBe(409);
-    expect((await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW })).status).toBe('reauthorized');
+    // Lifting the hold: a manager only requests; the licensed director signs off.
+    expect((await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW })).status).toBe('awaiting_reauthorization');
+    expect((await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'sign_off', now: NOW })).status).toBe('reauthorized');
+  });
+
+  it('a correction request withdrawn by the person who asked: the release stands as signed', async () => {
+    await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'release', now: NOW, eventId: 'rel-1' });
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'Thought the date was wrong', correctsEventId: 'rel-1', now: NOW });
+    const withdrawn = await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'withdraw_correction', now: NOW });
+    expect(withdrawn).toMatchObject({ status: 'released', event: { type: 'correction_withdrawn' } });
+    expect(withdrawn.evaluation.released).toBe(true);
   });
 
   it('on hold, preparation changes need a reason, are audited as made during the hold, and a pending reauthorization request locks them', async () => {

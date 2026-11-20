@@ -37,12 +37,13 @@ Director role.
 | `workflow.edit`, `workflow.publish` (approved 2026-11-20) | Admin, Manager | + Funeral Director |
 | `document.template.manage` (approved 2026-11-20) | Admin, Manager | + Funeral Director |
 | `caseNumber.manage` (approved 2026-11-20; every change audited) | Admin, Funeral Director | + Manager |
+| `ap.manage` — enter, correct (void and re-enter) and review vendor bills (approved 2026-11-20, final safety pass) | Admin, Manager | + Funeral Director (`ap.read` already held) |
 
 Also approved 2026-11-20 (profile settings, not permission keys):
 
 | What | Setting | Who (Gus) |
 |---|---|---|
-| Release requests, holds, withdrawals, corrections | `cremationReleaseOperatorRoleKeys` | Admin, Manager, Funeral Director |
+| Release requests, holds, withdrawals, corrections | `cremationReleaseOperatorRoleKeys` | Admin, Manager, Funeral Director — a correction of an active release needs confirmation by a different person (not the requester, not the signer or requester of that release) |
 | Funeral director credential administration — never one's own; verification independent of the holder | `funeralDirectorCredentialAdministratorRoleKeys` (`canAdministerFuneralDirectorCredentials`) | Admin, Manager, Funeral Director |
 | Checking the two "sent to crematory" steps by hand — the release gate is still enforced on the server | `sendToCrematory.sentStepsByHandRoleKeys` (`maySetCrematorySentStepsByHand`) | Admin, Manager, Funeral Director |
 | Licensed sign-off (unchanged) | `cremationReleaseApproverRoleKeys` + authorization + verified license (re-verified every 365 days) | Funeral Director by role, or a granted authorization |
@@ -62,7 +63,7 @@ inventory/procurement.
 | Kind | Permissions | Today |
 |---|---|---|
 | Security | `organization.manage`, `settings.manage`, `user.invite`, `user.remove`, `user.manageRoles`, `audit.export` | Admin (Manager: `user.invite`, `audit.export`) |
-| Financial authority | `payment.refund`, `caseOrder.reprice`, `accounting.manage/post/reconcile`, `ap.manage`, `ap.pay` | Admin (Manager: `ap.manage`, `ap.pay`) — vendor payment authorization kept restricted pending separate approval (2026-11-20) |
+| Financial authority | `payment.refund`, `caseOrder.reprice`, `accounting.manage/post/reconcile`, `ap.pay` | Admin (Manager: `ap.pay`) — Funeral Directors have **no vendor payment authority** (2026-11-20) |
 | Catalog (recorded Gus decision) | `serviceCatalog.edit/price/deactivate` | Admin only |
 | Destructive | `case.delete` | Admin |
 | Configuration | `notification.manage/admin`, `calendar.manage`, `signature.manage`, `portal.manage` | Admin, Manager |

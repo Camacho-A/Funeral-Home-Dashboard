@@ -201,13 +201,17 @@ describe('ServiceReadinessCard — medical examiner approval (Phase 5G)', () => 
 });
 
 describe('ServiceReadinessCard — release workflow (Phase 5K, holds 2026-11)', () => {
-  const caps = (overrides: Record<string, boolean> = {}) => ({
+  const caps = (overrides: Record<string, unknown> = {}) => ({
     canRequestRelease: false,
     canSignOff: false,
     canHold: false,
     canReauthorize: false,
     canWithdraw: false,
     canCorrect: false,
+    canConfirmCorrection: false,
+    confirmCorrectionRefusal: null,
+    canWithdrawCorrection: false,
+    isCorrectionRequester: false,
     isOperator: true,
     isLicensedSigner: false,
     ...overrides,
@@ -304,6 +308,47 @@ describe('ServiceReadinessCard — release workflow (Phase 5K, holds 2026-11)', 
     fireEvent.click(confirm);
     await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/cremation-release'))).toBe(true));
     expect(postedRelease(fetchMock)).toMatchObject({ action: 'correct', reason: 'Wrong appointment', correctsEventId: 'released' });
+  });
+
+  const pendingCorrectionRecord = () =>
+    releasedRecord([ev('released', { actorId: 'b' }), ev('correction_requested', { eventId: 'cr1', actorId: 'c', actorName: 'Morgan Demo', correctsEventId: 'released', reason: 'Signed against the wrong appointment' })]);
+
+  it('a correction awaiting confirmation: sending blocked, preparation read-only; the requester cannot confirm and sees why', async () => {
+    stubFetch({
+      preparation: view({ record: pendingCorrectionRecord() }),
+      canEdit: true,
+      release: evaluation({ status: 'correction_pending', capabilities: caps({ canWithdrawCorrection: true, isCorrectionRequester: true, confirmCorrectionRefusal: 'You asked for this correction, so someone else must confirm it.' }) }),
+    } as never);
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const notice = await screen.findByTestId('release-correction-pending');
+    expect(notice.textContent).toMatch(/Nothing may be sent to the\s+crematory/);
+    expect(notice.textContent).toMatch(/someone else must confirm it/);
+    expect(screen.queryByRole('button', { name: 'Confirm correction' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Withdraw or decline correction' })).toBeTruthy();
+    expect(screen.queryByTestId('release-hold')).toBeNull();
+    expect(screen.getByText(/awaiting confirmation, so preparation is read-only/)).toBeTruthy();
+    expect(screen.getAllByRole('combobox')[0].hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('release-history').textContent).toMatch(/Correction requested/);
+    // The requester withdraws without a reason.
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw or decline correction' }));
+    expect(screen.getByRole('button', { name: 'Confirm' }).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('an independent person confirms the correction (note optional); someone else declining must give a reason', async () => {
+    const fetchMock = stubFetch(
+      { preparation: view({ record: pendingCorrectionRecord() }), canEdit: true, release: evaluation({ status: 'correction_pending', capabilities: caps({ canConfirmCorrection: true, canWithdrawCorrection: true }) }) } as never,
+      () => ({ status: 200, body: {} }),
+    );
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    fireEvent.click(await screen.findByRole('button', { name: 'Withdraw or decline correction' }));
+    expect(screen.getByRole('button', { name: 'Confirm' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByLabelText('Reason for declining')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm correction' }));
+    expect(screen.getByText(/Confirming puts the release on hold/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/cremation-release'))).toBe(true));
+    expect(postedRelease(fetchMock)).toEqual({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, confirm: true, action: 'confirm_correction' });
   });
 
   it('on hold, preparation is editable again but only with a reason, which is sent with the change', async () => {

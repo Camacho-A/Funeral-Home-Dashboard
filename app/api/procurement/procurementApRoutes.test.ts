@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services/__mocks__/organizationIds';
+import { GUS_CAMACHO_ORGANIZATION_ID } from '@/domain/organization/organizationProfiles';
 import { mockDefaultUser, mockMultiOrgUser, mockMembershipFixtures } from '@/services/__mocks__/authFixtures';
 import { supplierFixtures, purchaseOrderFixtures, purchaseOrderLineItemFixtures, vendorBillFixtures, vendorBillLineItemFixtures, billPaymentFixtures } from '@/services/__mocks__/procurementFixtures';
 import { ledgerAccountFixtures, journalEntryFixtures, journalEntryLineFixtures } from '@/services/__mocks__/ledgerFixtures';
@@ -97,6 +98,24 @@ describe('AP routes — ap.manage / ap.pay separation', () => {
     expect(list.status).toBe(403);
 
     mockMembershipFixtures.pop();
+  });
+
+  it('Gus Funeral Director (approved 2026-11-20): enters and reviews bills, but cannot record a vendor payment', async () => {
+    const director = { id: 'mock-user-gus-fd-ap-test', email: 'fd-ap@gus-camacho-jr.test', displayName: 'Gus FD Test User', source: 'mock' as const };
+    mockMembershipFixtures.push({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, userId: director.id, role: 'caseManager', isActive: true });
+    mockSession = { user: director }; // caseManager → funeralDirector
+    try {
+      const list = await bills.GET(new Request(`http://localhost/api/accounting/bills?organizationId=${GUS_CAMACHO_ORGANIZATION_ID}`));
+      expect(list.status).toBe(200);
+      // Reaches the service (400 on the missing supplier), not the 403 policy gate.
+      const create = await post(bills, '/api/accounting/bills', { organizationId: GUS_CAMACHO_ORGANIZATION_ID, supplierId: 'missing', billNumber: 'INV-1', billDate: '2026-08-21', dueDate: '2026-08-21', expenseLines: [{ accountNumber: '5010', amountCents: 100 }] });
+      expect(create.status).toBe(400);
+      expect((await paymentsPost({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, amountCents: 100, cashAccountNumber: '1000' })).status).toBe(403);
+      // Still cannot reach another organization's bills.
+      expect((await bills.GET(new Request(`http://localhost/api/accounting/bills?organizationId=${DEFAULT_ORGANIZATION_ID}`))).status).toBe(403);
+    } finally {
+      mockMembershipFixtures.pop();
+    }
   });
 
   it('administrator (ap.manage + ap.pay) passes the policy gate on both', async () => {

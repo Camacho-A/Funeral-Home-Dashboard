@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { TextField } from '@/components/ui/TextField';
 import { Badge } from '@/components/ui/Badge';
-import { correctableSignOffs, RELEASE_STATUS_LABEL, releaseEventsOf } from '@/domain/servicePreparation/releaseHolds';
+import { correctableSignOffs, pendingCorrection, RELEASE_STATUS_LABEL, releaseEventsOf } from '@/domain/servicePreparation/releaseHolds';
 import { RELEASE_FOR_CREMATION_UNAVAILABLE_REASON } from '@/domain/servicePreparation/releaseForCremation';
 import type { ServicePreparationRecord } from '@/domain/servicePreparation/types';
 import type { CallerReleaseView } from '@/services/cremationReleaseService';
@@ -17,9 +17,10 @@ import styles from './ServiceReadinessCard.module.css';
  * rechecked. Every step stays in the history. A hold never recalls
  * paperwork already sent — the card says so. A pending request can be
  * withdrawn; a wrong sign-off is corrected by appending a correction (with a
- * reason), never by editing it.
+ * reason), never by editing it. A correction of the release in force waits —
+ * with sending blocked — for someone independent to confirm it.
  */
-type Action = 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct';
+type Action = 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct' | 'confirm_correction' | 'withdraw_correction';
 
 const EVENT_LABEL = {
   release_requested: 'Release requested',
@@ -29,6 +30,8 @@ const EVENT_LABEL = {
   reauthorized: 'Reauthorized',
   request_withdrawn: 'Request withdrawn',
   release_corrected: 'Sign-off corrected',
+  correction_requested: 'Correction requested',
+  correction_withdrawn: 'Correction withdrawn',
 } as const;
 
 export function ReleaseWorkflowSection({
@@ -56,6 +59,7 @@ export function ReleaseWorkflowSection({
   const correctable = correctableSignOffs(record);
   const [correctsEventId, setCorrectsEventId] = useState<string>('');
   const correcting = correctsEventId || correctable.at(-1)?.eventId || '';
+  const correctionRequest = pendingCorrection(record);
   const status = release?.status ?? 'not_released';
   const caps = release?.capabilities;
   const active = release?.active === true && canEdit;
@@ -64,7 +68,10 @@ export function ReleaseWorkflowSection({
     setReason('');
     setCorrectsEventId('');
   };
-  const needsReason = confirming === 'hold' || confirming === 'correct';
+  // Declining someone else's correction needs a reason; withdrawing your own does not.
+  const decliningOthers = confirming === 'withdraw_correction' && !caps?.isCorrectionRequester;
+  const needsReason = confirming === 'hold' || confirming === 'correct' || decliningOthers;
+  const optionalReason = confirming === 'withdraw' || confirming === 'confirm_correction' || confirming === 'withdraw_correction';
 
   const button = (action: Action, label: string, allowed: boolean | undefined) =>
     allowed ? (
@@ -79,17 +86,33 @@ export function ReleaseWorkflowSection({
     button('reauthorize', caps?.isLicensedSigner && release?.allPrerequisitesMet ? 'Reauthorize release' : 'Request reauthorization', caps?.canReauthorize),
     button('withdraw', 'Withdraw request', caps?.canWithdraw),
     button('correct', 'Correct a sign-off', caps?.canCorrect),
+    button('confirm_correction', 'Confirm correction', caps?.canConfirmCorrection),
+    button('withdraw_correction', 'Withdraw or decline correction', caps?.canWithdrawCorrection),
   ].filter(Boolean);
 
   return (
     <div data-testid="release-workflow">
       <p className={styles.service}>
-        <Badge variant={status === 'on_hold' ? 'danger' : status === 'released' || status === 'reauthorized' ? 'success' : status === 'not_released' ? 'neutral' : 'warning'}>
+        <Badge
+          className={styles.statusBadge}
+          variant={status === 'on_hold' || status === 'correction_pending' ? 'danger' : status === 'released' || status === 'reauthorized' ? 'success' : status === 'not_released' ? 'neutral' : 'warning'}>
           {RELEASE_STATUS_LABEL[status]}
         </Badge>
       </p>
 
-      {release?.hold && (
+      {correctionRequest && status === 'correction_pending' && (
+        <p className={styles.notice} role="note" data-testid="release-correction-pending">
+          Correction requested by {correctionRequest.actorName ?? 'staff'}, {formatWhen(correctionRequest.at)}: {correctionRequest.reason}. Nothing may be sent to the
+          crematory while it awaits confirmation. It must be confirmed by someone other than the person who asked for it and the people responsible for the release.
+          Once confirmed, the release goes on hold and needs reauthorization with a licensed sign-off.
+          {caps?.confirmCorrectionRefusal && <span className={styles.itemHint}> {caps.confirmCorrectionRefusal}</span>}
+          {correctionRequest.paperworkAlreadyTransmitted && (
+            <strong> The crematory already has (or may have) the paperwork. Contact the crematory now — SOLIS does not recall anything that was sent.</strong>
+          )}
+        </p>
+      )}
+
+      {release?.hold && status !== 'correction_pending' && (
         <p className={styles.notice} role="note" data-testid="release-hold">
           On hold{release.hold.reason ? `: ${release.hold.reason}` : ''} — {release.hold.byName ?? 'staff'}, {formatWhen(release.hold.at)}. Nothing may be sent to the crematory until it is reauthorized.
           {release.hold.paperworkAlreadyTransmitted && (
@@ -106,7 +129,8 @@ export function ReleaseWorkflowSection({
           <span className={styles.controls}>{buttons}</span>
         ) : (
           !release?.released &&
-          status !== 'on_hold' && (
+          status !== 'on_hold' &&
+          status !== 'correction_pending' && (
             <button type="button" className={styles.releaseButton} disabled>
               Release for cremation
             </button>
@@ -120,7 +144,11 @@ export function ReleaseWorkflowSection({
               : confirming === 'withdraw'
                 ? 'This withdraws the request awaiting sign-off. It stays in the history.'
                 : confirming === 'correct'
-                  ? 'A correction is added to the history; the sign-off itself is never changed. If it is the sign-off in force, the release goes on hold and must be reauthorized with a licensed sign-off.'
+                  ? 'A correction is added to the history; the sign-off itself is never changed. Correcting the release in force blocks sending at once and takes effect only when someone else confirms it; the release then goes on hold and must be reauthorized with a licensed sign-off.'
+                  : confirming === 'confirm_correction'
+                    ? 'Confirming puts the release on hold. It must then be reauthorized with a licensed sign-off. Your confirmation is recorded in the history.'
+                    : confirming === 'withdraw_correction'
+                      ? 'The correction is withdrawn and the release stands as signed. The request stays in the history.'
                   : confirming === 'sign_off' || ((confirming === 'release' || confirming === 'reauthorize') && caps?.isLicensedSigner && release?.allPrerequisitesMet)
                 ? `You are signing off the release for cremation after the ${serviceName.toLowerCase()} as the approving funeral director. It is recorded with your name and license.`
                 : "This records a request. A licensed, authorized funeral director's sign-off is still required."}
@@ -137,9 +165,19 @@ export function ReleaseWorkflowSection({
               </select>
             </label>
           )}
-          {(needsReason || confirming === 'withdraw') && (
+          {(needsReason || optionalReason) && (
             <label className={styles.detail}>
-              <span>{confirming === 'hold' ? 'Reason for the hold' : confirming === 'correct' ? 'Reason for the correction' : 'Reason (optional)'}</span>
+              <span>
+                {confirming === 'hold'
+                  ? 'Reason for the hold'
+                  : confirming === 'correct'
+                    ? 'Reason for the correction'
+                    : decliningOthers
+                      ? 'Reason for declining'
+                      : confirming === 'confirm_correction'
+                        ? 'Note (optional)'
+                        : 'Reason (optional)'}
+              </span>
               <TextField value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} required={needsReason} />
             </label>
           )}
@@ -157,7 +195,7 @@ export function ReleaseWorkflowSection({
                 onAction(
                   {
                     action: confirming,
-                    ...(needsReason || (confirming === 'withdraw' && reason.trim()) ? { reason } : {}),
+                    ...(needsReason || (optionalReason && reason.trim()) ? { reason } : {}),
                     ...(confirming === 'correct' ? { correctsEventId: correcting } : {}),
                   },
                   done,

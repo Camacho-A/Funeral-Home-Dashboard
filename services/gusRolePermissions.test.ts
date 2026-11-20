@@ -27,14 +27,16 @@ const OPERATIONAL: readonly PermissionKey[] = [
   'accounting.view', 'accounting.report', 'ap.read',
   // Approved 2026-11-20: workflow, template and case-number management.
   'workflow.edit', 'workflow.publish', 'document.template.manage', 'caseNumber.manage',
+  // Approved 2026-11-20 (final safety pass): vendor bills — enter, correct (void), review.
+  'ap.manage',
 ];
 
 /** Kept restricted (security, financial authority, configuration, or a recorded decision). */
 const RESTRICTED_FROM_FUNERAL_DIRECTOR: readonly PermissionKey[] = [
   'organization.manage', 'settings.manage', 'user.invite', 'user.remove', 'user.manageRoles', 'audit.export',
   'case.delete', 'payment.refund', 'caseOrder.reprice', 'serviceCatalog.edit', 'serviceCatalog.price', 'serviceCatalog.deactivate',
-  // Vendor payment authorization stays restricted pending separate approval (2026-11-20).
-  'accounting.manage', 'accounting.post', 'accounting.reconcile', 'ap.manage', 'ap.pay',
+  // Vendor payment authority stays restricted (2026-11-20).
+  'accounting.manage', 'accounting.post', 'accounting.reconcile', 'ap.pay',
   'notification.manage', 'notification.admin', 'calendar.manage',
 ];
 
@@ -63,6 +65,17 @@ describe('Gus: three operational leadership roles', () => {
     expect(f.funeralDirectorLicenseReverifyDays).toBe(365);
   });
 
+  it('vendor bills: the Funeral Director enters, corrects and reviews bills but cannot record vendor payments', async () => {
+    const fd = await of(GUS_CAMACHO_ORGANIZATION_ID, 'funeralDirector');
+    expect(fd.has('ap.read')).toBe(true);
+    expect(fd.has('ap.manage')).toBe(true);
+    expect(fd.has('ap.pay')).toBe(false);
+    const manager = await of(GUS_CAMACHO_ORGANIZATION_ID, 'manager');
+    expect(manager.has('ap.manage') && manager.has('ap.pay')).toBe(true);
+    const admin = await of(GUS_CAMACHO_ORGANIZATION_ID, 'administrator');
+    expect(admin.has('ap.manage') && admin.has('ap.pay')).toBe(true);
+  });
+
   it('read-only and other roles gain nothing', async () => {
     const readOnly = await of(GUS_CAMACHO_ORGANIZATION_ID, 'readOnly');
     expect(['case.update', 'crematory.send', 'caseOrder.customItems', 'resource.manage'].filter((p) => readOnly.has(p as PermissionKey))).toEqual([]);
@@ -78,6 +91,8 @@ describe('Manors is unchanged', () => {
     expect(manager.has('accounting.view')).toBe(false);
     expect(['workflow.edit', 'workflow.publish', 'document.template.manage'].filter((p) => fd.has(p as PermissionKey))).toEqual([]);
     expect(manager.has('caseNumber.manage')).toBe(false);
+    expect(fd.has('ap.manage')).toBe(false);
+    expect(fd.has('ap.pay')).toBe(false);
     const f = getRegisteredOrganizationProfile(MANORS_ORGANIZATION_ID).features;
     expect(f.cremationReleaseOperatorRoleKeys).toEqual([]);
     expect(f.funeralDirectorCredentialAdministratorRoleKeys).toEqual([]);

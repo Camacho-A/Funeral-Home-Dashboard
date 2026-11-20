@@ -198,7 +198,18 @@ export type ReleaseForCremationRecord = {
  *                               force — puts the release on hold. The
  *                               corrected event is never edited or removed.
  */
-export type ReleaseEventType = 'release_requested' | 'released' | 'hold_placed' | 'reauthorization_requested' | 'reauthorized' | 'request_withdrawn' | 'release_corrected';
+export type ReleaseEventType =
+  | 'release_requested'
+  | 'released'
+  | 'hold_placed'
+  | 'reauthorization_requested'
+  | 'reauthorized'
+  | 'request_withdrawn'
+  | 'release_corrected'
+  /** A correction of the sign-off in force on an active release, awaiting
+      an independent person's confirmation (sending is blocked meanwhile). */
+  | 'correction_requested'
+  | 'correction_withdrawn';
 
 export type ReleaseEvent = {
   eventId: string;
@@ -209,10 +220,13 @@ export type ReleaseEvent = {
   roleKey: string;
   /** Required for a hold and a correction. */
   reason?: string | null;
-  /** release_corrected: the sign-off event it corrects. request_withdrawn:
-      the request it withdraws. */
+  /** release_corrected / correction_requested: the sign-off event it
+      corrects. request_withdrawn / correction_withdrawn: the request it
+      withdraws. release_corrected after a correction_requested: the request
+      it confirms. */
   correctsEventId?: string;
   withdrawsEventId?: string;
+  confirmsEventId?: string;
   /** The licensed sign-off (released / reauthorized). */
   approval?: ReleaseApprovalSnapshot | null;
   /** A hold placed after paperwork already reached (or may have reached)

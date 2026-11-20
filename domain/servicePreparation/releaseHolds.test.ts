@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { appendReleaseEvent, correctableSignOffs, currentHold, isReleasedStatus, pendingReleaseRequest, releaseEventsOf, releaseStatusOf, ReleaseTransitionError, RELEASE_EVENT_ALLOWED_FROM } from './releaseHolds';
+import {
+  appendReleaseEvent,
+  correctableSignOffs,
+  correctionConfirmationRefusal,
+  currentHold,
+  isHeldStatus,
+  isReleasedStatus,
+  pendingCorrection,
+  pendingReleaseRequest,
+  releaseEventsOf,
+  releaseStatusOf,
+  responsibleForSignOff,
+  ReleaseTransitionError,
+  RELEASE_EVENT_ALLOWED_FROM,
+} from './releaseHolds';
 import { applyPreparationChange, PreparationChangeError } from './preparationUpdates';
 import { releaseGateRefusal } from './releaseForCremation';
 import { VIEWING_PREPARATION } from './serviceDefinitions';
@@ -102,6 +116,8 @@ describe('release-hold workflow', () => {
 
   it('every transition rule is covered', () => {
     expect(Object.keys(RELEASE_EVENT_ALLOWED_FROM).sort()).toEqual([
+      'correction_requested',
+      'correction_withdrawn',
       'hold_placed',
       'reauthorization_requested',
       'reauthorized',
@@ -138,19 +154,10 @@ describe('withdrawing a pending request', () => {
 });
 
 describe('correcting a recorded sign-off', () => {
-  it('the sign-off in force: appended with its reason; the release goes on hold; the original is untouched', () => {
+  it('the sign-off in force on an active release cannot be corrected directly — it must be requested and independently confirmed', () => {
     const released = run('released');
-    const original = structuredClone(released.release);
     const signOff = released.releaseEvents![0];
-    const corrected = apply(released, event('release_corrected', { reason: 'Recorded against the wrong appointment', correctsEventId: signOff.eventId }));
-    expect(releaseStatusOf(corrected)).toBe('on_hold');
-    expect(currentHold(corrected)!.type).toBe('release_corrected');
-    expect(currentHold(corrected)!.reason).toBe('Recorded against the wrong appointment');
-    expect(corrected.release).toEqual(original);
-    expect(corrected.releaseEvents![0]).toEqual(signOff);
-    expect(corrected.history!.at(-1)!.description).toContain('corrected');
-    // Lifting it is the normal reauthorization with a licensed sign-off.
-    expect(releaseStatusOf(apply(corrected, event('reauthorized')))).toBe('reauthorized');
+    expect(() => apply(released, event('release_corrected', { reason: 'Wrong appointment', correctsEventId: signOff.eventId }))).toThrow(/confirmation/);
   });
 
   it('an earlier, superseded sign-off: annotated, status unchanged', () => {
@@ -164,12 +171,120 @@ describe('correcting a recorded sign-off', () => {
   it('refused without a reason, for a non-sign-off event, or twice for the same sign-off', () => {
     const released = run('released');
     const id = released.releaseEvents![0].eventId;
-    expect(() => apply(released, event('release_corrected', { correctsEventId: id }))).toThrow(/reason/);
+    expect(() => apply(released, event('correction_requested', { correctsEventId: id }))).toThrow(/reason/);
     const held = run('released', 'hold_placed');
+    const heldId = held.releaseEvents![0].eventId;
+    expect(() => apply(held, event('release_corrected', { correctsEventId: heldId }))).toThrow(/reason/);
     expect(() => apply(held, event('release_corrected', { reason: 'x', correctsEventId: held.releaseEvents![1].eventId }))).toThrow(ReleaseTransitionError);
-    const once = apply(released, event('release_corrected', { reason: 'x', correctsEventId: id }));
-    expect(() => apply(once, event('release_corrected', { reason: 'again', correctsEventId: id }))).toThrow(ReleaseTransitionError);
+    // While on hold the release is not active: recorded at once.
+    const once = apply(held, event('release_corrected', { reason: 'x', correctsEventId: heldId }));
+    expect(releaseStatusOf(once)).toBe('on_hold');
+    expect(() => apply(once, event('release_corrected', { reason: 'again', correctsEventId: heldId }))).toThrow(ReleaseTransitionError);
     expect(() => apply(null, event('release_corrected', { reason: 'x', correctsEventId: 'nope' }))).toThrow(ReleaseTransitionError);
+  });
+});
+
+describe('independent confirmation of a correction affecting an active release', () => {
+  // A (requester) asked for the release, B (licensed director) signed it off.
+  const activeRelease = () => {
+    const requested = apply(null, event('release_requested', { actorId: 'identity-a' }));
+    return apply(requested, event('released', { actorId: 'identity-b' }));
+  };
+  const request = (record: ServicePreparationRecord, actorId = 'identity-c') =>
+    apply(record, event('correction_requested', { actorId, reason: 'Signed against the wrong appointment', correctsEventId: record.releaseEvents!.at(-1)!.eventId, paperworkAlreadyTransmitted: false }));
+  const confirm = (record: ServicePreparationRecord, actorId: string) => {
+    const pending = pendingCorrection(record)!;
+    return apply(record, event('release_corrected', { actorId, reason: pending.reason, correctsEventId: pending.correctsEventId, confirmsEventId: pending.eventId }));
+  };
+
+  it('the request blocks sending at once, without changing the sign-off', () => {
+    const released = activeRelease();
+    const pending = request(released);
+    expect(releaseStatusOf(pending)).toBe('correction_pending');
+    expect(isReleasedStatus('correction_pending')).toBe(false);
+    expect(isHeldStatus('correction_pending')).toBe(true);
+    expect(currentHold(pending)!.type).toBe('correction_requested');
+    expect(pending.release).toEqual(released.release);
+    expect(pending.releaseEvents!.slice(0, 2)).toEqual(released.releaseEvents);
+    expect(pending.history!.at(-1)!.description).toMatch(/sending blocked until someone else confirms/);
+  });
+
+  it('the people responsible for the release are its signer and whoever requested it', () => {
+    const released = activeRelease();
+    expect(responsibleForSignOff(released, released.releaseEvents![1].eventId).sort()).toEqual(['identity-a', 'identity-b']);
+  });
+
+  it('refused for the requester, the licensed signer, and whoever requested the release; allowed for anyone else', () => {
+    const pending = request(activeRelease());
+    expect(correctionConfirmationRefusal(pending, 'identity-c')).toMatch(/You asked for this correction/);
+    expect(correctionConfirmationRefusal(pending, 'identity-b')).toMatch(/responsible for the release/);
+    expect(correctionConfirmationRefusal(pending, 'identity-a')).toMatch(/responsible for the release/);
+    expect(correctionConfirmationRefusal(pending, 'identity-d')).toBeNull();
+    for (const actorId of ['identity-a', 'identity-b', 'identity-c']) expect(() => confirm(pending, actorId), actorId).toThrow(ReleaseTransitionError);
+  });
+
+  it('the signer may report their own mistake, but still cannot confirm it', () => {
+    const pending = request(activeRelease(), 'identity-b');
+    expect(() => confirm(pending, 'identity-b')).toThrow(/You asked/);
+    expect(() => confirm(pending, 'identity-a')).toThrow(/responsible/);
+    expect(releaseStatusOf(confirm(pending, 'identity-d'))).toBe('on_hold');
+  });
+
+  it('confirmed by someone independent: appended, release on hold; only a licensed reauthorization lifts it; history intact', () => {
+    const released = activeRelease();
+    const pending = request(released);
+    const confirmed = confirm(pending, 'identity-d');
+    expect(releaseStatusOf(confirmed)).toBe('on_hold');
+    expect(currentHold(confirmed)).toMatchObject({ type: 'release_corrected', confirmsEventId: pending.releaseEvents!.at(-1)!.eventId });
+    expect(correctableSignOffs(confirmed)).toEqual([]);
+    expect(confirmed.release).toEqual(released.release);
+    expect(confirmed.releaseEvents!.map((e) => e.type)).toEqual(['release_requested', 'released', 'correction_requested', 'release_corrected']);
+    expect(confirmed.history!.at(-1)!.description).toMatch(/Correction confirmed by/);
+    // A reauthorization needs the licensed sign-off (approval) — refused without it.
+    expect(() => apply(confirmed, event('reauthorized', { approval: null }))).toThrow(/licensed/);
+    expect(releaseStatusOf(apply(confirmed, event('reauthorized', { actorId: 'identity-e' })))).toBe('reauthorized');
+  });
+
+  it('while pending: no other correction, hold, release step or preparation change; only confirm or withdraw', () => {
+    const pending = request(activeRelease());
+    const signOffId = pending.releaseEvents![1].eventId;
+    expect(() => apply(pending, event('release_corrected', { actorId: 'identity-d', reason: 'x', correctsEventId: signOffId }))).toThrow(/awaiting confirmation/);
+    expect(() => apply(pending, event('correction_requested', { reason: 'x', correctsEventId: signOffId }))).toThrow(ReleaseTransitionError);
+    for (const type of ['hold_placed', 'reauthorization_requested', 'reauthorized', 'release_requested', 'released', 'request_withdrawn'] as const) {
+      expect(() => apply(pending, event(type)), type).toThrow(ReleaseTransitionError);
+    }
+    const change = { kind: 'item' as const, itemId: 'prep.embalming.written_permission', status: 'pending' as const };
+    expect(() =>
+      applyPreparationChange({ definition: VIEWING_PREPARATION, record: pending, service: null, change, actor: { id: 'identity-x', name: 'Fictional Staff' }, now: '2026-12-20T10:00:00.000Z', eventId: 'p-pending', reason: 'x' }),
+    ).toThrow(/awaiting confirmation/);
+  });
+
+  it('withdrawn by the requester (no reason needed) or declined by someone else (reason required): the release stands as signed', () => {
+    const released = activeRelease();
+    const pending = request(released);
+    const withdrawn = apply(pending, event('correction_withdrawn', { actorId: 'identity-c' }));
+    expect(releaseStatusOf(withdrawn)).toBe('released');
+    expect(withdrawn.releaseEvents!.at(-1)!.withdrawsEventId).toBe(pending.releaseEvents!.at(-1)!.eventId);
+    expect(correctableSignOffs(withdrawn).map((e) => e.eventId)).toEqual([released.releaseEvents![1].eventId]);
+    expect(() => apply(pending, event('correction_withdrawn', { actorId: 'identity-d' }))).toThrow(/reason for declining/);
+    expect(releaseStatusOf(apply(pending, event('correction_withdrawn', { actorId: 'identity-d', reason: 'The sign-off was right' })))).toBe('released');
+    // A reauthorized release returns to reauthorized.
+    const reauthorized = apply(apply(released, event('hold_placed')), event('reauthorized', { actorId: 'identity-b' }));
+    const again = apply(request(reauthorized), event('correction_withdrawn', { actorId: 'identity-c' }));
+    expect(releaseStatusOf(again)).toBe('reauthorized');
+  });
+
+  it('a confirmation claimed with no pending request, or for a different request, is refused', () => {
+    const released = activeRelease();
+    expect(() => apply(released, event('release_corrected', { actorId: 'identity-d', reason: 'x', correctsEventId: released.releaseEvents![1].eventId, confirmsEventId: 'nope' }))).toThrow(ReleaseTransitionError);
+    const pending = request(released);
+    const p = pendingCorrection(pending)!;
+    expect(() => apply(pending, event('release_corrected', { actorId: 'identity-d', reason: 'x', correctsEventId: p.correctsEventId, confirmsEventId: 'other' }))).toThrow(/confirm or withdraw/);
+  });
+
+  it('the crematory gate refuses while a correction is pending', () => {
+    const viewing = { workflowSnapshot: { serviceTypeCode: SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING } as Case['workflowSnapshot'], servicePreparation: request(activeRelease()) };
+    expect(releaseGateRefusal(viewing, true)).toMatch(/Signed against the wrong appointment/);
   });
 });
 

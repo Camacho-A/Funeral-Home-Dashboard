@@ -242,7 +242,7 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
   // Read-only once released; editable again while on hold, each change with a reason.
   const releaseStatus = releaseStatusOf(record);
   const onHold = releaseStatus === 'on_hold';
-  const releaseLocked = releaseStatus === 'released' || releaseStatus === 'reauthorized' || releaseStatus === 'awaiting_reauthorization';
+  const releaseLocked = releaseStatus === 'released' || releaseStatus === 'reauthorized' || releaseStatus === 'awaiting_reauthorization' || releaseStatus === 'correction_pending';
   const editable = canEdit && preparation.storageAvailable && !preparation.isArchived && !releaseLocked;
   const disabled = !editable || save.isPending || (onHold && !holdReason.trim());
   const groups = [...new Map(readiness.items.map((i) => [i.groupKey, i.groupLabel])).entries()];
@@ -285,6 +285,9 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
       {preparation.storageAvailable && !canEdit && <p className={styles.notice} role="note">You can view the preparation; changing it needs permission to edit cases.</p>}
       {releaseStatus === 'awaiting_reauthorization' && (
         <p className={styles.notice} role="note">A reauthorization request is waiting for sign-off, so preparation is read-only. Withdraw the request to make a change.</p>
+      )}
+      {releaseStatus === 'correction_pending' && (
+        <p className={styles.notice} role="note">A correction of the release is awaiting confirmation, so preparation is read-only.</p>
       )}
       {onHold && editable && (
         <label className={styles.detail} data-testid="hold-change-reason">

@@ -97,6 +97,9 @@ export function applyPreparationChange(params: {
   if (releaseStatus === 'released' || releaseStatus === 'reauthorized') {
     throw new PreparationChangeError('The remains were released for cremation; preparation can no longer change. To correct it, place the release on hold first.');
   }
+  if (releaseStatus === 'correction_pending') {
+    throw new PreparationChangeError('A correction of the release is awaiting confirmation, so preparation cannot change. Confirm or withdraw the correction first.');
+  }
   if (releaseStatus === 'awaiting_reauthorization') {
     throw new PreparationChangeError('A reauthorization request is waiting for sign-off, so preparation cannot change. Withdraw the request first.');
   }

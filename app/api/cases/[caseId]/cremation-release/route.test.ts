@@ -49,6 +49,10 @@ describe('POST cremation-release', () => {
     expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'correct', reason: 'Wrong appointment', correctsEventId: 'e2' })).status).toBe(200);
     expect(approve.mock.calls.at(-1)![3]).toMatchObject({ action: 'correct', reason: 'Wrong appointment', correctsEventId: 'e2' });
     expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'correct', reason: 'x', correctsEventId: 42 })).status).toBe(400);
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'confirm_correction' })).status).toBe(200);
+    expect(approve.mock.calls.at(-1)![3]).toMatchObject({ action: 'confirm_correction', reason: null });
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'withdraw_correction', reason: 'The sign-off was right' })).status).toBe(200);
+    expect(approve.mock.calls.at(-1)![3]).toMatchObject({ action: 'withdraw_correction', reason: 'The sign-off was right' });
   });
 
   it('passes the server’s refusal through — 423 while release is not active', async () => {

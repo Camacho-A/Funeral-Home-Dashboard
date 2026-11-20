@@ -10,6 +10,7 @@ import { formatCaseNumber } from '../../domain/cases/caseNumber';
 import { mockCollection } from './mockStore';
 import { buildGusCaseFixtures, buildGusStaffFixtures, buildGusTaskFixtures } from './gusFixtures';
 import { sandboxPaymentStatusFor, sandboxTasks } from './sandboxFixtures';
+import { sandboxReleaseStateCases } from './sandboxReleaseFixtures';
 
 /**
  * Re-exported from ./organizationIds (not declared here) so
@@ -348,6 +349,8 @@ export const caseFixtures: Case[] = mockCollection('caseFixtures', (): Case[] =>
   // Gus Camacho Jr. demo cases (M<current year>-001...) — appended after
   // Manors' seed cases; see services/__mocks__/gusFixtures.ts.
   ...buildGusCaseFixtures(),
+  // Sandbox only: fictional Gus cases frozen in each release state.
+  ...sandboxReleaseStateCases(),
 ]);
 
 /**

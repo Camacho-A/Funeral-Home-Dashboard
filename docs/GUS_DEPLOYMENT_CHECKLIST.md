@@ -17,6 +17,33 @@ this repository, in chat, or in logs.
 | Sandboxes | `manors-solis-sandbox`, `gus-solis-sandbox` skip `release/*`; mock data only |
 | Manors Production | `manors-cremation-dashboard`, branch `master`, unchanged |
 
+## Enforced in code (2026-11-20)
+
+- **Start-up guard** (`lib/gusDeployment.ts`, called from `instrumentation.ts`):
+  a deployment serving `gus-camacho-jr` that is Production or on live Wix
+  data **refuses to start** if `DEPLOYMENT_ORGANIZATION_IDS` /
+  `LOGIN_ORGANIZATION_ID` are anything but `gus-camacho-jr`, the adapters are
+  not `wix` / `identity`, or any forbidden variable is set (list below).
+  The sandbox (its own isolation) and mock-data previews are exempt; Manors
+  is never affected. Only names (and those four non-secret values) are
+  inspected — no secret is read or logged.
+- **Organization isolation**: `lib/auth/gusDeploymentIsolation.test.ts`
+  (mirror of the Manors test): Gus staff reach Gus with their own role;
+  Manors accounts — even ones also in Gus — never reach Manors through the
+  Gus deployment; mock sign-in is refused on Wix data.
+- **Nothing live**: `services/gusGoLiveSwitches.test.ts`.
+
+Forbidden on a Gus deployment until each is separately approved:
+`RESEND_*`, `TWILIO_*`, `MICROSOFT_*`, `GOOGLE_*`, `CALENDAR_TOKEN_ENCRYPTION_KEY`,
+`CLOVER_*`, `JOTFORM_API_KEY` (Manors' key), `JOTFORM_API_KEY_GUS_CAMACHO_JR`,
+`CERTIFICATE_OF_CREMATION_TEMPLATE_*`, `MANATEE_*`, `SSN_ENCRYPTION_KEY`,
+`NEXT_PUBLIC_SOLIS_SANDBOX`, `PLATFORM_ADMIN_USER_IDS`, `WIX_OAUTH_CLIENT_ID`,
+`SOLIS_FD_CREDENTIALS_STORAGE`. Enabling one later means changing this list
+in code on `release/gus` as part of that approval.
+
+Not enforceable in software: that no Gus secret equals a Manors one (values
+are never compared). Generate each fresh, per section B.
+
 ## A. Pre-deployment (no live effect)
 
 1. `release/gus` points at the reviewed commit; `git log origin/master..release/gus` reviewed; no `.env*`, `.gitignore` or `design/` changes.
@@ -40,12 +67,13 @@ directly into Vercel, and never reuse a Manors value:
 | `APP_BASE_URL`, `NEXT_PUBLIC_APP_URL`, `LOGIN_ORGANIZATION_HOSTS` | once the domain is chosen |
 | `BLOB_READ_WRITE_TOKEN`, `BLOB_STORE_ID` (+ branding pair) | a **Gus-only** Blob store — creating it may have cost implications [approval] |
 | `WIX_SITE_ID`, `WIX_API_KEY` | the shared Beacon site — connecting live Wix is its own [approval] |
-| `SOLIS_FD_CREDENTIALS_STORAGE=wix` | only when live credential storage is approved |
+| `SOLIS_FD_CREDENTIALS_STORAGE=wix` | only when live credential storage is approved — and the start-up guard's list changed in code at the same time |
 
 Leave unset: `RESEND_*`, `TWILIO_*`, `MICROSOFT_*`, `GOOGLE_*`,
 `JOTFORM_API_KEY_GUS_CAMACHO_JR` (until Gus JotForm is connected),
 `SSN_ENCRYPTION_KEY`, `CLOVER_*`, Manors template keys,
-`NEXT_PUBLIC_SOLIS_SANDBOX`.
+`NEXT_PUBLIC_SOLIS_SANDBOX`, `PLATFORM_ADMIN_USER_IDS`, `WIX_OAUTH_CLIENT_ID`,
+`CALENDAR_TOKEN_ENCRYPTION_KEY` — the start-up guard refuses every one.
 
 ## C. First controlled deployment — [approval]
 

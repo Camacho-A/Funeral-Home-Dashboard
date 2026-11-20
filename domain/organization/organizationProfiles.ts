@@ -693,6 +693,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
 /** Gus (2026-11): operational permissions aligned across Administrator,
     Manager and Funeral Director — see docs/GUS_ROLE_PERMISSIONS.md. */
 const GUS_OPERATIONAL_REASON = 'Administrators, Managers and Funeral Directors have the same operational access (decided 2026-11).';
+const GUS_VENDOR_BILLS_REASON = 'Approved 2026-11-20 (final safety pass): Funeral Directors create, correct and review vendor bills; vendor payment authority (ap.pay) is not granted.';
 const GUS_LEADERSHIP_REASON = 'Approved 2026-11-20: Administrators, Managers and Funeral Directors share workflow, template and case-number management.';
 export const GUS_OPERATIONAL_ALIGNMENT: readonly StandingRoleOverride[] = Object.freeze([
   { roleKey: 'funeralDirector', permissionKey: 'caseOrder.customItems', action: 'grant', reason: GUS_OPERATIONAL_REASON },
@@ -710,6 +711,9 @@ export const GUS_OPERATIONAL_ALIGNMENT: readonly StandingRoleOverride[] = Object
   { roleKey: 'funeralDirector', permissionKey: 'workflow.publish', action: 'grant', reason: GUS_LEADERSHIP_REASON },
   { roleKey: 'funeralDirector', permissionKey: 'document.template.manage', action: 'grant', reason: GUS_LEADERSHIP_REASON },
   { roleKey: 'manager', permissionKey: 'caseNumber.manage', action: 'grant', reason: GUS_LEADERSHIP_REASON },
+  // Vendor bills: Funeral Directors enter, correct (void and re-enter) and
+  // review bills. Recording vendor payments (`ap.pay`) is NOT granted.
+  { roleKey: 'funeralDirector', permissionKey: 'ap.manage', action: 'grant', reason: GUS_VENDOR_BILLS_REASON },
 ] as const satisfies readonly StandingRoleOverride[]);
 
 const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {

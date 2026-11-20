@@ -39,5 +39,8 @@ plainly that the crematory must be contacted — a hold never recalls anything.
 `services/crematory/crematoryReleaseGate.test.ts` (gate on in test: unreleased,
 on hold, pending reauthorization all block; reauthorized unblocks; "sent
 outside SOLIS" refused, "not previously sent" allowed),
-`domain/servicePreparation/releaseHolds.test.ts › releaseGateRefusal`,
+`domain/servicePreparation/releaseHolds.test.ts › releaseGateRefusal` and
+`› the crematory gate refuses while a correction is pending` (a correction
+of an active release awaiting independent confirmation blocks every gated
+path, like a hold),
 `domain/crematory/crematoryReadiness.test.ts › release gate`.
