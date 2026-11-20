@@ -2,6 +2,7 @@ import type { Case } from '../../types/case';
 import { checklistItemsForEvent } from '../sla/slaMilestones';
 import { checklistItemKey } from '../workflow/checklistItemKey';
 import { sendToCrematoryConfig } from './crematorySettings';
+import { releaseGateRefusal } from '../servicePreparation/releaseForCremation';
 
 /**
  * Send to Crematory — Workflow 3's two "sent to crematory" items (2026-10).
@@ -51,4 +52,19 @@ export function crematoryPaperworkMayHaveBeenSent(case_: Pick<Case, 'organizatio
   if (record?.previousSend?.decision === 'sent_outside_solis') return true;
   const keys = crematorySentChecklistKeys(case_);
   return keys.length > 0 && keys.some((key) => case_.checklistState?.[key] === true);
+}
+
+/**
+ * Release gate (2026-11): checking a "sent to crematory" step records that
+ * the crematory has the paperwork, so it is refused while the case must be
+ * released and is not (or is on hold). Unchecking is always allowed. Null
+ * when allowed — including whenever the organization does not enforce the
+ * gate (everyone today).
+ */
+export function crematorySentChecklistReleaseRefusal(
+  case_: Pick<Case, 'organizationId' | 'workflowSnapshot' | 'checklistState' | 'servicePreparation'>,
+  patch: Readonly<Record<string, boolean>> | null | undefined,
+): string | null {
+  if (!adminOnlyChecklistChanges(case_, patch).some((key) => patch![key] === true)) return null;
+  return releaseGateRefusal(case_, sendToCrematoryConfig(case_.organizationId)?.requireReleaseAfterService === true);
 }

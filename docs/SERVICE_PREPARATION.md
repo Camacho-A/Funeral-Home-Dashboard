@@ -276,6 +276,39 @@ themselves Funeral Director authorization. Deployment variables:
 - Sends nothing. The checklist, stage, crematory record and Send to
   Crematory are not touched.
 
+### Release holds (2026-11) — built, NOT active
+
+Events, append-only in `servicePreparation.releaseEvents` (each with a
+matching history entry and Activity event); the status is worked out from
+them (`domain/servicePreparation/releaseHolds.ts`):
+
+| Event | Who | Status after |
+|---|---|---|
+| `release_requested` | Administrator, Manager, Funeral Director (requirements met except the sign-off) | Release requested — awaiting licensed sign-off |
+| `released` | a licensed, authorized director, every requirement rechecked | Released |
+| `hold_placed` | Administrator, Manager, Funeral Director; **reason required** | On hold — sending blocked |
+| `reauthorization_requested` | Administrator, Manager, Funeral Director | Awaiting licensed sign-off — still blocked |
+| `reauthorized` | a licensed, authorized director, every requirement rechecked | Reauthorized — sending allowed again |
+
+- The first release is also kept, unchanged forever, in `servicePreparation.release`.
+- A licensed, authorized director with everything met releases or reauthorizes in one step; anyone else in the three roles records a request.
+- A hold placed after paperwork reached (or may have reached) the crematory is marked `paperworkAlreadyTransmitted`, and the case says the crematory must be contacted — a hold never recalls anything.
+- Preparation stays read-only after the first release, including while on hold (see open decisions).
+- `POST /api/cases/[caseId]/cremation-release { action: 'release' | 'sign_off' | 'hold' | 'reauthorize', reason? }`; all refused (423) while `RELEASE_FOR_CREMATION_AVAILABLE` is off.
+
+### Release corrections — design proposal only (not built)
+
+A recorded release event can be wrong (e.g. recorded against the wrong
+appointment, or the wrong approver selected by mistake). Proposal, for
+approval: a `correction` event that **references** the event it corrects
+(`correctsEventId`), states the reason, and records who and when — the
+original event is never edited or removed. A correction can only change the
+release **status** in the safe direction (e.g. treat a mistaken `released` as
+`on_hold`), and lifting that again follows the normal reauthorization with
+licensed sign-off. Who may record a correction (Administrator only? any of
+the three roles?) and whether a second person must confirm it are client
+decisions.
+
 ### Send to Crematory release gate (Phase 5K) — built, NOT enforced
 
 `sendToCrematory.requireReleaseAfterService` in the organization profile
@@ -372,7 +405,10 @@ unrecorded approval.
   with organization.manage, never for themselves)?
 - Prayer cards, register book, crucifix for a Final Goodbye: offered or not?
 - Are the default deadline targets right for Gus's vendors and parishes?
-- Reversing a release (Phase 5K): may a release be withdrawn (e.g. the
-  family asks to wait), by whom, and does it need a reason? Not built; a
-  release is final in SOLIS until decided.
+- Reversing a release: decided 2026-11 — handled by holds (above).
+- While on hold, should service preparation become editable again? (Today it
+  stays read-only after the first release.)
+- Withdrawing a pending release request (before sign-off): allowed, by whom?
+  (Not built.)
+- Release corrections (proposal above): approve the design and who may use it.
 

@@ -18,7 +18,7 @@ vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => 
 });
 
 const { getCrematoryCaseSummary, recordPreviousSend } = await import('./crematoryPackageService');
-const { crematorySentChecklistKeys } = await import('@/domain/crematory/sentChecklistItems');
+const { crematorySentChecklistKeys, crematorySentChecklistReleaseRefusal } = await import('@/domain/crematory/sentChecklistItems');
 const { caseFixtures } = await import('../__mocks__/fixtures');
 const { GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
 
@@ -96,5 +96,26 @@ describe('holds and indirect paths (gate on, test only)', () => {
     await expect(recordPreviousSend(ctx, 'gus-case-010', outside, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('on hold') });
     const notSent = { decision: 'not_previously_sent', verification: 'Checked the shared mailbox sent items (fictional)', confirmedChecked: true };
     await expect(recordPreviousSend(ctx, 'gus-case-010', notSent, 'mock')).resolves.toBeTruthy();
+  });
+});
+
+describe('checking the "sent to crematory" steps (gate on, test only)', () => {
+  it('checking is refused until released, refused on hold, allowed once reauthorized; unchecking is always allowed', () => {
+    const c = caseFixtures.find((x) => x.id === 'gus-case-010' && x.organizationId === GUS)!;
+    const [key] = crematorySentChecklistKeys(c);
+    expect(crematorySentChecklistReleaseRefusal(c, { [key]: true })).toMatch(/must be released/);
+    const held = { ...c, servicePreparation: releasedPrep([ev('released'), ev('hold_placed', { reason: 'Family asked to wait' })]) as never };
+    expect(crematorySentChecklistReleaseRefusal(held, { [key]: true })).toMatch(/on hold/);
+    const reauthorized = { ...c, servicePreparation: releasedPrep([ev('released'), ev('hold_placed', { reason: 'x' }), ev('reauthorized', { approval: {} })]) as never };
+    expect(crematorySentChecklistReleaseRefusal(reauthorized, { [key]: true })).toBeNull();
+    const ticked = { ...held, checklistState: { ...held.checklistState, [key]: true } };
+    expect(crematorySentChecklistReleaseRefusal(ticked, { [key]: false })).toBeNull();
+  });
+
+  it('a Gus Direct Cremation case and Manors are never refused', () => {
+    const direct = caseFixtures.find((x) => x.organizationId === GUS && !x.workflowSnapshot?.serviceTypeCode?.includes('WITH') && crematorySentChecklistKeys(x).length > 0);
+    if (direct) expect(crematorySentChecklistReleaseRefusal(direct, { [crematorySentChecklistKeys(direct)[0]]: true })).toBeNull();
+    const manors = caseFixtures.find((x) => x.organizationId === MANORS_ORGANIZATION_ID && crematorySentChecklistKeys(x).length > 0)!;
+    expect(crematorySentChecklistReleaseRefusal(manors, { [crematorySentChecklistKeys(manors)[0]]: true })).toBeNull();
   });
 });

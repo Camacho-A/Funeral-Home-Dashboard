@@ -12,7 +12,11 @@ Inspection was read-only (Vercel variable NAMES and targets; no values).
 | `gus-solis-sandbox` | Gus fictional sandbox | mock | none (9 variables, no `WIX_*`) |
 | `gus-solis-preview` | legacy Gus repo demo | demo KV store | none — left untouched |
 
-No Gus Production project exists. Both fictional sandboxes refuse to start
+**Update 2026-11-19/20:** `gus-solis` (`prj_xUFSQTCLeRiyfGJsuMZmfpeWHcqP`)
+now exists on the shared repository with Production branch `release/gus`,
+Ignored Build Step `exit 0` (every build skipped), no variables and no
+domain. Both sandboxes skip `release/*`. Step-by-step deployment and rollback:
+`docs/GUS_DEPLOYMENT_CHECKLIST.md`. Both fictional sandboxes refuse to start
 if `DATA_ADAPTER` is not `mock` or any `WIX_*` (or other live credential)
 variable is set (`lib/sandbox.ts`, checked at startup by `instrumentation.ts`).
 
@@ -62,5 +66,6 @@ Gus), Manors' certificate/Manatee template keys, `CLOVER_*`,
 |---|---|---|
 | Service preparation saves on live Wix | `services/servicePreparationStorage.ts` (`SERVICE_PREPARATION_WIX_FIELD_ADDED`) | `false` |
 | ME cremation approval saves on live Wix | `services/medicalExaminerApprovalService.ts` (`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING`) | `false` |
-| Release for cremation | `domain/servicePreparation/releaseForCremation.ts` (`RELEASE_FOR_CREMATION_AVAILABLE`) | `false` |
+| Release for cremation, holds and reauthorization | `domain/servicePreparation/releaseForCremation.ts` (`RELEASE_FOR_CREMATION_AVAILABLE`) | `false` |
+| Send to Crematory release gate (Gus) | organization profile `sendToCrematory.requireReleaseAfterService` | `false` |
 | Crematory email sending (Gus) | organization profile `sendToCrematory.sendingEnabled` | `false` |
