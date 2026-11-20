@@ -1,3 +1,4 @@
+import { releaseStatusOf } from './releaseStatus';
 import type { PreparationAuditEntry, PreparationItemRecord, PreparationStatus, PreparationValueRecord, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
 /**
@@ -23,6 +24,14 @@ import type { PreparationAuditEntry, PreparationItemRecord, PreparationStatus, P
  *   saved together or not at all. History is never trimmed: a change that
  *   would take the record past PREPARATION_RECORD_MAX_BYTES is refused
  *   (PreparationLimitError) and nothing is saved.
+ * - Release (Gus, 2026-11): once released (or reauthorized) preparation
+ *   is read-only. While the release is ON HOLD it may change again, each
+ *   change with a required reason recorded in its history entry
+ *   (`duringHold`); the hold can only be lifted by reauthorization with a
+ *   licensed sign-off, which rechecks every requirement against the
+ *   changed preparation. While a reauthorization request is pending it is
+ *   read-only (withdraw the request first), so the sign-off is always on
+ *   what was asked for.
  */
 export type PreparationChange =
   | { kind: 'item'; itemId: string; status: PreparationStatus; note?: string | null; documentId?: string | null }
@@ -77,12 +86,23 @@ export function applyPreparationChange(params: {
   now: string;
   /** Server-generated, unique per change; recorded in the history entry. */
   eventId: string;
+  /** Required while the release is on hold. */
+  reason?: string | null;
 }): ServicePreparationRecord {
   const { definition, change } = params;
   if (params.record && params.record.definitionKey !== definition.key) {
     throw new PreparationChangeError('This preparation belongs to a different service.');
   }
-  if (params.record?.release) throw new PreparationChangeError('The remains were already released for cremation; preparation can no longer change.');
+  const releaseStatus = releaseStatusOf(params.record);
+  if (releaseStatus === 'released' || releaseStatus === 'reauthorized') {
+    throw new PreparationChangeError('The remains were released for cremation; preparation can no longer change. To correct it, place the release on hold first.');
+  }
+  if (releaseStatus === 'awaiting_reauthorization') {
+    throw new PreparationChangeError('A reauthorization request is waiting for sign-off, so preparation cannot change. Withdraw the request first.');
+  }
+  const duringHold = releaseStatus === 'on_hold';
+  const holdReason = clean(params.reason);
+  if (duringHold && !holdReason) throw new PreparationChangeError('The release is on hold: give a reason for this change.');
   if (params.basis) {
     const current = currentEntryFor(params.record, change);
     if ((current?.at ?? null) !== params.basis.at) {
@@ -142,7 +162,9 @@ export function applyPreparationChange(params: {
     actorId: params.actor.id,
     actorName: params.actor.name,
     at: params.now,
+    ...(duringHold ? { reason: holdReason, duringHold: true } : {}),
   };
+  if (duringHold) entry.description = `${entry.description} (while on hold: ${holdReason}) — reauthorization required`;
   record.history = [...(record.history ?? []), entry];
 
   const bytes = preparationRecordBytes(record);

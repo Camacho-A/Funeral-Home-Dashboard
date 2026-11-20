@@ -34,6 +34,23 @@ Director role.
 | `merchandise.manage` | Admin, Manager | + Funeral Director |
 | `inventory.adjust` | Admin, Manager | + Funeral Director |
 | `accounting.view`, `accounting.report` (financial visibility) | Admin, Funeral Director | + Manager |
+| `workflow.edit`, `workflow.publish` (approved 2026-11-20) | Admin, Manager | + Funeral Director |
+| `document.template.manage` (approved 2026-11-20) | Admin, Manager | + Funeral Director |
+| `caseNumber.manage` (approved 2026-11-20; every change audited) | Admin, Funeral Director | + Manager |
+
+Also approved 2026-11-20 (profile settings, not permission keys):
+
+| What | Setting | Who (Gus) |
+|---|---|---|
+| Release requests, holds, withdrawals, corrections | `cremationReleaseOperatorRoleKeys` | Admin, Manager, Funeral Director |
+| Funeral director credential administration — never one's own; verification independent of the holder | `funeralDirectorCredentialAdministratorRoleKeys` (`canAdministerFuneralDirectorCredentials`) | Admin, Manager, Funeral Director |
+| Checking the two "sent to crematory" steps by hand — the release gate is still enforced on the server | `sendToCrematory.sentStepsByHandRoleKeys` (`maySetCrematorySentStepsByHand`) | Admin, Manager, Funeral Director |
+| Licensed sign-off (unchanged) | `cremationReleaseApproverRoleKeys` + authorization + verified license (re-verified every 365 days) | Funeral Director by role, or a granted authorization |
+
+Case-number audit: sequence seeding/resync record `case.sequence.initialized`
+(existing); a prefix change now records `case.number_prefix.changed`. A
+prefix change still also needs `organization.manage` (it is part of the
+Organization Profile).
 
 Already shared by all three: case read/create/update/reassign, case order,
 payments read/collect, documents, `crematory.send`, fax send/confirm,
@@ -44,13 +61,12 @@ inventory/procurement.
 
 | Kind | Permissions | Today |
 |---|---|---|
-| Security | `organization.manage`, `settings.manage`, `user.invite`, `user.remove`, `user.manageRoles`, `audit.export`; credential administration (via `organization.manage`) | Admin (Manager: `user.invite`, `audit.export`) |
-| Financial authority | `payment.refund`, `caseOrder.reprice`, `accounting.manage/post/reconcile`, `ap.manage`, `ap.pay` | Admin (Manager: `ap.manage`, `ap.pay`) |
+| Security | `organization.manage`, `settings.manage`, `user.invite`, `user.remove`, `user.manageRoles`, `audit.export` | Admin (Manager: `user.invite`, `audit.export`) |
+| Financial authority | `payment.refund`, `caseOrder.reprice`, `accounting.manage/post/reconcile`, `ap.manage`, `ap.pay` | Admin (Manager: `ap.manage`, `ap.pay`) — vendor payment authorization kept restricted pending separate approval (2026-11-20) |
 | Catalog (recorded Gus decision) | `serviceCatalog.edit/price/deactivate` | Admin only |
 | Destructive | `case.delete` | Admin |
-| Configuration | `workflow.edit/publish`, `document.template.manage`, `notification.manage/admin`, `calendar.manage`, `signature.manage`, `portal.manage` | Admin, Manager |
-| Configuration | `caseNumber.manage` | Admin, Funeral Director (a Manors cutover grant) |
-| Crematory record (earlier decision) | Checking "Permit / Authorization sent to crematory" **by hand**, and correcting an earlier-send record | Admin only (SOLIS checks them itself on a send) |
+| Configuration | `notification.manage/admin`, `calendar.manage`, `signature.manage`, `portal.manage` | Admin, Manager |
+| Crematory record | Correcting an earlier-send record | Admin only (not part of the 2026-11-20 decisions) |
 
 Tests: `services/gusRolePermissions.test.ts` (every operational key held by
 all three; restricted keys not handed out; Manors unchanged), plus the

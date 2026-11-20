@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { getDataAdapterMode } from '@/lib/env';
-import { canManageOrganization } from '@/services/authorizationPolicyService';
+import { canAdministerFuneralDirectorCredentials } from '@/services/authorizationPolicyService';
 import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
 import { changeCredentials, CredentialServiceError, listCredentialSummaries } from '@/services/funeralDirectorCredentialService';
 import type { CredentialChange } from '@/domain/staff/funeralDirectorCredentials';
@@ -12,8 +12,12 @@ import type { CredentialChange } from '@/domain/staff/funeralDirectorCredentials
  * Settings › Funeral Director Credentials (Gus Phase 5G, 2026-11).
  *   GET  ?organizationId= → every staff member's credential record and check
  *   POST { organizationId, staffProfileId, expectedRevision, change }
- * Administrators only (organization.manage). Nobody changes their own
- * credentials. Managing credentials never permits release by itself.
+ * Administrators (organization.manage), and the roles the organization
+ * lists in `funeralDirectorCredentialAdministratorRoleKeys` (Gus:
+ * Administrator, Manager, Funeral Director — 2026-11). Nobody changes,
+ * verifies or authorizes their own credentials, and new or changed license
+ * details are unverified until someone else verifies them. Managing
+ * credentials never permits release by itself.
  */
 async function authorize(organizationId: unknown) {
   if (typeof organizationId !== 'string' || !organizationId) return { response: NextResponse.json({ error: 'organizationId is required.' }, { status: 400 }) };
@@ -21,8 +25,8 @@ async function authorize(organizationId: unknown) {
   if (!auth.authorized) return { response: auth.response };
   const { organizationId: org, userId, role } = auth.context;
   const mode = getDataAdapterMode();
-  if (!(await canManageOrganization({ identityId: userId, organizationId: org, roleKey: role }, mode))) {
-    return { response: NextResponse.json({ error: 'Only an administrator can manage funeral director credentials.' }, { status: 403 }) };
+  if (!(await canAdministerFuneralDirectorCredentials({ identityId: userId, organizationId: org, roleKey: role }, mode))) {
+    return { response: NextResponse.json({ error: 'You are not permitted to manage funeral director credentials.' }, { status: 403 }) };
   }
   return { context: { organizationId: org, userId, role, mode } };
 }

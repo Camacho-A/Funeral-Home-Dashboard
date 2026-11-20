@@ -12,20 +12,22 @@ while a decision is open, it is the more restrictive option and is listed.
 5. Prayer cards, register book, crucifix for a Final Goodbye — offered or not? (Today: not offered.)
 6. Default deadline targets for Gus's vendors and parishes — confirm.
 
-## Release for cremation
+## Decided 2026-11-20 (built, tested; live switches still off)
 
-7. **License re-verification every 365 days** — confirm (configurable).
-8. **Who administers funeral director credentials** — today any administrator (`organization.manage`), never for themselves.
-9. **While on hold, may service preparation be edited again?** Today: read-only after the first release (safer default).
-10. **Withdrawing a pending release request** before sign-off — allowed, by whom? Not built.
-11. **Release corrections** — approve the proposal in `docs/SERVICE_PREPARATION.md` and who may use it (and whether a second person confirms).
-12. **Recording sends while the gate is on** — when enabled, SOLIS refuses to record a send "made outside SOLIS" or to check the "sent to crematory" steps for an unreleased or held case (safer default). Confirm, or choose "allow but flag".
+7. License re-verification every 365 days — **approved**.
+8. Credential administration — **Administrators, Managers and Funeral Directors**, never their own; verification independent of the holder.
+9. Editing preparation while on hold — **allowed**, reason required, audited, reauthorization required.
+10. Withdrawing a pending request — **allowed** for the three leadership roles.
+11. Release corrections — **appended**, never overwriting; any of the three roles; no second-person confirmation (not requested).
+12. Recording a send made outside SOLIS — **only with a valid release not on hold** (once the gate is on), marked as an external send.
+13. Workflow and template management — **granted** to Funeral Directors.
+14. Vendor payments (`ap.manage`, `ap.pay`) — **kept restricted** pending separate approval. Case-number management — **granted** to Managers, audited.
+15. Checking the "sent to crematory" steps by hand — **all three roles**, release gate enforced on the server. (Correcting an earlier-send record stays Administrator-only.)
 
-## Roles (see `docs/GUS_ROLE_PERMISSIONS.md`)
+## Still open
 
-13. Configuration permissions held by Administrator + Manager but not Funeral Director (`workflow.edit/publish`, document templates, notification/calendar settings) — align, or keep?
-14. `ap.manage` / `ap.pay` (Manager, not Funeral Director) and `caseNumber.manage` (Funeral Director, not Manager) — align, or keep?
-15. Checking "sent to crematory" steps by hand, and correcting an earlier-send record — keep Administrator-only, or extend to Managers and Funeral Directors?
+- Vendor payment authorization (`ap.manage`, `ap.pay`) for Funeral Directors — awaiting a separate decision.
+- Should a release correction need a second person to confirm it? (Not requested; easy to add.)
 
 ## Inputs Gus must supply
 

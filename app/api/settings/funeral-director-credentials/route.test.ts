@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GUS_CAMACHO_ORGANIZATION_ID } from '@/domain/organization/organizationProfiles';
 
-/** Settings › Funeral Director Credentials API (Gus Phase 5G): administrators only. Fictional data. */
+/** Settings › Funeral Director Credentials API (Gus Phase 5G; leadership roles since 2026-11-20). Fictional data. */
 let session = { organizationId: GUS_CAMACHO_ORGANIZATION_ID, userId: 'identity-gus-admin', role: 'administrator' };
 vi.mock('@/lib/auth/requireAuthorizedOrganization', () => ({
   requireAuthorizedOrganization: vi.fn(async (requested: string) =>
@@ -37,12 +37,21 @@ describe('/api/settings/funeral-director-credentials', () => {
     expect((await response.json()).record.authorization.authorizedBy).toBe('identity-gus-admin');
   });
 
-  it('a Funeral Director (not an administrator) and a read-only user are refused', async () => {
-    for (const role of ['funeralDirector', 'readOnly']) {
+  it('a read-only user (or any role Gus has not listed) is refused', async () => {
+    for (const role of ['readOnly', 'staff']) {
       session = { organizationId: GUS_CAMACHO_ORGANIZATION_ID, userId: `identity-${role}`, role };
       expect((await get()).status).toBe(403);
       expect((await post(grantDirector)).status).toBe(403);
     }
+    expect(funeralDirectorCredentialFixtures.find((r) => r.staffProfileId === 'staff-gus-director')!.authorization).toBeNull();
+  });
+
+  it('a Manager or Funeral Director may manage credentials (2026-11-20) — never their own', async () => {
+    session = { organizationId: GUS_CAMACHO_ORGANIZATION_ID, userId: 'identity-gus-manager-fictional', role: 'manager' };
+    expect((await get()).status).toBe(200);
+    session = { organizationId: GUS_CAMACHO_ORGANIZATION_ID, userId: 'identity-gus-director', role: 'funeralDirector' };
+    expect((await get()).status).toBe(200);
+    expect((await post(grantDirector)).status).toBe(403);
     expect(funeralDirectorCredentialFixtures.find((r) => r.staffProfileId === 'staff-gus-director')!.authorization).toBeNull();
   });
 

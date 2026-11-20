@@ -15,6 +15,7 @@ import { summarizeServiceReadiness, type EvaluatedPreparationItem, type Effectiv
 import { DEADLINE_STATE_LABEL } from '@/domain/servicePreparation/deadlines';
 import { PREPARATION_STATUS_LABEL, type PreparationDetailDefinition, type PreparationStatus, type PreparationValueRecord, type ServicePreparationDefinition } from '@/domain/servicePreparation/types';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
+import { releaseStatusOf } from '@/domain/servicePreparation/releaseStatus';
 import { formatAppointmentDate, formatAppointmentTime } from '@/utils/scheduling';
 import type { Case } from '@/types/case';
 import styles from './ServiceReadinessCard.module.css';
@@ -216,6 +217,7 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
   const enabled = getRegisteredOrganizationProfile(organizationId).features.servicePreparation;
   const definition: ServicePreparationDefinition | null = enabled ? servicePreparationFor(case_.workflowSnapshot?.serviceTypeCode) : null;
   const { query, save, recordMedicalExaminer, releaseForCremation } = useServicePreparation(organizationId, case_.id, Boolean(definition));
+  const [holdReason, setHoldReason] = useState('');
   if (!definition) return null;
 
   if (query.isPending) {
@@ -237,11 +239,15 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
   const timezone = organizationRecord.data?.timezone ?? 'America/New_York';
   const { record, service } = preparation;
   const readiness = summarizeServiceReadiness({ definition, record, service, now: now ?? new Date().toISOString() });
-  const editable = canEdit && preparation.storageAvailable && !preparation.isArchived && !record?.release;
-  const disabled = !editable || save.isPending;
+  // Read-only once released; editable again while on hold, each change with a reason.
+  const releaseStatus = releaseStatusOf(record);
+  const onHold = releaseStatus === 'on_hold';
+  const releaseLocked = releaseStatus === 'released' || releaseStatus === 'reauthorized' || releaseStatus === 'awaiting_reauthorization';
+  const editable = canEdit && preparation.storageAvailable && !preparation.isArchived && !releaseLocked;
+  const disabled = !editable || save.isPending || (onHold && !holdReason.trim());
   const groups = [...new Map(readiness.items.map((i) => [i.groupKey, i.groupLabel])).entries()];
   const total = readiness.items.filter((i) => i.status !== 'not_requested').length;
-  const send = (change: PreparationChange, basisAt: string | null) => save.mutate({ change, basisAt });
+  const send = (change: PreparationChange, basisAt: string | null) => save.mutate({ change, basisAt, ...(onHold ? { reason: holdReason } : {}) });
   const activeDetails = definition.groups.filter((g) => g.details && readiness.items.some((i) => i.groupKey === g.key));
 
   return (
@@ -277,6 +283,15 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
       {!preparation.storageAvailable && <p className={styles.notice} role="note">{SERVICE_PREPARATION_STORAGE_PENDING}</p>}
       {preparation.isArchived && <p className={styles.notice} role="note">This case is archived; its preparation is read-only.</p>}
       {preparation.storageAvailable && !canEdit && <p className={styles.notice} role="note">You can view the preparation; changing it needs permission to edit cases.</p>}
+      {releaseStatus === 'awaiting_reauthorization' && (
+        <p className={styles.notice} role="note">A reauthorization request is waiting for sign-off, so preparation is read-only. Withdraw the request to make a change.</p>
+      )}
+      {onHold && editable && (
+        <label className={styles.detail} data-testid="hold-change-reason">
+          <span>The release is on hold. Reason for changes (recorded with each one; the release must then be reauthorized)</span>
+          <TextField value={holdReason} maxLength={300} onChange={(e) => setHoldReason(e.target.value)} required />
+        </label>
+      )}
 
       <div className={styles.sectionLabel}>Family choices</div>
       <div className={styles.choices}>

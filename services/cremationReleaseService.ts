@@ -13,7 +13,7 @@ import {
   type ReleaseEvaluation,
 } from '../domain/servicePreparation/releaseForCremation';
 import { PreparationLimitError } from '../domain/servicePreparation/preparationUpdates';
-import { appendReleaseEvent, ReleaseTransitionError, RELEASE_STATUS_LABEL, type ReleaseStatus } from '../domain/servicePreparation/releaseHolds';
+import { appendReleaseEvent, correctableSignOffs, ReleaseTransitionError, RELEASE_STATUS_LABEL, type ReleaseStatus } from '../domain/servicePreparation/releaseHolds';
 import { crematoryPaperworkMayHaveBeenSent } from '../domain/crematory/sentChecklistItems';
 import type { ReleaseEvent, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from '../domain/servicePreparation/types';
 import { buildCaseFieldPatch } from '../lib/wixCaseMapper';
@@ -98,9 +98,13 @@ async function loadReleaseContext(caller: ReleaseCaller, caseId: string, mode: D
   };
 }
 
+function recordOf(context: ReleaseContext, case_: Case): ServicePreparationRecord | null {
+  return case_.servicePreparation && case_.servicePreparation.definitionKey === context.definition.key ? case_.servicePreparation : null;
+}
+
 function evaluateFor(context: ReleaseContext, case_: Case, now: string): ReleaseEvaluation {
   const { definition, service } = context;
-  const record = case_.servicePreparation && case_.servicePreparation.definitionKey === definition.key ? case_.servicePreparation : null;
+  const record = recordOf(context, case_);
   return evaluateReleaseForCremation({
     case_,
     definition,
@@ -122,13 +126,13 @@ export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, c
   if (!context) return null;
   const evaluation = evaluateFor(context, context.case_, now);
   const active = cremationReleaseRecordingAvailable(mode);
-  const capabilities = releaseCapabilities(evaluation, caller.role, context.operatorRoleKeys);
+  const capabilities = releaseCapabilities(evaluation, caller.role, context.operatorRoleKeys, correctableSignOffs(recordOf(context, context.case_)).length > 0);
   // Release also needs preparation saving on this site.
   if (!active) return { ...evaluation, canRelease: false, unavailableReason: RELEASE_FOR_CREMATION_UNAVAILABLE_REASON, capabilities, active };
   return { ...evaluation, capabilities, active };
 }
 
-export type ReleaseAction = 'release' | 'sign_off' | 'hold' | 'reauthorize';
+export type ReleaseAction = 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct';
 
 export const RELEASE_NOT_ACTIVE_MESSAGE = 'Release for cremation is not active yet. Nothing was released.';
 
@@ -141,9 +145,18 @@ const signerQualified = (evaluation: ReleaseEvaluation) =>
   evaluation.prerequisites.every((p) => (p.key !== 'approver_authorized' && p.key !== 'approver_licensed') || p.met);
 
 /** What this caller may do now — shown on the card; the server decides again on every action. */
-export type ReleaseCapabilities = { canRequestRelease: boolean; canSignOff: boolean; canHold: boolean; canReauthorize: boolean; isOperator: boolean; isLicensedSigner: boolean };
+export type ReleaseCapabilities = {
+  canRequestRelease: boolean;
+  canSignOff: boolean;
+  canHold: boolean;
+  canReauthorize: boolean;
+  canWithdraw: boolean;
+  canCorrect: boolean;
+  isOperator: boolean;
+  isLicensedSigner: boolean;
+};
 
-export function releaseCapabilities(evaluation: ReleaseEvaluation, roleKey: string, operatorRoleKeys: readonly string[]): ReleaseCapabilities {
+export function releaseCapabilities(evaluation: ReleaseEvaluation, roleKey: string, operatorRoleKeys: readonly string[], hasCorrectableSignOff = false): ReleaseCapabilities {
   const isOperator = operatorRoleKeys.includes(roleKey);
   const isLicensedSigner = signerQualified(evaluation);
   const s = evaluation.status;
@@ -154,6 +167,8 @@ export function releaseCapabilities(evaluation: ReleaseEvaluation, roleKey: stri
     canSignOff: isLicensedSigner && (s === 'awaiting_signoff' || s === 'awaiting_reauthorization') && evaluation.allPrerequisitesMet,
     canHold: isOperator && (s === 'released' || s === 'reauthorized' || s === 'awaiting_reauthorization'),
     canReauthorize: (isOperator || isLicensedSigner) && s === 'on_hold' && evaluation.casePrerequisitesMet,
+    canWithdraw: (isOperator || isLicensedSigner) && (s === 'awaiting_signoff' || s === 'awaiting_reauthorization'),
+    canCorrect: isOperator && hasCorrectableSignOff,
   };
 }
 
@@ -168,9 +183,10 @@ function decideEvent(
   evaluation: ReleaseEvaluation,
   context: ReleaseContext,
   current: Case,
-  base: { eventId: string; now: string; actorName: string | null; reason: string | null },
+  base: { eventId: string; now: string; actorName: string | null; reason: string | null; correctsEventId: string | null },
 ): ReleaseEvent {
-  const caps = releaseCapabilities(evaluation, context.approver.roleKey, context.operatorRoleKeys);
+  const correctable = correctableSignOffs(recordOf(context, current));
+  const caps = releaseCapabilities(evaluation, context.approver.roleKey, context.operatorRoleKeys, correctable.length > 0);
   const status: ReleaseStatus = evaluation.status;
   const stamp = { eventId: base.eventId, at: base.now, actorId: context.approver.identityId, actorName: base.actorName, roleKey: context.approver.roleKey };
   const wrongState = () => new CremationReleaseError(`This can't be done while the release is "${RELEASE_STATUS_LABEL[status]}".`, 409, evaluation);
@@ -195,6 +211,18 @@ function decideEvent(
     if (!base.reason?.trim()) throw new CremationReleaseError('Give a reason for the hold.', 400, evaluation);
     return { ...stamp, type: 'hold_placed', reason: base.reason, paperworkAlreadyTransmitted: crematoryPaperworkMayHaveBeenSent(current) };
   }
+  if (action === 'withdraw') {
+    if (status !== 'awaiting_signoff' && status !== 'awaiting_reauthorization') throw wrongState();
+    return { ...stamp, type: 'request_withdrawn', reason: base.reason };
+  }
+  if (action === 'correct') {
+    if (!caps.isOperator) throw new CremationReleaseError('Only an Administrator, Manager or Funeral Director may correct a recorded sign-off.', 403, evaluation);
+    if (!base.reason?.trim()) throw new CremationReleaseError('Give a reason for the correction.', 400, evaluation);
+    if (!correctable.some((e) => e.eventId === base.correctsEventId)) {
+      throw new CremationReleaseError('Choose a recorded sign-off that has not already been corrected.', 409, evaluation);
+    }
+    return { ...stamp, type: 'release_corrected', reason: base.reason, correctsEventId: base.correctsEventId!, paperworkAlreadyTransmitted: crematoryPaperworkMayHaveBeenSent(current) };
+  }
   const requested = action === 'release' ? 'release_requested' : 'reauthorization_requested';
   const signed = action === 'release' ? 'released' : 'reauthorized';
   if ((action === 'release' && status !== 'not_released') || (action === 'reauthorize' && status !== 'on_hold')) throw wrongState();
@@ -208,14 +236,14 @@ export async function performReleaseAction(
   caller: ReleaseCaller,
   caseId: string,
   mode: DataAdapterMode,
-  input: { action: ReleaseAction; reason?: string | null; actorName?: string | null; now?: string; eventId?: string },
+  input: { action: ReleaseAction; reason?: string | null; correctsEventId?: string | null; actorName?: string | null; now?: string; eventId?: string },
 ): Promise<ReleaseActionResult> {
   const now = input.now ?? new Date().toISOString();
   const context = await loadReleaseContext(caller, caseId, mode);
   if (!context) throw new CremationReleaseError('This case has no release for cremation.', 404);
   const actorName = input.actorName ?? context.approver.staffProfile?.displayName ?? null;
   const eventId = input.eventId ?? crypto.randomUUID();
-  const base = { eventId, now, actorName, reason: input.reason ?? null };
+  const base = { eventId, now, actorName, reason: input.reason ?? null, correctsEventId: input.correctsEventId ?? null };
   // Refuse early, before anything is written.
   decideEvent(input.action, evaluateFor(context, context.case_, now), context, context.case_, base);
   if (!cremationReleaseRecordingAvailable(mode)) throw new CremationReleaseError(RELEASE_NOT_ACTIVE_MESSAGE, 423, evaluateFor(context, context.case_, now));

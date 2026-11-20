@@ -266,6 +266,10 @@ export type OrganizationFeaturePreferences = {
         recorded. Absent/false = not enforced. Off for everyone until
         approved — turning it on is its own change. */
     requireReleaseAfterService?: boolean;
+    /** Roles that may check or uncheck the two "sent to crematory" steps
+        by hand, besides administrators (2026-11). Absent = administrators
+        only (Manors). The release gate still applies on the server. */
+    sentStepsByHandRoleKeys?: readonly string[];
   } | null;
   /** Service-based workflows (2026-11): every new case names its service
       (e.g. Direct Cremation, Cremation with Viewing) and gets that
@@ -358,6 +362,11 @@ export type OrganizationFeaturePreferences = {
       `cremationReleaseApproverRoleKeys` (or a granted authorization) AND a
       verified license. Platform default: nobody. */
   cremationReleaseOperatorRoleKeys: readonly string[];
+  /** Roles that administer funeral director credentials (enter, verify,
+      authorize), besides holders of `organization.manage` (2026-11).
+      Never their own (domain/staff/funeralDirectorCredentials.ts), and
+      administering credentials never permits release by itself. */
+  funeralDirectorCredentialAdministratorRoleKeys: readonly string[];
   /** Gus Phase 5F.1: how often a funeral director license must be
       re-verified, in days. null = NOT DECIDED (age not enforced; reported
       as pending). A configuration decision awaiting approval — 365 is only
@@ -478,6 +487,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   servicePreparation: false,
   cremationReleaseApproverRoleKeys: [],
   cremationReleaseOperatorRoleKeys: [],
+  funeralDirectorCredentialAdministratorRoleKeys: [],
   funeralDirectorLicenseReverifyDays: null,
   funeralDirectorCredentials: false,
 });
@@ -683,6 +693,7 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
 /** Gus (2026-11): operational permissions aligned across Administrator,
     Manager and Funeral Director — see docs/GUS_ROLE_PERMISSIONS.md. */
 const GUS_OPERATIONAL_REASON = 'Administrators, Managers and Funeral Directors have the same operational access (decided 2026-11).';
+const GUS_LEADERSHIP_REASON = 'Approved 2026-11-20: Administrators, Managers and Funeral Directors share workflow, template and case-number management.';
 export const GUS_OPERATIONAL_ALIGNMENT: readonly StandingRoleOverride[] = Object.freeze([
   { roleKey: 'funeralDirector', permissionKey: 'caseOrder.customItems', action: 'grant', reason: GUS_OPERATIONAL_REASON },
   { roleKey: 'funeralDirector', permissionKey: 'resource.manage', action: 'grant', reason: GUS_OPERATIONAL_REASON },
@@ -693,6 +704,12 @@ export const GUS_OPERATIONAL_ALIGNMENT: readonly StandingRoleOverride[] = Object
   { roleKey: 'funeralDirector', permissionKey: 'inventory.adjust', action: 'grant', reason: GUS_OPERATIONAL_REASON },
   { roleKey: 'manager', permissionKey: 'accounting.view', action: 'grant', reason: GUS_OPERATIONAL_REASON },
   { roleKey: 'manager', permissionKey: 'accounting.report', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  // Approved 2026-11-20: workflow and template management for Funeral
+  // Directors; case-number management (audited) for Managers.
+  { roleKey: 'funeralDirector', permissionKey: 'workflow.edit', action: 'grant', reason: GUS_LEADERSHIP_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'workflow.publish', action: 'grant', reason: GUS_LEADERSHIP_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'document.template.manage', action: 'grant', reason: GUS_LEADERSHIP_REASON },
+  { roleKey: 'manager', permissionKey: 'caseNumber.manage', action: 'grant', reason: GUS_LEADERSHIP_REASON },
 ] as const satisfies readonly StandingRoleOverride[]);
 
 const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
@@ -722,6 +739,9 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // Funeral Directors have the same operational access to release
     // requests and holds. The licensed sign-off stays separate.
     cremationReleaseOperatorRoleKeys: ['administrator', 'manager', 'funeralDirector'],
+    // Approved 2026-11-20: all three leadership roles administer
+    // credentials — never their own, and verification stays independent.
+    funeralDirectorCredentialAdministratorRoleKeys: ['administrator', 'manager', 'funeralDirector'],
     // Gus's internal policy (Phase 5G): re-verify a funeral director
     // license at least every 365 days. Configurable here.
     funeralDirectorLicenseReverifyDays: 365,
@@ -733,7 +753,12 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },
     // Prepared and reviewed in SOLIS, never emailed until Gus's recipients,
     // Outlook mailbox and authorization document source are set up.
-    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured', requireReleaseAfterService: false },
+    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured',
+      requireReleaseAfterService: false,
+      // Approved 2026-11-20: all three leadership roles may mark the
+      // sending steps complete; the server enforces the release gate.
+      sentStepsByHandRoleKeys: ['administrator', 'manager', 'funeralDirector'],
+    },
     // Catalog changes are Administrator-only to begin with (decided
     // 2026-11): its Manager keeps viewing the catalog and custom order
     // items. Prices, deactivation and repricing are Administrator-only by

@@ -11,6 +11,8 @@ import {
   validateCaseNumberPrefixChange,
 } from '@/domain/organization/organizationProfileValidation';
 import { resolveCaseNumberPrefix } from '@/domain/cases/caseNumber';
+import { recordCaseNumberPrefixChanged } from '@/services/activityService';
+import crypto from 'crypto';
 import { queryWixDataItems } from '@/lib/wixDataApi';
 import { caseFixtures } from '@/services/__mocks__/fixtures';
 import type { DataAdapterMode } from '@/lib/env';
@@ -200,9 +202,23 @@ export async function PATCH(request: Request) {
     if (changeError) {
       return NextResponse.json({ error: changeError.message, fieldErrors: [changeError] }, { status: 409 });
     }
+    const previousPrefix = resolveCaseNumberPrefix(current, { organizationId: auth.organizationId });
     const updated = await updateOrganization(auth.organizationId, { caseNumberPrefix: normalized }, auth.mode);
     if (!updated) return NextResponse.json({ error: 'Organization not found.' }, { status: 404 });
     updatedCaseNumbering = caseNumberingSettings(updated, auth.organizationId);
+    if (previousPrefix !== normalized) {
+      // Audit (2026-11): who changed case numbering, from what, to what.
+      try {
+        await recordCaseNumberPrefixChanged(
+          { organizationId: auth.organizationId, actorIdentityId: auth.userId, actorMembershipId: null, actorRoleKey: auth.role, correlationId: crypto.randomUUID() },
+          previousPrefix,
+          normalized,
+          auth.mode,
+        );
+      } catch (auditError) {
+        console.error('Failed to record case.number_prefix.changed activity event:', auditError instanceof Error ? auditError.message : auditError);
+      }
+    }
   }
 
   let updatedOrganization: SanitizedOrganization | undefined;

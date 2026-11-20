@@ -10,9 +10,12 @@ import { releaseGateRefusal } from '../servicePreparation/releaseForCremation';
  * "Permit sent to crematory" and "Authorization of release sent to
  * crematory" record that the crematory has the paperwork. SOLIS completes
  * them itself when Outlook accepts a send (services/crematory/
- * crematorySentChecklist.ts); by hand, only an administrator may check or
- * uncheck them. Everyone else sees them read-only. Every other checklist
- * item keeps its permissions.
+ * crematorySentChecklist.ts); by hand, only an administrator — or a role
+ * the organization lists in `sentStepsByHandRoleKeys` (Gus: Administrator,
+ * Manager, Funeral Director, 2026-11) — may check or uncheck them. Everyone
+ * else sees them read-only. Every other checklist item keeps its
+ * permissions. Checking one is still refused by the release gate on the
+ * server (crematorySentChecklistReleaseRefusal).
  *
  * The items are found by their stable keys (stage 3, items 0 and 1),
  * guarded by the labels in the case's own snapshot — the same mapping the
@@ -22,6 +25,12 @@ import { releaseGateRefusal } from '../servicePreparation/releaseForCremation';
  */
 export const CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE =
   'Only an administrator can change "Permit sent to crematory" or "Authorization of release sent to crematory". SOLIS checks them automatically when the crematory email is sent.';
+
+/** Whether this person may change the two "sent to crematory" steps by hand. */
+export function maySetCrematorySentStepsByHand(organizationId: string, roleKey: string | null | undefined, isAdministrator: boolean): boolean {
+  if (isAdministrator) return true;
+  return Boolean(roleKey) && (sendToCrematoryConfig(organizationId)?.sentStepsByHandRoleKeys ?? []).includes(roleKey!);
+}
 
 export function crematorySentChecklistKeys(case_: Pick<Case, 'organizationId' | 'workflowSnapshot'>): string[] {
   if (!sendToCrematoryConfig(case_.organizationId)) return [];

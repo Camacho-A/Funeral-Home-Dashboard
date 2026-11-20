@@ -193,6 +193,66 @@ describe('holds and reauthorization (switch on in this test only)', () => {
   });
 });
 
+describe('withdrawing requests, corrections, and editing while on hold (switch on in this test only)', () => {
+  const manager = { organizationId: GUS, userId: 'identity-gus-manager-fictional', role: 'manager' };
+  const ctx = { organizationId: GUS, actorIdentityId: 'identity-gus-manager-fictional', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'c' };
+  const prepChange = (reason?: string) =>
+    changeServicePreparation(ctx, 'gus-case-010', { change: { kind: 'item', itemId: 'prep.crematory.notified', status: 'completed' }, basis: { at: stored().servicePreparation?.items['prep.crematory.notified']?.at ?? null }, actorName: 'Morgan Demo', reason }, 'mock');
+
+  it.each([
+    ['administrator', admin],
+    ['manager', manager],
+  ])('an %s withdraws a pending release request; it stays in the history', async (_label, caller) => {
+    await performReleaseAction(admin, 'gus-case-010', 'mock', { action: 'release', now: NOW, eventId: 'req-1' });
+    const withdrawn = await performReleaseAction(caller, 'gus-case-010', 'mock', { action: 'withdraw', reason: 'Asked too early', now: NOW, eventId: 'wd-1' });
+    expect(withdrawn).toMatchObject({ status: 'not_released', event: { type: 'request_withdrawn', withdrawsEventId: 'req-1', reason: 'Asked too early' } });
+    expect(stored().servicePreparation!.releaseEvents!.map((e) => e.type)).toEqual(['release_requested', 'request_withdrawn']);
+    // Nothing pending now: a second withdrawal is refused.
+    expect((await refusal(performReleaseAction(caller, 'gus-case-010', 'mock', { action: 'withdraw', now: NOW }))).status).toBe(409);
+  });
+
+  it('a read-only user cannot withdraw or correct', async () => {
+    await performReleaseAction(admin, 'gus-case-010', 'mock', { action: 'release', now: NOW });
+    expect((await refusal(performReleaseAction({ ...admin, role: 'readOnly' }, 'gus-case-010', 'mock', { action: 'withdraw', now: NOW }))).status).toBe(403);
+    expect((await refusal(performReleaseAction({ ...admin, role: 'readOnly' }, 'gus-case-010', 'mock', { action: 'correct', reason: 'x', correctsEventId: 'x', now: NOW }))).status).toBe(403);
+  });
+
+  it('a Manager corrects the sign-off in force: appended, release on hold, sending blocked, original untouched; a licensed reauthorization lifts it', async () => {
+    await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'release', now: NOW, eventId: 'rel-1' });
+    const original = structuredClone(stored().servicePreparation!.release);
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', correctsEventId: 'rel-1', now: NOW }))).status).toBe(400);
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'x', correctsEventId: 'nope', now: NOW }))).status).toBe(409);
+    const corrected = await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'Recorded against the wrong appointment', correctsEventId: 'rel-1', now: NOW, eventId: 'cor-1' });
+    expect(corrected).toMatchObject({ status: 'on_hold', event: { type: 'release_corrected', correctsEventId: 'rel-1' } });
+    expect(corrected.evaluation.released).toBe(false);
+    expect(stored().servicePreparation!.release).toEqual(original);
+    expect(stored().servicePreparation!.releaseEvents![0].eventId).toBe('rel-1');
+    // The same sign-off cannot be corrected twice.
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'correct', reason: 'again', correctsEventId: 'rel-1', now: NOW }))).status).toBe(409);
+    expect((await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW })).status).toBe('reauthorized');
+  });
+
+  it('on hold, preparation changes need a reason, are audited as made during the hold, and a pending reauthorization request locks them', async () => {
+    await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'release', now: NOW });
+    await expect(prepChange('x')).rejects.toBeInstanceOf(ServicePreparationError);
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: 'Family changed plans', now: NOW });
+    await expect(prepChange()).rejects.toMatchObject({ status: 400 });
+    activityEventFixtures.length = 0;
+    const view = await prepChange('Crematory told about the new date');
+    expect(view.record!.history!.at(-1)).toMatchObject({ duringHold: true, reason: 'Crematory told about the new date' });
+    const activity = activityEventFixtures.find((e) => e.eventType === ACTIVITY_EVENT_TYPES.SERVICE_PREPARATION_UPDATED)!;
+    expect(activity.severity).toBe('warning');
+    expect(JSON.parse(activity.metadata as string)).toEqual({ duringReleaseHold: true, reason: 'Crematory told about the new date' });
+
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW });
+    await expect(prepChange('another')).rejects.toMatchObject({ status: 400 });
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'withdraw', now: NOW });
+    await expect(prepChange('after withdrawing')).resolves.toBeTruthy();
+    // Still on hold until a licensed reauthorization.
+    expect((await evaluateCremationReleaseForCaller(manager, 'gus-case-010', 'mock', NOW))!.status).toBe('on_hold');
+  });
+});
+
 describe('the real switch', () => {
   it('RELEASE_FOR_CREMATION_AVAILABLE is false in the code', async () => {
     const actual = await vi.importActual<typeof import('../domain/servicePreparation/releaseForCremation')>('../domain/servicePreparation/releaseForCremation');

@@ -36,7 +36,7 @@ import { PrintLabelDialog } from '@/components/case/PrintLabelDialog';
 import { SendToCrematoryDialog } from '@/components/crematory/SendToCrematoryDialog';
 import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 import { crematorySendState, formatCrematorySentAt } from '@/domain/crematory/sendState';
-import { crematorySentChecklistKeys } from '@/domain/crematory/sentChecklistItems';
+import { crematorySentChecklistKeys, maySetCrematorySentStepsByHand } from '@/domain/crematory/sentChecklistItems';
 import { findStageByRawStage } from '@/domain/workflow/resolveStages';
 import type { Case } from '@/types/case';
 import { workflowStageToOpen } from '@/domain/workflow/workflowStageToOpen';
@@ -207,9 +207,10 @@ export default function CaseDetailPage({ params }: { params: Promise<{ caseId: s
   // are changed by hand only by administrators (organization.manage); SOLIS
   // completes them when the email is sent. The indexes on the stage shown.
   const isAdministrator = Boolean(permissionsQuery.data?.permissions.includes('organization.manage'));
+  const maySetSentSteps = maySetCrematorySentStepsByHand(case_.organizationId, permissionsQuery.data?.roleKey, isAdministrator);
   const shownDisplayStage =
     viewingDisplayStage ?? (case_.workflowSnapshot ? (findStageByRawStage(case_.workflowSnapshot, case_.rawStage)?.displayStage ?? case_.rawStage) : case_.rawStage);
-  const crematoryAdminOnlyIndexes = isAdministrator
+  const crematoryAdminOnlyIndexes = maySetSentSteps
     ? []
     : crematorySentChecklistKeys(case_)
         .map((key) => key.split(':').map(Number))

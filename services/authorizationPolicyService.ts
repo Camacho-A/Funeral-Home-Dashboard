@@ -1,5 +1,6 @@
 import { canPerformPricingAction } from './pricingAuthorization';
 import type { DataAdapterMode } from '../lib/env';
+import { getRegisteredOrganizationProfile } from '../domain/organization/organizationProfiles';
 import { hasPermission, hasAnyPermission, type ResolvePermissionsParams } from './permissionService';
 
 /**
@@ -265,6 +266,17 @@ export function canExportAuditLog(params: ResolvePermissionsParams, dataAdapterM
 
 export function canManageOrganization(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   return hasPermission(params, dataAdapterMode, 'organization.manage');
+}
+
+/** Funeral director credentials (Gus, 2026-11): `organization.manage`, or
+    a role the organization lists in
+    `funeralDirectorCredentialAdministratorRoleKeys` (Gus: Administrator,
+    Manager, Funeral Director; everyone else: none, so unchanged). Nobody
+    changes their own (enforced in domain/staff/funeralDirectorCredentials.ts). */
+export async function canAdministerFuneralDirectorCredentials(params: ResolvePermissionsParams, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const { features } = getRegisteredOrganizationProfile(params.organizationId);
+  if (params.roleKey && features.funeralDirectorCredentialAdministratorRoleKeys.includes(params.roleKey)) return true;
+  return canManageOrganization(params, dataAdapterMode);
 }
 
 /** Manors go-live case-number cutover (2026-09). Gates every

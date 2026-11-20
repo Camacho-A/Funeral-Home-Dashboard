@@ -18,7 +18,8 @@ vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => 
 });
 
 const { getCrematoryCaseSummary, recordPreviousSend } = await import('./crematoryPackageService');
-const { crematorySentChecklistKeys, crematorySentChecklistReleaseRefusal } = await import('@/domain/crematory/sentChecklistItems');
+const { crematorySentChecklistKeys, crematorySentChecklistReleaseRefusal, maySetCrematorySentStepsByHand } = await import('@/domain/crematory/sentChecklistItems');
+const { activityEventFixtures } = await import('../__mocks__/activityEventFixtures');
 const { caseFixtures } = await import('../__mocks__/fixtures');
 const { GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
 
@@ -96,6 +97,43 @@ describe('holds and indirect paths (gate on, test only)', () => {
     await expect(recordPreviousSend(ctx, 'gus-case-010', outside, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('on hold') });
     const notSent = { decision: 'not_previously_sent', verification: 'Checked the shared mailbox sent items (fictional)', confirmedChecked: true };
     await expect(recordPreviousSend(ctx, 'gus-case-010', notSent, 'mock')).resolves.toBeTruthy();
+  });
+});
+
+describe('recording an external send (gate on, test only) — approved 2026-11-20', () => {
+  const ctx = { organizationId: GUS, actorIdentityId: 'identity-gus-manager-fictional', actorMembershipId: null, actorRoleKey: 'manager', correlationId: 'c' };
+  const outside = { decision: 'sent_outside_solis', method: 'email', sentOn: null, verification: 'Checked the shared mailbox sent items (fictional)' };
+  // The "sent" steps already checked by hand: a possible earlier send.
+  const withPrep = (events: unknown[]) => {
+    const i = caseFixtures.findIndex((c) => c.id === 'gus-case-010' && c.organizationId === GUS);
+    const keys = crematorySentChecklistKeys(caseFixtures[i]);
+    caseFixtures[i] = { ...caseFixtures[i], checklistState: { ...caseFixtures[i].checklistState, ...Object.fromEntries(keys.map((k) => [k, true])) }, servicePreparation: releasedPrep(events) as never };
+  };
+
+  it('with a valid release (not on hold) it is recorded, and clearly marked as sent outside SOLIS', async () => {
+    withPrep([ev('released')]);
+    activityEventFixtures.length = 0;
+    const summary = await recordPreviousSend(ctx, 'gus-case-010', outside, 'mock');
+    expect(summary.previousSend?.recorded?.decision).toBe('sent_outside_solis');
+    expect(activityEventFixtures.at(-1)!.description).toMatch(/outside SOLIS/);
+  });
+
+  it('a corrected sign-off (now on hold) refuses it', async () => {
+    withPrep([ev('released'), ev('release_corrected', { reason: 'Wrong appointment', correctsEventId: 'released' })]);
+    await expect(recordPreviousSend(ctx, 'gus-case-010', outside, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('on hold') });
+  });
+});
+
+describe('who may mark the sending steps by hand — approved 2026-11-20', () => {
+  it('Gus: Administrator, Manager and Funeral Director; never read-only or an unknown role', () => {
+    for (const role of ['administrator', 'manager', 'funeralDirector']) expect(maySetCrematorySentStepsByHand(GUS, role, false), role).toBe(true);
+    for (const role of ['readOnly', 'staff', null]) expect(maySetCrematorySentStepsByHand(GUS, role, false), String(role)).toBe(false);
+  });
+
+  it('Manors is unchanged: administrators only', () => {
+    expect(maySetCrematorySentStepsByHand(MANORS_ORGANIZATION_ID, 'manager', false)).toBe(false);
+    expect(maySetCrematorySentStepsByHand(MANORS_ORGANIZATION_ID, 'funeralDirector', false)).toBe(false);
+    expect(maySetCrematorySentStepsByHand(MANORS_ORGANIZATION_ID, 'administrator', true)).toBe(true);
   });
 });
 

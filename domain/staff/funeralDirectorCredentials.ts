@@ -88,7 +88,7 @@ export function applyCredentialChange(params: {
 }): FuneralDirectorCredentialRecord {
   const { record, change, actor, now } = params;
   if (actor.id === record.identityId) {
-    throw new SelfServiceCredentialError('You cannot change, verify or authorize your own funeral director credentials. Another administrator must do it.');
+    throw new SelfServiceCredentialError('You cannot change, verify or authorize your own funeral director credentials. Someone else who manages credentials must do it.');
   }
   const before = { license: record.license, authorization: record.authorization };
   let license = record.license;

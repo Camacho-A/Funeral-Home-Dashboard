@@ -152,11 +152,13 @@ export function useCaseMutations(caseId: string) {
       // Mock mode only: the browser applies the administrator-only rule for
       // Workflow 3's "sent to crematory" items itself (with real data the
       // server decides). Read from the permissions the page already loaded.
-      const permissions = queryClient.getQueryData<{ permissions?: string[] }>(myPermissionsKey(organization.organizationId))?.permissions ?? [];
+      const mine = queryClient.getQueryData<{ permissions?: string[]; roleKey?: string }>(myPermissionsKey(organization.organizationId));
+      const permissions = mine?.permissions ?? [];
       return casesService.update(organization, caseId, patch, organization.dataAdapterMode, {
         expectedRevision,
         baseValues,
         isAdministrator: permissions.includes('organization.manage'),
+        roleKey: mine?.roleKey ?? null,
       });
     },
     onMutate: async ({ patch }) => {

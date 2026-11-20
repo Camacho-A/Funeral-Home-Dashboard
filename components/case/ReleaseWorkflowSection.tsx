@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { TextField } from '@/components/ui/TextField';
 import { Badge } from '@/components/ui/Badge';
-import { RELEASE_STATUS_LABEL, releaseEventsOf } from '@/domain/servicePreparation/releaseHolds';
+import { correctableSignOffs, RELEASE_STATUS_LABEL, releaseEventsOf } from '@/domain/servicePreparation/releaseHolds';
 import { RELEASE_FOR_CREMATION_UNAVAILABLE_REASON } from '@/domain/servicePreparation/releaseForCremation';
 import type { ServicePreparationRecord } from '@/domain/servicePreparation/types';
 import type { CallerReleaseView } from '@/services/cremationReleaseService';
@@ -15,9 +15,11 @@ import styles from './ServiceReadinessCard.module.css';
  * hold (with a reason) and ask for reauthorization; a licensed, authorized
  * director's sign-off releases or reauthorizes, after every requirement is
  * rechecked. Every step stays in the history. A hold never recalls
- * paperwork already sent — the card says so.
+ * paperwork already sent — the card says so. A pending request can be
+ * withdrawn; a wrong sign-off is corrected by appending a correction (with a
+ * reason), never by editing it.
  */
-type Action = 'release' | 'sign_off' | 'hold' | 'reauthorize';
+type Action = 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct';
 
 const EVENT_LABEL = {
   release_requested: 'Release requested',
@@ -25,6 +27,8 @@ const EVENT_LABEL = {
   hold_placed: 'Placed on hold',
   reauthorization_requested: 'Reauthorization requested',
   reauthorized: 'Reauthorized',
+  request_withdrawn: 'Request withdrawn',
+  release_corrected: 'Sign-off corrected',
 } as const;
 
 export function ReleaseWorkflowSection({
@@ -43,19 +47,24 @@ export function ReleaseWorkflowSection({
   canEdit: boolean;
   isSaving: boolean;
   error: string | null;
-  onAction: (input: { action: Action; reason?: string }, done: () => void) => void;
+  onAction: (input: { action: Action; reason?: string; correctsEventId?: string }, done: () => void) => void;
   formatWhen: (iso: string) => string;
 }) {
   const [confirming, setConfirming] = useState<Action | null>(null);
   const [reason, setReason] = useState('');
   const events = releaseEventsOf(record);
+  const correctable = correctableSignOffs(record);
+  const [correctsEventId, setCorrectsEventId] = useState<string>('');
+  const correcting = correctsEventId || correctable.at(-1)?.eventId || '';
   const status = release?.status ?? 'not_released';
   const caps = release?.capabilities;
   const active = release?.active === true && canEdit;
   const done = () => {
     setConfirming(null);
     setReason('');
+    setCorrectsEventId('');
   };
+  const needsReason = confirming === 'hold' || confirming === 'correct';
 
   const button = (action: Action, label: string, allowed: boolean | undefined) =>
     allowed ? (
@@ -68,6 +77,8 @@ export function ReleaseWorkflowSection({
     button('sign_off', 'Sign off release', caps?.canSignOff),
     button('hold', 'Place on hold', caps?.canHold),
     button('reauthorize', caps?.isLicensedSigner && release?.allPrerequisitesMet ? 'Reauthorize release' : 'Request reauthorization', caps?.canReauthorize),
+    button('withdraw', 'Withdraw request', caps?.canWithdraw),
+    button('correct', 'Correct a sign-off', caps?.canCorrect),
   ].filter(Boolean);
 
   return (
@@ -106,14 +117,30 @@ export function ReleaseWorkflowSection({
           <p className={styles.note}>
             {confirming === 'hold'
               ? 'Placing the release on hold stops anything being sent to the crematory. Say why.'
-              : confirming === 'sign_off' || ((confirming === 'release' || confirming === 'reauthorize') && caps?.isLicensedSigner && release?.allPrerequisitesMet)
+              : confirming === 'withdraw'
+                ? 'This withdraws the request awaiting sign-off. It stays in the history.'
+                : confirming === 'correct'
+                  ? 'A correction is added to the history; the sign-off itself is never changed. If it is the sign-off in force, the release goes on hold and must be reauthorized with a licensed sign-off.'
+                  : confirming === 'sign_off' || ((confirming === 'release' || confirming === 'reauthorize') && caps?.isLicensedSigner && release?.allPrerequisitesMet)
                 ? `You are signing off the release for cremation after the ${serviceName.toLowerCase()} as the approving funeral director. It is recorded with your name and license.`
                 : "This records a request. A licensed, authorized funeral director's sign-off is still required."}
           </p>
-          {confirming === 'hold' && (
+          {confirming === 'correct' && correctable.length > 1 && (
             <label className={styles.detail}>
-              <span>Reason for the hold</span>
-              <TextField value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} required />
+              <span>Sign-off to correct</span>
+              <select value={correcting} onChange={(e) => setCorrectsEventId(e.target.value)}>
+                {correctable.map((e) => (
+                  <option key={e.eventId} value={e.eventId}>
+                    {EVENT_LABEL[e.type]} — {e.actorName ?? 'staff'}, {formatWhen(e.at)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {(needsReason || confirming === 'withdraw') && (
+            <label className={styles.detail}>
+              <span>{confirming === 'hold' ? 'Reason for the hold' : confirming === 'correct' ? 'Reason for the correction' : 'Reason (optional)'}</span>
+              <TextField value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} required={needsReason} />
             </label>
           )}
           {error && (
@@ -125,8 +152,17 @@ export function ReleaseWorkflowSection({
             <button
               type="button"
               className={styles.releaseButton}
-              disabled={isSaving || (confirming === 'hold' && !reason.trim())}
-              onClick={() => onAction({ action: confirming, ...(confirming === 'hold' ? { reason } : {}) }, done)}
+              disabled={isSaving || (needsReason && !reason.trim())}
+              onClick={() =>
+                onAction(
+                  {
+                    action: confirming,
+                    ...(needsReason || (confirming === 'withdraw' && reason.trim()) ? { reason } : {}),
+                    ...(confirming === 'correct' ? { correctsEventId: correcting } : {}),
+                  },
+                  done,
+                )
+              }
             >
               {isSaving ? 'Saving…' : 'Confirm'}
             </button>

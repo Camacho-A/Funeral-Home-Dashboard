@@ -189,8 +189,16 @@ export type ReleaseForCremationRecord = {
  *   reauthorization_requested — asked to lift the hold; sign-off needed
  *   reauthorized              — hold lifted after the latest requirements
  *                               were rechecked and a licensed director signed
+ *   request_withdrawn         — a pending request (release or
+ *                               reauthorization) withdrawn before sign-off;
+ *                               the status returns to what it was before it
+ *   release_corrected         — a recorded sign-off (released / reauthorized)
+ *                               was wrong: references it (`correctsEventId`),
+ *                               states why, and — when it is the sign-off in
+ *                               force — puts the release on hold. The
+ *                               corrected event is never edited or removed.
  */
-export type ReleaseEventType = 'release_requested' | 'released' | 'hold_placed' | 'reauthorization_requested' | 'reauthorized';
+export type ReleaseEventType = 'release_requested' | 'released' | 'hold_placed' | 'reauthorization_requested' | 'reauthorized' | 'request_withdrawn' | 'release_corrected';
 
 export type ReleaseEvent = {
   eventId: string;
@@ -199,8 +207,12 @@ export type ReleaseEvent = {
   actorId: string;
   actorName: string | null;
   roleKey: string;
-  /** Required for a hold. */
+  /** Required for a hold and a correction. */
   reason?: string | null;
+  /** release_corrected: the sign-off event it corrects. request_withdrawn:
+      the request it withdraws. */
+  correctsEventId?: string;
+  withdrawsEventId?: string;
   /** The licensed sign-off (released / reauthorized). */
   approval?: ReleaseApprovalSnapshot | null;
   /** A hold placed after paperwork already reached (or may have reached)
@@ -262,6 +274,10 @@ export type PreparationAuditEntry = {
   actorId: string;
   actorName: string | null;
   at: string;
+  /** A preparation change made while the release was on hold (Gus,
+      2026-11): its required reason. Release must be reauthorized. */
+  reason?: string | null;
+  duringHold?: boolean;
 };
 
 /** The service appointment, as preparation needs it. */

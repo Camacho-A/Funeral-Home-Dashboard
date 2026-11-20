@@ -18,6 +18,8 @@ vi.mock('../lib/wixDataApi', async () => {
 });
 const { changeCredentials, listCredentialSummaries } = await import('./funeralDirectorCredentialService');
 const { evaluateCremationReleaseForCaller } = await import('./cremationReleaseService');
+const { canAdministerFuneralDirectorCredentials } = await import('./authorizationPolicyService');
+const { MANORS_ORGANIZATION_ID } = await import('../domain/organization/organizationProfiles');
 
 /** Funeral director credentials (Gus Phase 5G) — mock mode, fictional people. */
 const GUS = GUS_CAMACHO_ORGANIZATION_ID;
@@ -109,5 +111,39 @@ describe('funeral director credentials (server)', () => {
     await expect(changeCredentials(adminCtx, { staffProfileId: 'staff-gus-director', change: { kind: 'grant_authorization' }, expectedRevision: 2, actorName: null }, 'mock')).rejects.toMatchObject({ status: 413 });
     expect(funeralDirectorCredentialFixtures[0]).toBe(padded);
     expect(activityEventFixtures).toHaveLength(0);
+  });
+});
+
+describe('who administers credentials — approved 2026-11-20', () => {
+  const may = (organizationId: string, roleKey: string, identityId = 'identity-x') => canAdministerFuneralDirectorCredentials({ organizationId, roleKey, identityId }, 'mock');
+
+  it('Gus: Administrator, Manager and Funeral Director; not read-only', async () => {
+    for (const role of ['administrator', 'manager', 'funeralDirector']) expect(await may(GUS, role), role).toBe(true);
+    expect(await may(GUS, 'readOnly')).toBe(false);
+  });
+
+  it('Manors is unchanged: only organization.manage, never a Manager or Funeral Director by role', async () => {
+    expect(await may(MANORS_ORGANIZATION_ID, 'manager')).toBe(false);
+    expect(await may(MANORS_ORGANIZATION_ID, 'funeralDirector')).toBe(false);
+  });
+
+  it('a Manager enters a license for someone else, but can never verify or authorize their own; a different person verifies', async () => {
+    const managerCtx = { ...adminCtx, actorIdentityId: 'identity-gus-manager-fictional', actorRoleKey: 'manager' };
+    const target = staffFixtures.find((s) => s.organizationId === GUS && s.identityId === 'identity-gus-admin')!;
+    const set = await changeCredentials(
+      managerCtx,
+      { staffProfileId: target.id, change: { kind: 'set_license', licenseNumber: 'FD-FICTIONAL-0042', state: 'FL', licenseType: 'funeral_director', status: 'active', expiresOn: '2030-01-31' }, expectedRevision: 0, actorName: 'Morgan Demo' },
+      'mock',
+    );
+    // Entered details are unverified until someone verifies them.
+    expect(set.license!.verification).toBeNull();
+    // The license holder can never verify their own.
+    await expect(changeCredentials(adminCtx, { staffProfileId: target.id, change: { kind: 'verify_license', method: 'state_license_lookup', reference: 'Fictional lookup' }, expectedRevision: set.revision, actorName: 'Avery Demo' }, 'mock')).rejects.toMatchObject({ status: 403 });
+    const verified = await changeCredentials(directorCtx, { staffProfileId: target.id, change: { kind: 'verify_license', method: 'state_license_lookup', reference: 'Fictional lookup' }, expectedRevision: set.revision, actorName: 'Jordan Demo' }, 'mock');
+    expect(verified.license!.verification).toMatchObject({ verifiedBy: 'identity-gus-director' });
+    expect(verified.history.map((h) => [h.action, h.actorId])).toEqual([
+      ['license_set', 'identity-gus-manager-fictional'],
+      ['license_verified', 'identity-gus-director'],
+    ]);
   });
 });

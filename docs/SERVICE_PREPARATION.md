@@ -213,7 +213,9 @@ written by Send to Crematory in Manors Production). Live writes are OFF
 (`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING = false`).
 
 **Funeral director credentials** — Settings › Funeral Director Credentials
-(Gus only, `organization.manage`), `GET/POST /api/settings/funeral-director-
+(Gus only; `organization.manage` or a role in
+`funeralDirectorCredentialAdministratorRoleKeys` — Gus: Administrator,
+Manager, Funeral Director since 2026-11-20), `GET/POST /api/settings/funeral-director-
 credentials`, `services/funeralDirectorCredentialService.ts`. Per staff
 profile: license number, state, type, status, expiry; verification (by,
 when, method, source); separate Funeral Director authorization; revision;
@@ -289,25 +291,30 @@ them (`domain/servicePreparation/releaseHolds.ts`):
 | `hold_placed` | Administrator, Manager, Funeral Director; **reason required** | On hold — sending blocked |
 | `reauthorization_requested` | Administrator, Manager, Funeral Director | Awaiting licensed sign-off — still blocked |
 | `reauthorized` | a licensed, authorized director, every requirement rechecked | Reauthorized — sending allowed again |
+| `request_withdrawn` | Administrator, Manager, Funeral Director; reason optional | Back to the status before the request (Not released, or On hold) |
+| `release_corrected` | Administrator, Manager, Funeral Director; **reason required**; names the sign-off it corrects (`correctsEventId`) | On hold if it corrects the sign-off in force; otherwise unchanged (annotation) |
 
 - The first release is also kept, unchanged forever, in `servicePreparation.release`.
 - A licensed, authorized director with everything met releases or reauthorizes in one step; anyone else in the three roles records a request.
 - A hold placed after paperwork reached (or may have reached) the crematory is marked `paperworkAlreadyTransmitted`, and the case says the crematory must be contacted — a hold never recalls anything.
-- Preparation stays read-only after the first release, including while on hold (see open decisions).
-- `POST /api/cases/[caseId]/cremation-release { action: 'release' | 'sign_off' | 'hold' | 'reauthorize', reason? }`; all refused (423) while `RELEASE_FOR_CREMATION_AVAILABLE` is off.
+- Preparation (approved 2026-11-20): read-only while Released / Reauthorized. **While On hold it may change again**, each change with a required reason, recorded in its history entry (`duringHold`, `reason`) and as a warning-level Activity event; the hold is lifted only by reauthorization with a licensed sign-off, which rechecks every requirement against the changed preparation. While a reauthorization request is pending, preparation is read-only (withdraw the request first), so the sign-off is always on what was asked for.
+- The status is computed by one fold over the events (`domain/servicePreparation/releaseStatus.ts`).
+- `POST /api/cases/[caseId]/cremation-release { action: 'release' | 'sign_off' | 'hold' | 'reauthorize' | 'withdraw' | 'correct', reason?, correctsEventId? }`; all refused (423) while `RELEASE_FOR_CREMATION_AVAILABLE` is off.
 
-### Release corrections — design proposal only (not built)
+### Release corrections (approved 2026-11-20) — built, NOT active
 
-A recorded release event can be wrong (e.g. recorded against the wrong
-appointment, or the wrong approver selected by mistake). Proposal, for
-approval: a `correction` event that **references** the event it corrects
+A recorded sign-off can be wrong (e.g. recorded against the wrong
+appointment, or the wrong approver selected by mistake). A
+`release_corrected` event **references** the sign-off it corrects
 (`correctsEventId`), states the reason, and records who and when — the
-original event is never edited or removed. A correction can only change the
-release **status** in the safe direction (e.g. treat a mistaken `released` as
-`on_hold`), and lifting that again follows the normal reauthorization with
-licensed sign-off. Who may record a correction (Administrator only? any of
-the three roles?) and whether a second person must confirm it are client
-decisions.
+corrected event and `servicePreparation.release` are never edited or
+removed. It moves the status only in the safe direction: correcting the
+sign-off in force puts the release on hold (sending blocked; the hold notice
+says to contact the crematory if paperwork may already be there); lifting it
+is the normal reauthorization with a licensed sign-off. Correcting an
+earlier, superseded sign-off only annotates it. A sign-off can be corrected
+once. Administrators, Managers and Funeral Directors may record one; no
+second-person confirmation is required (not requested — can be added).
 
 ### Send to Crematory release gate (Phase 5K) — built, NOT enforced
 
@@ -397,18 +404,16 @@ unrecorded approval.
 - Viewing: what happens when the family brings no clothing? Rental or
   purchased casket, and who supplies it?
 - Final Goodbye: is 60 minutes the confirmed maximum?
-- License re-verification: 365 days set as Gus's internal policy
-  (configurable) — confirm.
+- License re-verification: 365 days — approved 2026-11-20.
 - Medical examiner cremation approval: decided (Phase 5G) — option 1,
   recorded staff attestation in the existing `crematory` record.
-- Release: who at Gus may administer credentials (today: any administrator
-  with organization.manage, never for themselves)?
+- Credential administration: Administrators, Managers and Funeral
+  Directors (approved 2026-11-20), never for themselves; verification stays
+  independent of the license holder.
 - Prayer cards, register book, crucifix for a Final Goodbye: offered or not?
 - Are the default deadline targets right for Gus's vendors and parishes?
 - Reversing a release: decided 2026-11 — handled by holds (above).
-- While on hold, should service preparation become editable again? (Today it
-  stays read-only after the first release.)
-- Withdrawing a pending release request (before sign-off): allowed, by whom?
-  (Not built.)
-- Release corrections (proposal above): approve the design and who may use it.
+- While on hold, preparation may be edited with reasons (approved and built 2026-11-20).
+- Withdrawing a pending request: the three leadership roles (approved and built 2026-11-20).
+- Release corrections: appended, never overwriting (approved and built 2026-11-20).
 

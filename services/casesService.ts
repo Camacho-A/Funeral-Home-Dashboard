@@ -2,7 +2,7 @@ import type { OrganizationContext } from '../types/organization';
 import { isSlaTrackingEnabled } from '../domain/sla/slaSettings';
 import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
 import { historicalChecklistKeys } from '../domain/workflow/earlierStages';
-import { adminOnlyChecklistChanges, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE } from '../domain/crematory/sentChecklistItems';
+import { adminOnlyChecklistChanges, crematorySentChecklistReleaseRefusal, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE, maySetCrematorySentStepsByHand } from '../domain/crematory/sentChecklistItems';
 import { caseRevision } from '../lib/wixCaseMapper';
 import {
   CASE_REVISION_CONFLICT_REASON,
@@ -656,6 +656,9 @@ export type CaseUpdateOptions = {
       change Workflow 3's two "sent to crematory" items by hand. With real
       data the server decides (app/api/cases/[caseId]/route.ts). */
   isAdministrator?: boolean;
+  /** Mock mode only: the caller's role, for an organization that lets
+      other roles change those items (sentStepsByHandRoleKeys). */
+  roleKey?: string | null;
 };
 
 /**
@@ -969,9 +972,13 @@ export async function update(
       throw new Error(`Invalid checklist state: ${invalidEntries.map((e) => `"${e.key}" (${e.reason})`).join('; ')}`);
     }
     // Send to Crematory (2026-10): mirrors the Wix PATCH route's rule.
-    if (options.isAdministrator !== true && adminOnlyChecklistChanges(caseFixtures[index], patch.checklistState).length > 0) {
+    if (!maySetCrematorySentStepsByHand(caseFixtures[index].organizationId, options.roleKey, options.isAdministrator === true) && adminOnlyChecklistChanges(caseFixtures[index], patch.checklistState).length > 0) {
       throw new Error(CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE);
     }
+    // Release gate (2026-11): mirrors the route — checking a "sent" step is
+    // refused while the case must be released and is not (or is on hold).
+    const releaseRefusal = crematorySentChecklistReleaseRefusal(caseFixtures[index], patch.checklistState);
+    if (releaseRefusal) throw new Error(releaseRefusal);
   }
   // Task #15 (2026-09, future-historical-date validation): mirrors the
   // Wix-mode route's own check, only for a field this patch actually sets

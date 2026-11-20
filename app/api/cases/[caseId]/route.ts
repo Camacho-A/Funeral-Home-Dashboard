@@ -37,7 +37,7 @@ import {
 } from '@/services/activityService';
 import { STAGES, toDisplayStage } from '@/domain/cases/stages';
 import { canReadCases, canEditCase, canManageOrganization, canReadPickup, canUpdatePickup } from '@/services/authorizationPolicyService';
-import { adminOnlyChecklistChanges, crematorySentChecklistReleaseRefusal, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE } from '@/domain/crematory/sentChecklistItems';
+import { adminOnlyChecklistChanges, crematorySentChecklistReleaseRefusal, CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE, maySetCrematorySentStepsByHand } from '@/domain/crematory/sentChecklistItems';
 import type { Case, ReturnMethod } from '@/types/case';
 import { toPickupOnlyView, PICKUP_ONLY_PATCH_FIELDS } from '@/domain/cases/pickupView';
 import { assertValidPickupReleasePatch } from '@/domain/cases/pickupRelease';
@@ -255,8 +255,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
   const [hasFullEdit, hasPickupOnlyEdit, isAdministrator] = await Promise.all([
     canEditCase(policyParams, 'wix'),
     canUpdatePickup(policyParams, 'wix'),
-    // Send to Crematory (2026-10): only administrators change Workflow 3's
-    // two "sent to crematory" items by hand (see refuseAgainst below).
+    // Send to Crematory (2026-10): administrators (and, where the
+    // organization allows it, other roles) change Workflow 3's two "sent to
+    // crematory" items by hand (see refuseAgainst below).
     patch.checklistState ? canManageOrganization(policyParams, 'wix') : Promise.resolve(false),
   ]);
   if (!hasFullEdit && !hasPickupOnlyEdit) {
@@ -395,7 +396,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         // SOLIS when the email is sent; by hand, administrators only. Only a
         // real change counts — re-sending a key at its current value is not
         // a change. Judged on the case as stored, every attempt.
-        if (!isAdministrator && adminOnlyChecklistChanges(current, patch.checklistState).length > 0) {
+        if (!maySetCrematorySentStepsByHand(organizationId, context.role, isAdministrator) && adminOnlyChecklistChanges(current, patch.checklistState).length > 0) {
           return NextResponse.json({ case: null, error: CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE }, { status: 403 });
         }
         // Release gate (2026-11): checking a "sent to crematory" step records

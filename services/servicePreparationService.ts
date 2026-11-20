@@ -107,7 +107,7 @@ export async function getServicePreparation(organizationId: string, caseId: stri
 export async function changeServicePreparation(
   ctx: ActivityContext,
   caseId: string,
-  input: { change: PreparationChange; basis: PreparationChangeBasis; actorName: string | null; now?: string; eventId?: string },
+  input: { change: PreparationChange; basis: PreparationChangeBasis; actorName: string | null; reason?: string | null; now?: string; eventId?: string },
   mode: DataAdapterMode,
 ): Promise<ServicePreparationView> {
   const organizationId = ctx.organizationId;
@@ -134,7 +134,7 @@ export async function changeServicePreparation(
       throw new ServicePreparationError("This case's saved preparation could not be read, so nothing was changed (to avoid overwriting it). Please contact SolisCode support.", 409);
     }
     const previous = current.servicePreparation && current.servicePreparation.definitionKey === definition.key ? current.servicePreparation : null;
-    return applyPreparationChange({ definition, record: previous, service, change, basis: input.basis, actor: { id: actorId, name: input.actorName }, now, eventId });
+    return applyPreparationChange({ definition, record: previous, service, change, basis: input.basis, actor: { id: actorId, name: input.actorName }, now, eventId, reason: input.reason ?? null });
   };
   const hasEvent = (case_: Case | null | undefined) => Boolean(case_?.servicePreparation?.history?.some((e) => e.eventId === eventId));
 
@@ -183,7 +183,13 @@ export async function changeServicePreparation(
       await recordServicePreparationChange(
         { ...ctx, correlationId: eventId },
         caseId,
-        { description: entry.description, target: entry.target.key, previous: entry.previous as Record<string, unknown> | null, next: entry.next as Record<string, unknown> },
+        {
+          description: entry.description,
+          target: entry.target.key,
+          previous: entry.previous as Record<string, unknown> | null,
+          next: entry.next as Record<string, unknown>,
+          ...(entry.duringHold ? { reason: entry.reason ?? null, duringHold: true } : {}),
+        },
         mode,
       );
     } catch (error) {

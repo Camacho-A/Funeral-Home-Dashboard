@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
 import type { ServicePreparationView } from '@/services/servicePreparationService';
-import type { CallerReleaseView } from '@/services/cremationReleaseService';
+import type { CallerReleaseView, ReleaseAction } from '@/services/cremationReleaseService';
 import type { MedicalExaminerApprovalView } from '@/services/medicalExaminerApprovalService';
 
 /**
@@ -43,11 +43,11 @@ export function useServicePreparation(organizationId: string, caseId: string, en
   const query = useQuery({ queryKey: key, queryFn: () => fetchServicePreparation(organizationId, caseId), enabled: enabled && Boolean(organizationId && caseId) });
 
   const save = useMutation({
-    mutationFn: async (input: { change: PreparationChange; basisAt: string | null }) => {
+    mutationFn: async (input: { change: PreparationChange; basisAt: string | null; reason?: string }) => {
       const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/service-preparation`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId, change: input.change, basis: { at: input.basisAt } }),
+        body: JSON.stringify({ organizationId, change: input.change, basis: { at: input.basisAt }, ...(input.reason ? { reason: input.reason } : {}) }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
@@ -85,11 +85,14 @@ export function useServicePreparation(organizationId: string, caseId: string, en
 
   // Gus Phase 5K: release for cremation (refused by the server while inactive).
   const releaseForCremation = useMutation({
-    mutationFn: async (input: { action: 'release' | 'sign_off' | 'hold' | 'reauthorize'; reason?: string } = { action: 'release' }) => {
+    mutationFn: async (input: { action: ReleaseAction; reason?: string; correctsEventId?: string } = { action: 'release' }) => {
       const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/cremation-release`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId, confirm: true, action: input.action, ...(input.reason !== undefined ? { reason: input.reason } : {}) }),
+        body: JSON.stringify({ organizationId, confirm: true, action: input.action,
+          ...(input.reason !== undefined ? { reason: input.reason } : {}),
+          ...(input.correctsEventId !== undefined ? { correctsEventId: input.correctsEventId } : {}),
+        }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new ServicePreparationSaveError(body.error ?? 'Could not release. Nothing was released.', response.status);

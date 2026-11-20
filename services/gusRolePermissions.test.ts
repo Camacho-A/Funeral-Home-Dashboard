@@ -25,14 +25,17 @@ const OPERATIONAL: readonly PermissionKey[] = [
   'merchandise.read', 'merchandise.manage', 'inventory.read', 'inventory.manage', 'inventory.adjust',
   'procurement.read', 'procurement.manage',
   'accounting.view', 'accounting.report', 'ap.read',
+  // Approved 2026-11-20: workflow, template and case-number management.
+  'workflow.edit', 'workflow.publish', 'document.template.manage', 'caseNumber.manage',
 ];
 
 /** Kept restricted (security, financial authority, configuration, or a recorded decision). */
 const RESTRICTED_FROM_FUNERAL_DIRECTOR: readonly PermissionKey[] = [
   'organization.manage', 'settings.manage', 'user.invite', 'user.remove', 'user.manageRoles', 'audit.export',
   'case.delete', 'payment.refund', 'caseOrder.reprice', 'serviceCatalog.edit', 'serviceCatalog.price', 'serviceCatalog.deactivate',
+  // Vendor payment authorization stays restricted pending separate approval (2026-11-20).
   'accounting.manage', 'accounting.post', 'accounting.reconcile', 'ap.manage', 'ap.pay',
-  'workflow.edit', 'workflow.publish', 'document.template.manage', 'notification.manage', 'notification.admin', 'calendar.manage',
+  'notification.manage', 'notification.admin', 'calendar.manage',
 ];
 
 describe('Gus: three operational leadership roles', () => {
@@ -55,6 +58,9 @@ describe('Gus: three operational leadership roles', () => {
     const f = getRegisteredOrganizationProfile(GUS_CAMACHO_ORGANIZATION_ID).features;
     expect(f.cremationReleaseOperatorRoleKeys).toEqual(['administrator', 'manager', 'funeralDirector']);
     expect(f.cremationReleaseApproverRoleKeys).toEqual(['funeralDirector']);
+    expect(f.funeralDirectorCredentialAdministratorRoleKeys).toEqual(['administrator', 'manager', 'funeralDirector']);
+    expect(f.sendToCrematory?.sentStepsByHandRoleKeys).toEqual(['administrator', 'manager', 'funeralDirector']);
+    expect(f.funeralDirectorLicenseReverifyDays).toBe(365);
   });
 
   it('read-only and other roles gain nothing', async () => {
@@ -70,6 +76,11 @@ describe('Manors is unchanged', () => {
     const manager = await of(MANORS_ORGANIZATION_ID, 'manager');
     expect(['caseOrder.customItems', 'resource.manage', 'user.read', 'report.export', 'dashboard.manage', 'merchandise.manage', 'inventory.adjust'].filter((p) => fd.has(p as PermissionKey))).toEqual([]);
     expect(manager.has('accounting.view')).toBe(false);
-    expect(getRegisteredOrganizationProfile(MANORS_ORGANIZATION_ID).features.cremationReleaseOperatorRoleKeys).toEqual([]);
+    expect(['workflow.edit', 'workflow.publish', 'document.template.manage'].filter((p) => fd.has(p as PermissionKey))).toEqual([]);
+    expect(manager.has('caseNumber.manage')).toBe(false);
+    const f = getRegisteredOrganizationProfile(MANORS_ORGANIZATION_ID).features;
+    expect(f.cremationReleaseOperatorRoleKeys).toEqual([]);
+    expect(f.funeralDirectorCredentialAdministratorRoleKeys).toEqual([]);
+    expect(f.sendToCrematory?.sentStepsByHandRoleKeys).toBeUndefined();
   });
 });

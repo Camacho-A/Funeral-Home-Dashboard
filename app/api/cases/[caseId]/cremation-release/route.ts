@@ -13,13 +13,16 @@ import { resolveStaffProfileForCaller } from '@/services/staffProfileService';
  *          caller is not a licensed, authorized director;
  *   'sign_off'    — a licensed director signs off a pending request;
  *   'hold'        — place the release on hold (reason required);
- *   'reauthorize' — lift a hold, or request that it be lifted.
+ *   'reauthorize' — lift a hold, or request that it be lifted;
+ *   'withdraw'    — withdraw the request awaiting sign-off (reason optional);
+ *   'correct'     — append a correction to a recorded sign-off
+ *                   (`correctsEventId`, reason required); never edits it.
  * Who, when, and every requirement are decided on the server from the
  * session, the case and the caller's own credentials. NOT ACTIVE: refused
  * with 423 while RELEASE_FOR_CREMATION_AVAILABLE (or preparation saving on
  * this site) is off. Records only; sends nothing, recalls nothing.
  */
-const ACTIONS: readonly ReleaseAction[] = ['release', 'sign_off', 'hold', 'reauthorize'];
+const ACTIONS: readonly ReleaseAction[] = ['release', 'sign_off', 'hold', 'reauthorize', 'withdraw', 'correct'];
 export async function POST(request: Request, { params }: { params: Promise<{ caseId: string }> }) {
   const csrfResponse = requireSameOrigin(request);
   if (csrfResponse) return csrfResponse;
@@ -37,6 +40,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (body.reason !== undefined && body.reason !== null && (typeof body.reason !== 'string' || body.reason.length > 300)) {
     return NextResponse.json({ error: 'reason must be text of up to 300 characters.' }, { status: 400 });
   }
+  if (body.correctsEventId !== undefined && body.correctsEventId !== null && (typeof body.correctsEventId !== 'string' || body.correctsEventId.length > 100)) {
+    return NextResponse.json({ error: 'correctsEventId must be an event id.' }, { status: 400 });
+  }
   const auth = await requireAuthorizedOrganization(body.organizationId);
   if (!auth.authorized) return auth.response;
   const { organizationId, userId, role } = auth.context;
@@ -46,7 +52,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   }
   try {
     const actorName = (await resolveStaffProfileForCaller({ organizationId, userId, role }, mode))?.displayName ?? null;
-    const { event, status, evaluation } = await performReleaseAction({ organizationId, userId, role }, caseId, mode, { action, reason: (body.reason as string | null | undefined) ?? null, actorName });
+    const { event, status, evaluation } = await performReleaseAction({ organizationId, userId, role }, caseId, mode, {
+      action,
+      reason: (body.reason as string | null | undefined) ?? null,
+      correctsEventId: (body.correctsEventId as string | null | undefined) ?? null,
+      actorName,
+    });
     return NextResponse.json({ event, status, evaluation });
   } catch (error) {
     if (error instanceof CremationReleaseError) {

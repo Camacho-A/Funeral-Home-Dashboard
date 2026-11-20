@@ -1,5 +1,6 @@
 import { emptyPreparationRecord, PREPARATION_RECORD_MAX_BYTES, PreparationChangeError, PreparationLimitError, preparationRecordBytes } from './preparationUpdates';
 import type { PreparationAuditEntry, ReleaseEvent, ReleaseEventType, ReleaseForCremationRecord, ServicePreparationDefinition, ServicePreparationRecord } from './types';
+import { correctableSignOffs, pendingReleaseRequest, RELEASE_STATUS_LABEL, releaseEventsOf, releaseStatusOf, type ReleaseStatus } from './releaseStatus';
 
 /**
  * The release-hold workflow (Gus, 2026-11): Released → On Hold →
@@ -8,30 +9,19 @@ import type { PreparationAuditEntry, ReleaseEvent, ReleaseEventType, ReleaseForC
  * entry) — nothing is edited or removed, and the original release
  * (`record.release`) is never overwritten.
  *
+ * A pending request may be withdrawn (back to the status before it). A
+ * wrong sign-off is corrected by appending a correction that references
+ * it; if it is the sign-off in force, the release goes on hold and needs
+ * the normal reauthorization with a licensed sign-off.
+ *
  * Who may do what is decided by the caller (services/cremationReleaseService.ts):
  * Administrators, Managers and Funeral Directors may request a release,
  * place a hold and request reauthorization; a `released` or `reauthorized`
  * event needs the licensed, authorized director's sign-off and every case
  * requirement rechecked at that moment.
  */
-export type ReleaseStatus = 'not_released' | 'awaiting_signoff' | 'released' | 'on_hold' | 'awaiting_reauthorization' | 'reauthorized';
-
-export const RELEASE_STATUS_LABEL: Record<ReleaseStatus, string> = {
-  not_released: 'Not released',
-  awaiting_signoff: 'Release requested — awaiting licensed sign-off',
-  released: 'Released',
-  on_hold: 'On hold',
-  awaiting_reauthorization: 'Reauthorization requested — awaiting licensed sign-off',
-  reauthorized: 'Reauthorized',
-};
-
-const STATUS_AFTER: Record<ReleaseEventType, ReleaseStatus> = {
-  release_requested: 'awaiting_signoff',
-  released: 'released',
-  hold_placed: 'on_hold',
-  reauthorization_requested: 'awaiting_reauthorization',
-  reauthorized: 'reauthorized',
-};
+export { RELEASE_STATUS_LABEL, releaseEventsOf, releaseStatusOf, isReleasedStatus, currentHold, pendingReleaseRequest, correctableSignOffs } from './releaseStatus';
+export type { ReleaseStatus } from './releaseStatus';
 
 /** The statuses each event may follow. */
 export const RELEASE_EVENT_ALLOWED_FROM: Record<ReleaseEventType, readonly ReleaseStatus[]> = {
@@ -40,43 +30,12 @@ export const RELEASE_EVENT_ALLOWED_FROM: Record<ReleaseEventType, readonly Relea
   hold_placed: ['released', 'reauthorized', 'awaiting_reauthorization'],
   reauthorization_requested: ['on_hold'],
   reauthorized: ['on_hold', 'awaiting_reauthorization'],
+  request_withdrawn: ['awaiting_signoff', 'awaiting_reauthorization'],
+  // Which sign-off it may correct is checked against the events themselves.
+  release_corrected: ['released', 'on_hold', 'awaiting_reauthorization', 'reauthorized'],
 };
 
 export class ReleaseTransitionError extends Error {}
-
-/** The events, oldest first. A record released before the workflow
-    existed (only `release`) reads as one `released` event. */
-export function releaseEventsOf(record: Pick<ServicePreparationRecord, 'release' | 'releaseEvents'> | null | undefined): ReleaseEvent[] {
-  if (!record) return [];
-  if (record.releaseEvents && record.releaseEvents.length > 0) return record.releaseEvents;
-  if (!record.release) return [];
-  return [
-    {
-      eventId: record.release.eventId ?? 'release-legacy',
-      type: 'released',
-      at: record.release.releasedAt,
-      actorId: record.release.releasedBy,
-      actorName: record.release.releasedByName,
-      roleKey: record.release.roleKey,
-      approval: record.release.approval ?? null,
-    },
-  ];
-}
-
-export function releaseStatusOf(record: Pick<ServicePreparationRecord, 'release' | 'releaseEvents'> | null | undefined): ReleaseStatus {
-  const last = releaseEventsOf(record).at(-1);
-  return last ? STATUS_AFTER[last.type] : 'not_released';
-}
-
-/** Released and not on hold — the only state in which paperwork may go to the crematory. */
-export const isReleasedStatus = (status: ReleaseStatus) => status === 'released' || status === 'reauthorized';
-
-/** The hold now in force, if any. */
-export function currentHold(record: Pick<ServicePreparationRecord, 'release' | 'releaseEvents'> | null | undefined): ReleaseEvent | null {
-  const events = releaseEventsOf(record);
-  if (!['on_hold', 'awaiting_reauthorization'].includes(releaseStatusOf(record))) return null;
-  return [...events].reverse().find((e) => e.type === 'hold_placed') ?? null;
-}
 
 const TEXT_MAX = 300;
 
@@ -93,6 +52,10 @@ function describe(event: ReleaseEvent): string {
       return `Reauthorization requested by ${who} — awaiting a licensed director's sign-off`;
     case 'reauthorized':
       return `Release reauthorized by ${who}${event.approval ? ` (${event.approval.licenseState} license ${event.approval.licenseNumber})` : ''}`;
+    case 'request_withdrawn':
+      return `Pending request withdrawn by ${who}${event.reason ? `: ${event.reason}` : ''}`;
+    case 'release_corrected':
+      return `Recorded sign-off corrected by ${who}: ${event.reason}${event.paperworkAlreadyTransmitted ? ' — paperwork had already been sent; the crematory must be contacted' : ''}`;
   }
 }
 
@@ -111,7 +74,15 @@ export function appendReleaseEvent(params: { definition: ServicePreparationDefin
   }
   const event: ReleaseEvent = { ...params.event, reason: params.event.reason?.trim() ? params.event.reason.trim().slice(0, TEXT_MAX) : null };
   if (event.type === 'hold_placed' && !event.reason) throw new ReleaseTransitionError('Give a reason for the hold.');
+  if (event.type === 'release_corrected' && !event.reason) throw new ReleaseTransitionError('Give a reason for the correction.');
   if ((event.type === 'released' || event.type === 'reauthorized') && !event.approval) throw new ReleaseTransitionError("A licensed director's sign-off is required.");
+  if (event.type === 'request_withdrawn') {
+    // Always the request pending now — never an older one.
+    event.withdrawsEventId = pendingReleaseRequest(params.record)?.eventId;
+  }
+  if (event.type === 'release_corrected' && !correctableSignOffs(params.record).some((e) => e.eventId === event.correctsEventId)) {
+    throw new ReleaseTransitionError('Only a recorded sign-off that has not already been corrected can be corrected.');
+  }
 
   const record: ServicePreparationRecord = structuredClone(params.record ?? emptyPreparationRecord(definition, event.approval?.serviceAppointmentId ?? null));
   const previousEvents = releaseEventsOf(params.record);

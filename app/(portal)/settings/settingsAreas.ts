@@ -72,7 +72,10 @@ export function useSettingsAreas(authAdapterMode: AuthAdapterMode, onImportJotfo
       label: 'Funeral Director Credentials',
       description: 'Funeral director licenses, their verification, and who is authorized to act as Funeral Director.',
       href: '/settings/funeral-director-credentials',
-      visible: permissions.includes('organization.manage') && getRegisteredOrganizationProfile(organizationId).features.funeralDirectorCredentials,
+      visible:
+        getRegisteredOrganizationProfile(organizationId).features.funeralDirectorCredentials &&
+        (permissions.includes('organization.manage') ||
+          getRegisteredOrganizationProfile(organizationId).features.funeralDirectorCredentialAdministratorRoleKeys.includes(permissionsQuery.data?.roleKey ?? '')),
     },
     {
       // Fax Settings (2026-11): destinations, provider, templates.

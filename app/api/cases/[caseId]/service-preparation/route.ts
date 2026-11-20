@@ -22,6 +22,7 @@ import type { PreparationStatus } from '@/domain/servicePreparation/types';
  *        change = { kind: 'item', itemId, status, note?, documentId? }
  *               | { kind: 'choice', choice, value }
  *               | { kind: 'detail', key, value }
+ *        reason — required while the release is on hold (Gus, 2026-11).
  * 409 when someone else changed the same entry (the latest comes back as
  * `preparation`) or the case is archived. Never completes a workflow or
  * legal step and never sends anything.
@@ -119,12 +120,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (!basisRaw || typeof basisRaw !== 'object' || !(basisRaw.at === null || typeof basisRaw.at === 'string')) {
     return NextResponse.json({ error: 'basis.at is required (null when the entry was never set).' }, { status: 400 });
   }
+  if (body.reason !== undefined && body.reason !== null && (typeof body.reason !== 'string' || body.reason.length > MAX_TEXT)) {
+    return NextResponse.json({ error: 'reason must be text of up to 300 characters.' }, { status: 400 });
+  }
 
   const correlationId = crypto.randomUUID();
   const ctx = { organizationId, actorIdentityId: userId, actorMembershipId: null, actorRoleKey: role, correlationId };
   try {
     const actorName = (await resolveStaffProfileForCaller({ organizationId, userId, role }, mode))?.displayName ?? null;
-    const preparation = await changeServicePreparation(ctx, caseId, { change, basis: { at: basisRaw.at as string | null }, actorName }, mode);
+    const preparation = await changeServicePreparation(ctx, caseId, { change, basis: { at: basisRaw.at as string | null }, actorName, reason: (body.reason as string | null | undefined) ?? null }, mode);
     return NextResponse.json({ preparation });
   } catch (error) {
     return errorResponse(error);

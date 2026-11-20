@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { identityFixtures, MANORS_ADMIN_IDENTITY_ID } from '@/services/__mocks__/identityFixtures';
-import { GUS_ADMIN_IDENTITY_ID, GUS_DIRECTOR_IDENTITY_ID } from '@/services/__mocks__/gusFixtures';
+import { GUS_ADMIN_IDENTITY_ID, GUS_DIRECTOR_IDENTITY_ID, GUS_VIEWER_IDENTITY_ID } from '@/services/__mocks__/gusFixtures';
 import {
   workflowTemplateFixtures,
   GUS_WORKFLOW_TEMPLATE_ID,
@@ -117,8 +117,9 @@ describe('POST /api/workflow-templates/[templateId]/versions/[version]/approve',
     expect(workflowTemplateFixtures).toEqual(templatesBefore);
   });
 
-  it('requires workflow.publish — a funeral director is refused (403)', async () => {
-    await signInAs(GUS_DIRECTOR_IDENTITY_ID);
+  it('requires workflow.publish — a read-only user is refused (403)', async () => {
+    // (Gus Funeral Directors hold workflow.publish since 2026-11-20.)
+    await signInAs(GUS_VIEWER_IDENTITY_ID);
     const response = await postApprove(gusTemplate('DIRECT_ENTOMBMENT').id, 1, GUS);
     expect(response.status).toBe(403);
     expect(workflowTemplateFixtures).toEqual(templatesBefore);

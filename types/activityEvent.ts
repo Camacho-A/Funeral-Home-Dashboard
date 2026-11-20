@@ -409,6 +409,10 @@ export const ACTIVITY_EVENT_TYPES = {
       `app/api/organization/case-sequence/route.ts`'s POST handler, the
       sole emitter. */
   CASE_SEQUENCE_INITIALIZED: 'case.sequence.initialized',
+  /** 2026-11 (Gus: case-number management extended to Managers and
+      Funeral Directors, with audit). The organization's case-number
+      prefix changed (Settings › Case numbering). `'administration'`. */
+  CASE_NUMBER_PREFIX_CHANGED: 'case.number_prefix.changed',
 
   /** 2026-10 (Gus Camacho Jr. service catalog). An administrator set,
       changed or cleared one service catalog row's price in Settings ›

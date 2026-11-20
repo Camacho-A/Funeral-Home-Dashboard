@@ -34,7 +34,7 @@ describe('POST cremation-release', () => {
     approve.mockResolvedValue({ event: { eventId: 'r' }, status: 'released', evaluation: {} });
     const response = await call({ organizationId: 'gus-camacho-jr', confirm: true, approvedBy: 'someone-else', now: '2020-01-01' });
     expect(response.status).toBe(200);
-    expect(approve).toHaveBeenCalledWith({ organizationId: 'gus-camacho-jr', userId: 'identity-gus-director', role: 'funeralDirector' }, 'gus-case-010', 'mock', { action: 'release', reason: null, actorName: 'Jordan Demo' });
+    expect(approve).toHaveBeenCalledWith({ organizationId: 'gus-camacho-jr', userId: 'identity-gus-director', role: 'funeralDirector' }, 'gus-case-010', 'mock', { action: 'release', reason: null, correctsEventId: null, actorName: 'Jordan Demo' });
   });
 
   it('passes a hold with its reason; refuses unknown actions and oversized reasons', async () => {
@@ -43,6 +43,12 @@ describe('POST cremation-release', () => {
     expect(approve.mock.calls[0][3]).toMatchObject({ action: 'hold', reason: 'Family asked to wait' });
     expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'delete' })).status).toBe(400);
     expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'hold', reason: 'x'.repeat(301) })).status).toBe(400);
+    approve.mockResolvedValue({ event: { eventId: 'w' }, status: 'not_released', evaluation: {} });
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'withdraw' })).status).toBe(200);
+    expect(approve.mock.calls.at(-1)![3]).toMatchObject({ action: 'withdraw', reason: null });
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'correct', reason: 'Wrong appointment', correctsEventId: 'e2' })).status).toBe(200);
+    expect(approve.mock.calls.at(-1)![3]).toMatchObject({ action: 'correct', reason: 'Wrong appointment', correctsEventId: 'e2' });
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'correct', reason: 'x', correctsEventId: 42 })).status).toBe(400);
   });
 
   it('passes the server’s refusal through — 423 while release is not active', async () => {

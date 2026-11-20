@@ -201,7 +201,17 @@ describe('ServiceReadinessCard — medical examiner approval (Phase 5G)', () => 
 });
 
 describe('ServiceReadinessCard — release workflow (Phase 5K, holds 2026-11)', () => {
-  const caps = (overrides: Record<string, boolean> = {}) => ({ canRequestRelease: false, canSignOff: false, canHold: false, canReauthorize: false, isOperator: true, isLicensedSigner: false, ...overrides });
+  const caps = (overrides: Record<string, boolean> = {}) => ({
+    canRequestRelease: false,
+    canSignOff: false,
+    canHold: false,
+    canReauthorize: false,
+    canWithdraw: false,
+    canCorrect: false,
+    isOperator: true,
+    isLicensedSigner: false,
+    ...overrides,
+  });
   const evaluation = (overrides: Record<string, unknown> = {}) => ({
     applies: true,
     released: false,
@@ -265,6 +275,59 @@ describe('ServiceReadinessCard — release workflow (Phase 5K, holds 2026-11)', 
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
     expect((await screen.findByRole('button', { name: 'Request release' })).hasAttribute('disabled')).toBe(true);
     expect(screen.getAllByText(/not active yet/).length).toBeGreaterThan(0);
+  });
+
+  const postedRelease = (fetchMock: ReturnType<typeof stubFetch>) => JSON.parse(String(fetchMock.mock.calls.find(([url]) => String(url).includes('/cremation-release'))![1]!.body));
+
+  it('a pending request can be withdrawn, with an optional reason', async () => {
+    const fetchMock = stubFetch({ preparation: view({ record: releasedRecord([ev('release_requested')]) }), canEdit: true, release: evaluation({ status: 'awaiting_signoff', capabilities: caps({ canWithdraw: true }) }) } as never, () => ({ status: 200, body: {} }));
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    fireEvent.click(await screen.findByRole('button', { name: 'Withdraw request' }));
+    expect(screen.getByText(/stays in the history/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/cremation-release'))).toBe(true));
+    expect(postedRelease(fetchMock)).toEqual({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, confirm: true, action: 'withdraw' });
+  });
+
+  it('correcting a sign-off needs a reason and names the sign-off; the history shows the correction', async () => {
+    const fetchMock = stubFetch(
+      { preparation: view({ record: releasedRecord([ev('released'), ev('release_corrected', { eventId: 'c0', correctsEventId: 'other', reason: 'Earlier note' })]) }), canEdit: true, release: evaluation({ status: 'released', released: true, capabilities: caps({ canCorrect: true, canHold: true }) }) } as never,
+      () => ({ status: 200, body: {} }),
+    );
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    expect((await screen.findByTestId('release-history')).textContent).toMatch(/Sign-off corrected/);
+    fireEvent.click(screen.getByRole('button', { name: 'Correct a sign-off' }));
+    expect(screen.getByText(/never changed/)).toBeTruthy();
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('Reason for the correction'), { target: { value: 'Wrong appointment' } });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/cremation-release'))).toBe(true));
+    expect(postedRelease(fetchMock)).toMatchObject({ action: 'correct', reason: 'Wrong appointment', correctsEventId: 'released' });
+  });
+
+  it('on hold, preparation is editable again but only with a reason, which is sent with the change', async () => {
+    const hold = { reason: 'Family changed plans', at: '2026-12-12T15:00:00.000Z', byName: 'Morgan Demo', paperworkAlreadyTransmitted: false };
+    const fetchMock = stubFetch({ preparation: view({ record: releasedRecord([ev('released'), ev('hold_placed', { reason: hold.reason })]) }), canEdit: true, release: evaluation({ status: 'on_hold', hold, capabilities: caps({ canReauthorize: true }) }) } as never);
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const reasonBox = await screen.findByTestId('hold-change-reason');
+    const select = screen.getAllByRole('combobox')[0];
+    expect(select.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(within(reasonBox).getByRole('textbox'), { target: { value: 'Family now wants a spray' } });
+    expect(select.hasAttribute('disabled')).toBe(false);
+    const option = within(select).getAllByRole('option')[1] as HTMLOptionElement;
+    fireEvent.change(select, { target: { value: option.value } });
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/service-preparation') && init?.method === 'POST')).toBe(true));
+    const post = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/service-preparation') && init?.method === 'POST')!;
+    expect(JSON.parse(String(post[1]!.body))).toMatchObject({ reason: 'Family now wants a spray' });
+  });
+
+  it('released, or with a reauthorization pending: preparation is read-only', async () => {
+    stubFetch({ preparation: view({ record: releasedRecord([ev('released'), ev('hold_placed', { reason: 'x' }), ev('reauthorization_requested')]) }), canEdit: true, release: evaluation({ status: 'awaiting_reauthorization', capabilities: caps({ canWithdraw: true }) }) } as never);
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    expect(await screen.findByText(/Withdraw the request to make a change/)).toBeTruthy();
+    expect(screen.queryByTestId('hold-change-reason')).toBeNull();
+    expect(screen.getAllByRole('combobox')[0].hasAttribute('disabled')).toBe(true);
   });
 
   it('a read-only viewer sees the status but no enabled control', async () => {

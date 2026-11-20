@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { appendReleaseEvent, currentHold, isReleasedStatus, releaseEventsOf, releaseStatusOf, ReleaseTransitionError, RELEASE_EVENT_ALLOWED_FROM } from './releaseHolds';
+import { appendReleaseEvent, correctableSignOffs, currentHold, isReleasedStatus, pendingReleaseRequest, releaseEventsOf, releaseStatusOf, ReleaseTransitionError, RELEASE_EVENT_ALLOWED_FROM } from './releaseHolds';
+import { applyPreparationChange, PreparationChangeError } from './preparationUpdates';
 import { releaseGateRefusal } from './releaseForCremation';
 import { VIEWING_PREPARATION } from './serviceDefinitions';
 import { SERVICE_TYPE_CODES } from '../workflow/serviceWorkflows';
@@ -100,7 +101,107 @@ describe('release-hold workflow', () => {
   });
 
   it('every transition rule is covered', () => {
-    expect(Object.keys(RELEASE_EVENT_ALLOWED_FROM).sort()).toEqual(['hold_placed', 'reauthorization_requested', 'reauthorized', 'release_requested', 'released']);
+    expect(Object.keys(RELEASE_EVENT_ALLOWED_FROM).sort()).toEqual([
+      'hold_placed',
+      'reauthorization_requested',
+      'reauthorized',
+      'release_corrected',
+      'release_requested',
+      'released',
+      'request_withdrawn',
+    ]);
+  });
+});
+
+describe('withdrawing a pending request', () => {
+  it('a release request goes back to Not released, and can be asked again', () => {
+    const requested = run('release_requested');
+    const withdrawn = apply(requested, event('request_withdrawn', { reason: 'Asked too early' }));
+    expect(releaseStatusOf(withdrawn)).toBe('not_released');
+    expect(pendingReleaseRequest(withdrawn)).toBeNull();
+    // It names the request it withdrew, and the request stays in the history.
+    expect(withdrawn.releaseEvents!.at(-1)!.withdrawsEventId).toBe(requested.releaseEvents![0].eventId);
+    expect(withdrawn.releaseEvents!.map((e) => e.type)).toEqual(['release_requested', 'request_withdrawn']);
+    expect(releaseStatusOf(apply(withdrawn, event('release_requested')))).toBe('awaiting_signoff');
+  });
+
+  it('a reauthorization request goes back to On hold — the hold stays in force', () => {
+    const withdrawn = apply(run('released', 'hold_placed', 'reauthorization_requested'), event('request_withdrawn'));
+    expect(releaseStatusOf(withdrawn)).toBe('on_hold');
+    expect(currentHold(withdrawn)!.type).toBe('hold_placed');
+  });
+
+  it('nothing pending: refused', () => {
+    expect(() => apply(run('released'), event('request_withdrawn'))).toThrow(ReleaseTransitionError);
+    expect(() => apply(null, event('request_withdrawn'))).toThrow(ReleaseTransitionError);
+  });
+});
+
+describe('correcting a recorded sign-off', () => {
+  it('the sign-off in force: appended with its reason; the release goes on hold; the original is untouched', () => {
+    const released = run('released');
+    const original = structuredClone(released.release);
+    const signOff = released.releaseEvents![0];
+    const corrected = apply(released, event('release_corrected', { reason: 'Recorded against the wrong appointment', correctsEventId: signOff.eventId }));
+    expect(releaseStatusOf(corrected)).toBe('on_hold');
+    expect(currentHold(corrected)!.type).toBe('release_corrected');
+    expect(currentHold(corrected)!.reason).toBe('Recorded against the wrong appointment');
+    expect(corrected.release).toEqual(original);
+    expect(corrected.releaseEvents![0]).toEqual(signOff);
+    expect(corrected.history!.at(-1)!.description).toContain('corrected');
+    // Lifting it is the normal reauthorization with a licensed sign-off.
+    expect(releaseStatusOf(apply(corrected, event('reauthorized')))).toBe('reauthorized');
+  });
+
+  it('an earlier, superseded sign-off: annotated, status unchanged', () => {
+    const record = run('released', 'hold_placed', 'reauthorized');
+    const first = record.releaseEvents![0];
+    const corrected = apply(record, event('release_corrected', { reason: 'Wrong approver selected', correctsEventId: first.eventId }));
+    expect(releaseStatusOf(corrected)).toBe('reauthorized');
+    expect(correctableSignOffs(corrected).map((e) => e.type)).toEqual(['reauthorized']);
+  });
+
+  it('refused without a reason, for a non-sign-off event, or twice for the same sign-off', () => {
+    const released = run('released');
+    const id = released.releaseEvents![0].eventId;
+    expect(() => apply(released, event('release_corrected', { correctsEventId: id }))).toThrow(/reason/);
+    const held = run('released', 'hold_placed');
+    expect(() => apply(held, event('release_corrected', { reason: 'x', correctsEventId: held.releaseEvents![1].eventId }))).toThrow(ReleaseTransitionError);
+    const once = apply(released, event('release_corrected', { reason: 'x', correctsEventId: id }));
+    expect(() => apply(once, event('release_corrected', { reason: 'again', correctsEventId: id }))).toThrow(ReleaseTransitionError);
+    expect(() => apply(null, event('release_corrected', { reason: 'x', correctsEventId: 'nope' }))).toThrow(ReleaseTransitionError);
+  });
+});
+
+describe('preparation changes and the release status', () => {
+  const change = { kind: 'item' as const, itemId: 'prep.embalming.written_permission', status: 'pending' as const };
+  const prep = (record: ServicePreparationRecord | null, reason?: string) =>
+    applyPreparationChange({ definition: VIEWING_PREPARATION, record, service: null, change, actor: { id: 'identity-x', name: 'Fictional Staff' }, now: '2026-12-20T10:00:00.000Z', eventId: `p${++n}`, reason });
+
+  it('released or reauthorized: read-only', () => {
+    expect(() => prep(run('released'), 'x')).toThrow(PreparationChangeError);
+    expect(() => prep(run('released', 'hold_placed', 'reauthorized'), 'x')).toThrow(PreparationChangeError);
+  });
+
+  it('on hold: allowed with a reason, recorded in the history as made during the hold', () => {
+    const held = run('released', 'hold_placed');
+    expect(() => prep(held)).toThrow(/reason/);
+    const changed = prep(held, 'Family changed the clothing');
+    const entry = changed.history!.at(-1)!;
+    expect(entry).toMatchObject({ duringHold: true, reason: 'Family changed the clothing' });
+    expect(entry.description).toContain('reauthorization required');
+    // Still on hold — only a reauthorization lifts it.
+    expect(releaseStatusOf(changed)).toBe('on_hold');
+  });
+
+  it('a pending reauthorization request: read-only until it is withdrawn', () => {
+    const pending = run('released', 'hold_placed', 'reauthorization_requested');
+    expect(() => prep(pending, 'x')).toThrow(/Withdraw/);
+    expect(() => prep(apply(pending, event('request_withdrawn')), 'Fix clothing')).not.toThrow();
+  });
+
+  it('before any release: unchanged — no reason needed', () => {
+    expect(prep(null).history!.at(-1)!.duringHold).toBeUndefined();
   });
 });
 

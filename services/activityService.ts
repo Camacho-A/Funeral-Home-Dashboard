@@ -1548,7 +1548,7 @@ export function recordFaxConfigurationEvent(
 export function recordServicePreparationChange(
   ctx: ActivityContext,
   caseId: string,
-  details: { description: string; target: string; previous: Record<string, unknown> | null; next: Record<string, unknown> },
+  details: { description: string; target: string; previous: Record<string, unknown> | null; next: Record<string, unknown>; reason?: string | null; duringHold?: boolean },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityEvent> {
   return record(
@@ -1561,8 +1561,8 @@ export function recordServicePreparationChange(
       previousValue: details.previous ? JSON.stringify({ [details.target]: details.previous }) : null,
       newValue: JSON.stringify({ [details.target]: details.next }),
       description: details.description,
-      metadata: null,
-      severity: 'info',
+      metadata: details.duringHold ? JSON.stringify({ duringReleaseHold: true, reason: details.reason ?? null }) : null,
+      severity: details.duringHold ? 'warning' : 'info',
     }),
     dataAdapterMode,
   );
@@ -3586,6 +3586,25 @@ export function recordCaseSequenceInitialized(
           ? `Case number sequence for ${year} initialized — next case number will be ${newNextSequence}`
           : `Case number sequence for ${year} moved from ${previousNextSequence} to ${newNextSequence} — next case number will be ${newNextSequence}`,
       metadata: JSON.stringify({ year }),
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
+/** 2026-11: the organization's case-number prefix changed. */
+export function recordCaseNumberPrefixChanged(ctx: ActivityContext, previousPrefix: string | null, newPrefix: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_NUMBER_PREFIX_CHANGED,
+      resourceType: 'organization',
+      resourceId: ctx.organizationId,
+      previousValue: JSON.stringify({ caseNumberPrefix: previousPrefix }),
+      newValue: JSON.stringify({ caseNumberPrefix: newPrefix }),
+      description: `Case number prefix changed from ${previousPrefix ?? '(none)'} to ${newPrefix}`,
+      metadata: null,
       severity: 'warning',
     }),
     dataAdapterMode,

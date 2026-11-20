@@ -59,7 +59,7 @@ function Row({ staff, isSelf, onChange, saving }: { staff: StaffCredentialSummar
       )}
 
       {isSelf ? (
-        <p className={styles.muted}>This is you. Another administrator must enter, verify or authorize your credentials.</p>
+        <p className={styles.muted}>This is you. Someone else who manages credentials must enter, verify or authorize yours.</p>
       ) : (
         <div className={styles.actions}>
           <button type="button" className={styles.button} disabled={saving} onClick={() => setMode(mode === 'license' ? null : 'license')}>
