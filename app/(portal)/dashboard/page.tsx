@@ -18,6 +18,7 @@ import { DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip';
 import { NeedsAttentionPanel } from '@/components/dashboard/NeedsAttentionPanel';
 import { CasesByStagePanel, type StageBarRow, type StagePreviewCase } from '@/components/dashboard/CasesByStagePanel';
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel';
+import { UpcomingServicesPanel } from '@/components/dashboard/UpcomingServicesPanel';
 import styles from './page.module.css';
 
 /**
@@ -170,6 +171,7 @@ export default function DashboardPage() {
       <div className={styles.mainGrid}>
         <div className={styles.attentionArea}>
           <NeedsAttentionPanel cases={urgentCases} slaSummary={slaSummary} />
+          <UpcomingServicesPanel />
         </div>
         <div className={styles.stageArea}>
           <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} casesByStage={casesByStage} />

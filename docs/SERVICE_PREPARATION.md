@@ -301,6 +301,16 @@ Gus crematory sending, `sendingEnabled`, is separately off).
 - Approval to enforce the Send to Crematory release gate for Gus
   (`requireReleaseAfterService: true`).
 
+## Upcoming services on the Dashboard (Phase 5L)
+
+Organizations with service preparation (Gus) see **Upcoming services** under
+Needs Attention: each Viewing / Final Goodbye in the next 14 days — and any
+held in the last 7 days that is not yet released for cremation — with
+`done/total prepared`, overdue steps, and Ready / N to do / N overdue /
+Awaiting release. Read-only (`GET /api/service-preparation/upcoming`,
+case.read); each row opens the case. Mass (draft) is never listed. Manors
+never sees or requests it.
+
 ## Medical examiner findings (Phase 5F.1, read-only review)
 
 What SOLIS records today:

@@ -1,0 +1,90 @@
+/* Gus Phase 5L — Upcoming services (dashboard). */
+.card {
+  min-width: 0;
+  margin-top: var(--space-14);
+  padding: 18px 20px 14px;
+  border: 1px solid var(--sx-card-border);
+  border-radius: var(--sx-card-radius);
+  background: var(--sx-card);
+  box-shadow: var(--sx-card-shadow);
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--solis-border-soft);
+  color: var(--color-text-primary);
+  text-decoration: none;
+  font-size: 13.5px;
+}
+
+.row:hover,
+.row:focus-visible {
+  background: var(--color-surface-hover, var(--solis-border-soft));
+}
+
+.when {
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.who strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+}
+
+.empty {
+  padding: 12px 10px;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'who badge'
+      'when badge';
+  }
+  .when {
+    grid-row: 2;
+    grid-column: 1;
+    font-size: 12.5px;
+  }
+  .who {
+    grid-row: 1;
+    grid-column: 1;
+  }
+}
