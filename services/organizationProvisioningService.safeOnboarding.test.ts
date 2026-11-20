@@ -178,6 +178,7 @@ const { listMembershipsForIdentity, isActiveMembership } = await import('./membe
 const { createCustomRole, seedPlatformDefaultRoles, seedManorsCaseNumberManagePermission } = await import('./roleService');
 const { runDefaultRoleReconciliation, GlobalRbacMutationRefusedError } = await import('./rbacReconciliationService');
 const { resolveMembershipAuthorizationContext } = await import('../lib/auth/resolveMembershipAuthorizationContext');
+const { getRegisteredOrganizationProfile } = await import('../domain/organization/organizationProfiles');
 const { DEFAULT_ROLE_DEFINITIONS } = await import('../domain/rbac/defaultRoles');
 const ids = await import('../domain/rbac/deterministicIds');
 const { buildWixOrganizationData } = await import('../lib/wixOrganizationMapper');
@@ -215,7 +216,9 @@ const LIVE_GAP = [
   { roleKey: 'manager', permissionKey: 'caseOrder.customItems' },
 ] as const;
 /** Gus's standing override (its profile): catalog changes are Administrator-only. */
-const GUS_STANDING = [{ roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke' }] as const;
+// Gus's standing overrides as its profile declares them: the Administrator-only
+// catalog, plus the operational alignment of its leadership roles (2026-11).
+const GUS_STANDING: readonly { roleKey: string; permissionKey: string; action: 'grant' | 'revoke' }[] = getRegisteredOrganizationProfile(GUS).features.standingRoleOverrides;
 
 function put(collectionName: string, id: string, data: Row) {
   let c = fake.store.get(collectionName);
@@ -379,12 +382,14 @@ describe('full onboarding of gus-camacho-jr against a shared backend holding Man
 
     for (const def of DEFAULT_ROLE_DEFINITIONS) {
       const gus = await resolvePermissions({ identityId: 'x', organizationId: GUS, roleKey: def.key }, 'wix');
-      const revoked = new Set<string>(GUS_STANDING.filter((s) => s.roleKey === def.key).map((s) => s.permissionKey));
-      expect([...gus].sort(), def.key).toEqual(def.permissions.filter((p) => !revoked.has(p)).sort());
+      const mine = GUS_STANDING.filter((s) => s.roleKey === def.key);
+      const revoked = new Set<string>(mine.filter((s) => s.action === 'revoke').map((s) => s.permissionKey));
+      const granted = mine.filter((s) => s.action === 'grant').map((s) => s.permissionKey);
+      expect([...gus].sort(), def.key).toEqual([...new Set([...def.permissions.filter((p) => !revoked.has(p)), ...granted])].sort());
     }
     const overrides = [...(fake.store.get('organizationRolePermissionOverrides')?.values() ?? [])].filter((o) => o.organizationId === GUS);
     expect(overrides.map((o) => `${o.roleKey}:${o.permissionKey}:${o.action}`).sort()).toEqual(
-      [...LIVE_GAP.map((g) => `${g.roleKey}:${g.permissionKey}:grant`), ...GUS_STANDING.map((s) => `${s.roleKey}:${s.permissionKey}:${s.action}`)].sort(),
+      [...new Set([...LIVE_GAP.map((g) => `${g.roleKey}:${g.permissionKey}:grant`), ...GUS_STANDING.map((s) => `${s.roleKey}:${s.permissionKey}:${s.action}`)])].sort(),
     );
   });
 

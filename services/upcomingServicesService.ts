@@ -1,6 +1,7 @@
 import { getRegisteredOrganizationProfile } from '../domain/organization/organizationProfiles';
 import { SERVICE_PREPARATION_DEFINITIONS, servicePreparationFor } from '../domain/servicePreparation/serviceDefinitions';
 import { selectServiceEvent, summarizeServiceReadiness } from '../domain/servicePreparation/readiness';
+import { isReleasedStatus, releaseStatusOf } from '../domain/servicePreparation/releaseHolds';
 import type { DataAdapterMode } from '../lib/env';
 import { listAppointments } from './scheduling/appointmentReads';
 import { loadCaseOnServer } from './serverCaseLoader';
@@ -31,6 +32,8 @@ export type UpcomingServiceSummary = {
   /** Cremation waits for this service and it has not been released yet. */
   awaitingRelease: boolean;
   released: boolean;
+  /** Released, then placed on hold (2026-11). */
+  onHold: boolean;
 };
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -58,7 +61,9 @@ export async function listUpcomingServices(organizationId: string, mode: DataAda
       if (!service) return null;
       const record = case_.servicePreparation && case_.servicePreparation.definitionKey === definition.key ? case_.servicePreparation : null;
       const readiness = summarizeServiceReadiness({ definition, record, service, now });
-      const released = Boolean(record?.release);
+      const status = releaseStatusOf(record);
+      const released = isReleasedStatus(status);
+      const onHold = status === 'on_hold' || status === 'awaiting_reauthorization';
       // A completed service drops off once released (or if cremation doesn't wait for it).
       if (service.status === 'completed' && (released || readiness.holdsCremation === false)) return null;
       const applicable = readiness.items.filter((i) => i.status !== 'not_requested');
@@ -77,6 +82,7 @@ export async function listUpcomingServices(organizationId: string, mode: DataAda
         ready: readiness.ready,
         awaitingRelease: readiness.holdsCremation !== false && !released,
         released,
+        onHold,
       };
     }),
   );

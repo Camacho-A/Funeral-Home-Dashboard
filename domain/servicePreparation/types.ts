@@ -176,6 +176,39 @@ export type ReleaseForCremationRecord = {
   approval?: ReleaseApprovalSnapshot;
 };
 
+/**
+ * Release-hold workflow (Gus, 2026-11). Every step is one append-only event;
+ * the current status is worked out from them (releaseHolds.ts). The first
+ * `released` event's record is also kept in `release` and never changed.
+ *
+ *   release_requested         — an Administrator, Manager or Funeral Director
+ *                               asked for release; a licensed director's
+ *                               sign-off is still needed
+ *   released                  — released (licensed sign-off recorded)
+ *   hold_placed               — on hold (reason required); sending blocked
+ *   reauthorization_requested — asked to lift the hold; sign-off needed
+ *   reauthorized              — hold lifted after the latest requirements
+ *                               were rechecked and a licensed director signed
+ */
+export type ReleaseEventType = 'release_requested' | 'released' | 'hold_placed' | 'reauthorization_requested' | 'reauthorized';
+
+export type ReleaseEvent = {
+  eventId: string;
+  type: ReleaseEventType;
+  at: string;
+  actorId: string;
+  actorName: string | null;
+  roleKey: string;
+  /** Required for a hold. */
+  reason?: string | null;
+  /** The licensed sign-off (released / reauthorized). */
+  approval?: ReleaseApprovalSnapshot | null;
+  /** A hold placed after paperwork already reached (or may have reached)
+      the crematory: staff must contact the crematory. A hold in SOLIS
+      never recalls anything. */
+  paperworkAlreadyTransmitted?: boolean;
+};
+
 /** The approving director and every satisfied prerequisite, frozen at the
     moment of release (domain/servicePreparation/releaseForCremation.ts). */
 export type ReleaseApprovalSnapshot = {
@@ -208,6 +241,8 @@ export type ServicePreparationRecord = {
   details: Record<string, PreparationValueRecord>;
   items: Record<string, PreparationItemRecord>;
   release?: ReleaseForCremationRecord | null;
+  /** Release-hold workflow events, oldest first (append-only). */
+  releaseEvents?: ReleaseEvent[];
   /** Append-only audit history (Phase 5E): one entry per saved change,
       written in the SAME revision-checked write as the change itself, so a
       change can never exist without its entry. Never edited or trimmed.
@@ -222,8 +257,8 @@ export type PreparationAuditEntry = {
   /** 'release' (Phase 5K): the release for cremation itself. */
   target: { kind: 'item' | 'choice' | 'detail' | 'release'; key: string };
   description: string;
-  previous: PreparationItemRecord | PreparationValueRecord | ReleaseForCremationRecord | null;
-  next: PreparationItemRecord | PreparationValueRecord | ReleaseForCremationRecord;
+  previous: PreparationItemRecord | PreparationValueRecord | ReleaseForCremationRecord | ReleaseEvent | null;
+  next: PreparationItemRecord | PreparationValueRecord | ReleaseForCremationRecord | ReleaseEvent;
   actorId: string;
   actorName: string | null;
   at: string;

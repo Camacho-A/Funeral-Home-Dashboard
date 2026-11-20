@@ -11,6 +11,7 @@ import {
   organizationShortName,
   vaNotificationFuneralHomeLabel,
   vaNotificationStaffPhrase,
+  GUS_OPERATIONAL_ALIGNMENT,
 } from './organizationProfiles';
 import { isFamilyPortalEnabled, ORGANIZATION_OVERRIDES as FAMILY_PORTAL_OVERRIDES } from './familyPortalCapability';
 import { isSignatureRequestsEnabled, ORGANIZATION_OVERRIDES as SIGNATURE_OVERRIDES } from './signatureRequestCapability';
@@ -54,13 +55,14 @@ describe('organization profile registry', () => {
       workflowApprovalRequired: true,
       servicePreparation: true,
       cremationReleaseApproverRoleKeys: ['funeralDirector'],
+      cremationReleaseOperatorRoleKeys: ['administrator', 'manager', 'funeralDirector'],
       funeralDirectorLicenseReverifyDays: 365,
       funeralDirectorCredentials: true,
       enforceHiddenModulesServerSide: true,
       certifierRequiredCaseFields: ['certifierName', 'certifierFax'],
       cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },
       sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured', requireReleaseAfterService: false },
-      standingRoleOverrides: [{ roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke', reason: 'Catalog changes are Administrator-only at first (decided 2026-11).' }],
+      standingRoleOverrides: [{ roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke', reason: 'Catalog changes are Administrator-only at first (decided 2026-11).' }, ...GUS_OPERATIONAL_ALIGNMENT],
     });
     expect(gus.pinnedFeatures).toEqual(['familyPortalEnabled', 'signatureRequestsEnabled', 'hiddenModules']);
     expect(gus.receiptFooter).toBeNull();

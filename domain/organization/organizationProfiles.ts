@@ -352,6 +352,12 @@ export type OrganizationFeaturePreferences = {
       granted StaffProfile.funeralDirectorAuthorization PLUS the license.
       Empty = nobody. Platform default: empty. Release is not active yet. */
   cremationReleaseApproverRoleKeys: readonly string[];
+  /** Release-hold workflow (2026-11): the roles that may REQUEST a release,
+      place a hold and request reauthorization — operational access, decided
+      by the funeral home. Never a licensed sign-off: that still needs
+      `cremationReleaseApproverRoleKeys` (or a granted authorization) AND a
+      verified license. Platform default: nobody. */
+  cremationReleaseOperatorRoleKeys: readonly string[];
   /** Gus Phase 5F.1: how often a funeral director license must be
       re-verified, in days. null = NOT DECIDED (age not enforced; reported
       as pending). A configuration decision awaiting approval — 365 is only
@@ -471,6 +477,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   workflowApprovalRequired: false,
   servicePreparation: false,
   cremationReleaseApproverRoleKeys: [],
+  cremationReleaseOperatorRoleKeys: [],
   funeralDirectorLicenseReverifyDays: null,
   funeralDirectorCredentials: false,
 });
@@ -673,6 +680,21 @@ const MANORS_PROFILE: OrganizationProfileEntry = {
  * SSN, Medical Examiner variant, retired/relabelled items, automatic
  * checklist completion) stay off.
  */
+/** Gus (2026-11): operational permissions aligned across Administrator,
+    Manager and Funeral Director — see docs/GUS_ROLE_PERMISSIONS.md. */
+const GUS_OPERATIONAL_REASON = 'Administrators, Managers and Funeral Directors have the same operational access (decided 2026-11).';
+export const GUS_OPERATIONAL_ALIGNMENT: readonly StandingRoleOverride[] = Object.freeze([
+  { roleKey: 'funeralDirector', permissionKey: 'caseOrder.customItems', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'resource.manage', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'user.read', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'report.export', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'dashboard.manage', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'merchandise.manage', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'funeralDirector', permissionKey: 'inventory.adjust', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'manager', permissionKey: 'accounting.view', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+  { roleKey: 'manager', permissionKey: 'accounting.report', action: 'grant', reason: GUS_OPERATIONAL_REASON },
+] as const satisfies readonly StandingRoleOverride[]);
+
 const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
   displayName: 'Gus Camacho Jr. Funeral Home',
   shortName: 'Gus Camacho Jr.',
@@ -696,6 +718,10 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // Gus policy (confirmed 2026-11): ONLY an authorized, verified Funeral
     // Director may release. Administrators are not a release role.
     cremationReleaseApproverRoleKeys: ['funeralDirector'],
+    // Decided by the funeral home (2026-11): Administrators, Managers and
+    // Funeral Directors have the same operational access to release
+    // requests and holds. The licensed sign-off stays separate.
+    cremationReleaseOperatorRoleKeys: ['administrator', 'manager', 'funeralDirector'],
     // Gus's internal policy (Phase 5G): re-verify a funeral director
     // license at least every 365 days. Configurable here.
     funeralDirectorLicenseReverifyDays: 365,
@@ -714,6 +740,13 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     // the platform defaults already.
     standingRoleOverrides: [
       { roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke', reason: 'Catalog changes are Administrator-only at first (decided 2026-11).' },
+      // Decided by the funeral home (2026-11): Administrators, Managers and
+      // Funeral Directors have the same OPERATIONAL access. These close the
+      // operational gaps between the three default roles. Security,
+      // financial-authority and configuration permissions are unchanged
+      // (docs/GUS_ROLE_PERMISSIONS.md), and none of this makes anyone a
+      // licensed funeral director.
+      ...GUS_OPERATIONAL_ALIGNMENT,
     ],
   },
   // Decided by the funeral home: no Family Portal or e-signatures, and these

@@ -620,6 +620,10 @@ export const ACTIVITY_EVENT_TYPES = {
       the case's service preparation history. Inactive until approved
       (RELEASE_FOR_CREMATION_AVAILABLE). */
   CASE_RELEASED_FOR_CREMATION: 'case.released_for_cremation',
+  /** Release-hold workflow (2026-11): a release requested, placed on hold,
+      reauthorization requested, or reauthorized. Mirrors the event in the
+      case's service preparation history. Inactive until approved. */
+  CASE_RELEASE_WORKFLOW_UPDATED: 'case.release_workflow_updated',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

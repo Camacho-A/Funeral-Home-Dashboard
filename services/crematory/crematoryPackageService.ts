@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { crematoryReleaseGate } from '../../domain/servicePreparation/releaseForCremation';
+import { crematoryReleaseGate, releaseGateRefusal } from '../../domain/servicePreparation/releaseForCremation';
 import type { DataAdapterMode } from '@/lib/env';
 import type { Case, CaseCrematoryRecord, CaseUpdate } from '@/types/case';
 import type { CaseDocument } from '@/types/caseDocument';
@@ -793,6 +793,13 @@ export async function buildCrematoryPackageNow(ctx: ActivityContext, caseId: str
  * earlier send, SOLIS already sent it (or is sending it), or a decision is
  * already recorded. Never changes the workflow checklist.
  */
+/** Release gate (2026-11): nothing is recorded as sent while the case
+    must be — and is not — released for cremation (or is on hold). */
+function refuseUnreleased(c: Case) {
+  const refusal = releaseGateRefusal(c, sendToCrematoryConfig(c.organizationId)?.requireReleaseAfterService === true);
+  if (refusal) throw new CrematoryError(refusal, 409);
+}
+
 export async function recordPreviousSend(ctx: ActivityContext, caseId: string, input: PreviousSendInput, mode: DataAdapterMode, canSend = false): Promise<CrematoryCaseSummary> {
   assertSendToCrematoryEnabled(ctx.organizationId);
   const case_ = await loadCase(ctx.organizationId, caseId, mode);
@@ -806,6 +813,7 @@ export async function recordPreviousSend(ctx: ActivityContext, caseId: string, i
     if (solisSendOnRecord(c)) throw new CrematoryError('SOLIS already has a send for this case, so there is nothing to record here.', 409);
     if (c.crematory?.previousSend) throw new CrematoryError('What happened to the earlier send is already recorded for this case.', 409);
     if (!permitSentChecked(c)) throw new CrematoryError('This case does not show a possible earlier send to the crematory.', 409);
+    if (valid.decision === 'sent_outside_solis') refuseUnreleased(c);
   };
   refusal(case_);
   const recordedAt = new Date().toISOString();
@@ -862,6 +870,7 @@ export async function correctPreviousSend(
     if (!current) throw new CrematoryError('There is no earlier-send record on this case to correct.', 409);
     // Two corrections at once: the second sees the first and is refused.
     if (current.recordedAt !== before?.recordedAt) throw new CrematoryError('The earlier-send record changed while you were correcting it. Reopen and try again.', 409);
+    if (valid.decision === 'sent_outside_solis') refuseUnreleased(c);
   };
   refusal(case_);
   const correctedAt = now.toISOString();

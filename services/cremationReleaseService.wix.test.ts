@@ -57,7 +57,7 @@ vi.mock('./caseWriteService', () => ({
   }),
 }));
 
-const { approveCremationRelease, CremationReleaseError } = await import('./cremationReleaseService');
+const { approveCremationRelease, CremationReleaseError, performReleaseAction } = await import('./cremationReleaseService');
 const caller = { organizationId: GUS, userId: 'identity-gus-director', role: 'funeralDirector' };
 
 beforeEach(() => {
@@ -91,7 +91,7 @@ describe('release on the live path (fake Wix)', () => {
   it('saves the release with its history entry in one conditional write', async () => {
     const { release } = await approveCremationRelease(caller, 'gus-case-010', 'wix', { now: NOW, eventId: 'release-live-1' });
     expect(state.writes).toBe(1);
-    expect(release.eventId).toBe('release-live-1');
+    expect(release!.eventId).toBe('release-live-1');
     expect(state.case_.servicePreparation!.history!.at(-1)!.eventId).toBe('release-live-1');
   });
 
@@ -116,7 +116,7 @@ describe('release on the live path (fake Wix)', () => {
   it('an unclear answer is settled by reading back: saved → success', async () => {
     state.write = 'apply-then-throw';
     const { release } = await approveCremationRelease(caller, 'gus-case-010', 'wix', { now: NOW, eventId: 'release-live-2' });
-    expect(release.eventId).toBe('release-live-2');
+    expect(release!.eventId).toBe('release-live-2');
     expect(state.writes).toBe(1);
   });
 
@@ -132,9 +132,25 @@ describe('release on the live path (fake Wix)', () => {
     expect(state.writes).toBe(2);
   });
 
-  it('someone who is not a licensed Funeral Director is refused before any write', async () => {
-    director.value = { ...director.value, funeralDirectorLicense: null };
-    expect((await refusal(approveCremationRelease(caller, 'gus-case-010', 'wix', { now: NOW }))).status).toBe(403);
+  it('someone outside the operational roles and not a licensed director is refused before any write', async () => {
+    expect((await refusal(approveCremationRelease({ ...caller, role: 'arranger' }, 'gus-case-010', 'wix', { now: NOW }))).status).toBe(403);
     expect(state.writes).toBe(0);
+  });
+
+  it('a Funeral Director whose license is missing records a request, not a release', async () => {
+    director.value = { ...director.value, funeralDirectorLicense: null };
+    const result = await approveCremationRelease(caller, 'gus-case-010', 'wix', { now: NOW });
+    expect(result.status).toBe('awaiting_signoff');
+    expect(result.release).toBeNull();
+  });
+
+  it('a hold whose save gets an unclear answer is settled by read-back; a second hold is then refused, not duplicated', async () => {
+    await approveCremationRelease(caller, 'gus-case-010', 'wix', { now: NOW });
+    state.write = 'apply-then-throw';
+    const held = await performReleaseAction({ ...caller, role: 'manager', userId: 'identity-gus-manager-fictional' }, 'gus-case-010', 'wix', { action: 'hold', reason: 'Family asked to wait', now: NOW, eventId: 'hold-live' });
+    expect(held.status).toBe('on_hold');
+    state.write = 'apply';
+    expect((await refusal(performReleaseAction({ ...caller, role: 'manager' }, 'gus-case-010', 'wix', { action: 'hold', reason: 'again', now: NOW }))).status).toBe(409);
+    expect(state.case_.servicePreparation!.releaseEvents!.filter((e) => e.type === 'hold_placed')).toHaveLength(1);
   });
 });

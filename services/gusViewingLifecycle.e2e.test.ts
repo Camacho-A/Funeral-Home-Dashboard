@@ -33,7 +33,7 @@ vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => 
 const { changeServicePreparation, getServicePreparation } = await import('./servicePreparationService');
 const { recordMedicalExaminerApprovalForCase } = await import('./medicalExaminerApprovalService');
 const { changeCredentials, getCredentialRecord } = await import('./funeralDirectorCredentialService');
-const { approveCremationRelease, evaluateCremationReleaseForCaller } = await import('./cremationReleaseService');
+const { approveCremationRelease, evaluateCremationReleaseForCaller, performReleaseAction } = await import('./cremationReleaseService');
 const { getCrematoryCaseSummary } = await import('./crematory/crematoryPackageService');
 const { listUpcomingServices } = await import('./upcomingServicesService');
 const { GUS_CAMACHO_ORGANIZATION_ID } = await import('../domain/organization/organizationProfiles');
@@ -44,6 +44,7 @@ const NOW = new Date().toISOString();
 const DAY = 24 * 60 * 60 * 1000;
 const admin = { organizationId: GUS, userId: 'identity-gus-admin', role: 'administrator' };
 const director = { organizationId: GUS, userId: 'identity-gus-director', role: 'funeralDirector' };
+const manager = { organizationId: GUS, userId: 'identity-gus-manager-fictional', role: 'manager' };
 const ctxOf = (who: typeof admin, name: string) => ({ ctx: { organizationId: GUS, actorIdentityId: who.userId, actorMembershipId: null, actorRoleKey: who.role, correlationId: 'c' }, name });
 
 const originals = caseFixtures.map((c) => c);
@@ -97,8 +98,11 @@ describe('Gus Cremation with Viewing — from scheduling to release', () => {
     );
     expect((await evaluateCremationReleaseForCaller(director, CASE, 'mock', NOW))!.allPrerequisitesMet).toBe(true);
 
-    // 6. The administrator is not a Funeral Director: refused. Nor can they authorize themselves.
-    expect(await refusalStatus(approveCremationRelease(admin, CASE, 'mock', { now: NOW }))).toBe(403);
+    // 6. The administrator (operational role, no license) REQUESTS release; it waits for a licensed sign-off.
+    expect((await performReleaseAction(admin, CASE, 'mock', { action: 'release', now: NOW, eventId: 'req' })).status).toBe('awaiting_signoff');
+    expect(await releaseGate()).toMatchObject({ ok: false });
+    expect(await refusalStatus(performReleaseAction(admin, CASE, 'mock', { action: 'sign_off', now: NOW }))).toBe(403);
+    // Nor can they authorize themselves.
     expect(await refusalStatus(changeCredentials(staff.ctx, { staffProfileId: 'staff-gus-admin', change: { kind: 'grant_authorization' }, expectedRevision: 0, actorName: staff.name }, 'mock'))).toBe(403);
 
     // 7. The director (someone else) enters and verifies the administrator's license and authorizes them.
@@ -109,17 +113,33 @@ describe('Gus Cremation with Viewing — from scheduling to release', () => {
     await changeCredentials(dir.ctx, { staffProfileId: adminStaffId, change: { kind: 'grant_authorization' }, expectedRevision: 2, actorName: dir.name, now: NOW }, 'mock');
     expect((await getCredentialRecord(GUS, adminStaffId, 'mock'))!.history.map((h) => h.action)).toEqual(['license_set', 'license_verified', 'authorization_granted']);
 
-    // 8. Now the authorized, licensed administrator releases.
-    const { release } = await approveCremationRelease(admin, CASE, 'mock', { now: NOW, eventId: 'lifecycle-release' });
-    expect(release.approval).toMatchObject({ basis: 'funeral_director_authorization', licenseNumber: 'FD-FICTIONAL-0002' });
-
-    // 9. Afterwards: the send requirement is met, the Dashboard drops it, preparation is read-only, and a second release is refused.
+    // 8. Now authorized and licensed, the administrator signs off — the requirements are rechecked at that moment.
+    const signed = await performReleaseAction(admin, CASE, 'mock', { action: 'sign_off', now: NOW, eventId: 'lifecycle-release' });
+    expect(signed.status).toBe('released');
+    expect(signed.event.approval).toMatchObject({ basis: 'funeral_director_authorization', licenseNumber: 'FD-FICTIONAL-0002' });
     expect(await releaseGate()).toMatchObject({ ok: true });
     expect(await listUpcomingServices(GUS, 'mock', NOW)).toEqual([]);
+
+    // 9. A Manager places a hold (reason required): sending is blocked again; nothing had been sent.
+    expect(await refusalStatus(performReleaseAction(manager, CASE, 'mock', { action: 'hold', reason: '  ', now: NOW }))).toBe(400);
+    const held = await performReleaseAction(manager, CASE, 'mock', { action: 'hold', reason: 'Family asked to wait for a relative', actorName: 'Morgan Demo', now: NOW, eventId: 'hold-1' });
+    expect(held.status).toBe('on_hold');
+    expect(held.event.paperworkAlreadyTransmitted).toBe(false);
+    expect(await releaseGate()).toMatchObject({ ok: false });
+    expect((await getServicePreparation(GUS, CASE, 'mock'))!.record!.release!.eventId).toBe('lifecycle-release'); // the original release is kept
+
+    // 10. The Manager asks to lift it; a licensed director signs off after the requirements are rechecked.
+    expect((await performReleaseAction(manager, CASE, 'mock', { action: 'reauthorize', now: NOW, eventId: 'reauth-req' })).status).toBe('awaiting_reauthorization');
+    expect(await releaseGate()).toMatchObject({ ok: false });
+    expect((await performReleaseAction(director, CASE, 'mock', { action: 'sign_off', now: NOW, eventId: 'reauth' })).status).toBe('reauthorized');
+    expect(await releaseGate()).toMatchObject({ ok: true });
+
+    // Afterwards: preparation stays read-only and a second release is refused; every step is in the history.
     expect(await refusalStatus(changeServicePreparation(staff.ctx, CASE, { change: { kind: 'item', itemId: 'prep.crematory.notified', status: 'completed' }, basis: { at: null }, actorName: staff.name }, 'mock'))).toBe(400);
-    expect(await refusalStatus(approveCremationRelease(director, CASE, 'mock', { now: NOW }))).toBe(409);
+    expect(await refusalStatus(performReleaseAction(director, CASE, 'mock', { action: 'release', now: NOW }))).toBe(409);
     const prep = (await getServicePreparation(GUS, CASE, 'mock'))!.record!;
-    expect(prep.history!.map((h) => h.target.kind)).toEqual(['item', 'item', 'release']);
+    expect(prep.history!.map((h) => h.target.key)).toEqual(['prep.embalming.written_permission', 'prep.day_of.identification_verified', 'release_requested', 'released', 'hold_placed', 'reauthorization_requested', 'reauthorized']);
+    expect(prep.releaseEvents!.map((e) => e.eventId)).toEqual(['req', 'lifecycle-release', 'hold-1', 'reauth-req', 'reauth']);
 
     // Activity: two preparation changes, the ME approval, three credential changes, one release — and nothing sent.
     const types = activityEventFixtures.map((e) => e.eventType);
@@ -127,6 +147,7 @@ describe('Gus Cremation with Viewing — from scheduling to release', () => {
     expect(types.filter((t) => t === ACTIVITY_EVENT_TYPES.MEDICAL_EXAMINER_APPROVAL_RECORDED)).toHaveLength(1);
     expect(types.filter((t) => t === ACTIVITY_EVENT_TYPES.FUNERAL_DIRECTOR_CREDENTIAL_CHANGED)).toHaveLength(3);
     expect(types.filter((t) => t === ACTIVITY_EVENT_TYPES.CASE_RELEASED_FOR_CREMATION)).toHaveLength(1);
+    expect(types.filter((t) => t === ACTIVITY_EVENT_TYPES.CASE_RELEASE_WORKFLOW_UPDATED)).toHaveLength(4);
     expect(types.some((t) => /crematory\.(sent|send)/.test(t))).toBe(false);
   });
 });

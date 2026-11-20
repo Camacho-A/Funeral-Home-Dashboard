@@ -17,7 +17,8 @@ vi.mock('@/domain/organization/organizationProfiles', async (importOriginal) => 
   };
 });
 
-const { getCrematoryCaseSummary } = await import('./crematoryPackageService');
+const { getCrematoryCaseSummary, recordPreviousSend } = await import('./crematoryPackageService');
+const { crematorySentChecklistKeys } = await import('@/domain/crematory/sentChecklistItems');
 const { caseFixtures } = await import('../__mocks__/fixtures');
 const { GUS_CAMACHO_ORGANIZATION_ID, MANORS_ORGANIZATION_ID } = await import('@/domain/organization/organizationProfiles');
 
@@ -51,5 +52,49 @@ describe('release gate on (test only)', () => {
     expect(await gate(GUS, direct.id)).toBeUndefined();
     const manors = caseFixtures.find((c) => c.organizationId === MANORS_ORGANIZATION_ID && c.caseType === 'cremation')!;
     expect(await gate(MANORS_ORGANIZATION_ID, manors.id)).toBeUndefined();
+  });
+});
+
+const releasedPrep = (events: unknown[]) => ({
+  definitionKey: 'prep.viewing',
+  definitionVersion: 2,
+  serviceAppointmentId: null,
+  choices: {},
+  details: {},
+  items: {},
+  release: { releasedAt: '2026-12-11T15:00:00.000Z', releasedBy: 'identity-gus-director', releasedByName: 'Jordan Demo', roleKey: 'funeralDirector', eventId: 'r1' },
+  releaseEvents: events,
+});
+const ev = (type: string, extra: Record<string, unknown> = {}) => ({ eventId: type, type, at: '2026-12-11T15:00:00.000Z', actorId: 'x', actorName: 'Morgan Demo', roleKey: 'manager', ...extra });
+
+describe('holds and indirect paths (gate on, test only)', () => {
+  it('a hold blocks sending again, and says why; reauthorization unblocks it', async () => {
+    const i = caseFixtures.findIndex((c) => c.id === 'gus-case-010' && c.organizationId === GUS);
+    caseFixtures[i] = { ...caseFixtures[i], servicePreparation: releasedPrep([ev('released'), ev('hold_placed', { reason: 'Family asked to wait' })]) as never };
+    const held = await gate(GUS, 'gus-case-010');
+    expect(held).toMatchObject({ ok: false });
+    expect(held!.detail).toMatch(/on hold \(Family asked to wait\)/);
+    caseFixtures[i] = { ...caseFixtures[i], servicePreparation: releasedPrep([ev('released'), ev('hold_placed', { reason: 'x' }), ev('reauthorized', { approval: {} })]) as never };
+    expect(await gate(GUS, 'gus-case-010')).toMatchObject({ ok: true });
+  });
+
+  it('a pending reauthorization request still blocks sending', async () => {
+    const i = caseFixtures.findIndex((c) => c.id === 'gus-case-010' && c.organizationId === GUS);
+    caseFixtures[i] = { ...caseFixtures[i], servicePreparation: releasedPrep([ev('released'), ev('hold_placed', { reason: 'x' }), ev('reauthorization_requested')]) as never };
+    expect(await gate(GUS, 'gus-case-010')).toMatchObject({ ok: false });
+  });
+
+  it('recording a send "made outside SOLIS" is refused for an unreleased or held case; "not previously sent" is still allowed', async () => {
+    const i = caseFixtures.findIndex((c) => c.id === 'gus-case-010' && c.organizationId === GUS);
+    const keys = crematorySentChecklistKeys(caseFixtures[i]);
+    expect(keys.length).toBeGreaterThan(0);
+    caseFixtures[i] = { ...caseFixtures[i], checklistState: { ...caseFixtures[i].checklistState, ...Object.fromEntries(keys.map((k) => [k, true])) } };
+    const ctx = { organizationId: GUS, actorIdentityId: 'identity-gus-admin', actorMembershipId: null, actorRoleKey: 'administrator', correlationId: 'c' };
+    const outside = { decision: 'sent_outside_solis', method: 'email', sentOn: null, verification: 'Checked the shared mailbox sent items (fictional)' };
+    await expect(recordPreviousSend(ctx, 'gus-case-010', outside, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('must be released for cremation') });
+    caseFixtures[i] = { ...caseFixtures[i], servicePreparation: releasedPrep([ev('released'), ev('hold_placed', { reason: 'Family asked to wait' })]) as never };
+    await expect(recordPreviousSend(ctx, 'gus-case-010', outside, 'mock')).rejects.toMatchObject({ status: 409, message: expect.stringContaining('on hold') });
+    const notSent = { decision: 'not_previously_sent', verification: 'Checked the shared mailbox sent items (fictional)', confirmedChecked: true };
+    await expect(recordPreviousSend(ctx, 'gus-case-010', notSent, 'mock')).resolves.toBeTruthy();
   });
 });

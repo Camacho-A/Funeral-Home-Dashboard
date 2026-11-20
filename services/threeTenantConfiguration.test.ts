@@ -142,7 +142,9 @@ describe('documents, integrations and roles', () => {
 
   it('role overrides are per home: Manors none, Gus its Administrator-only catalog, the third home none', () => {
     expect(getRegisteredOrganizationProfile(MANORS).features.standingRoleOverrides).toEqual([]);
-    expect(getRegisteredOrganizationProfile(GUS).features.standingRoleOverrides).toHaveLength(1);
+    // Its Administrator-only catalog, plus the operational alignment of its three leadership roles (2026-11).
+    expect(getRegisteredOrganizationProfile(GUS).features.standingRoleOverrides.filter((o) => o.action === 'revoke')).toHaveLength(1);
+    expect(getRegisteredOrganizationProfile(GUS).features.standingRoleOverrides.every((o) => o.action === 'revoke' || ['manager', 'funeralDirector'].includes(o.roleKey))).toBe(true);
     expect(getRegisteredOrganizationProfile(THIRD).features.standingRoleOverrides).toEqual([]);
   });
 });

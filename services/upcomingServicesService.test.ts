@@ -43,6 +43,19 @@ describe('listUpcomingServices', () => {
     const c = caseFixtures[index('gus-case-010')];
     caseFixtures[index('gus-case-010')] = { ...c, servicePreparation: { ...c.servicePreparation!, release: { releasedAt: NOW, releasedBy: 'identity-gus-director', releasedByName: 'Jordan Demo', roleKey: 'funeralDirector' } } };
     expect(await listUpcomingServices(GUS, 'mock', NOW)).toEqual([]);
+    // Placed on hold: back on the list, marked on hold.
+    const r = caseFixtures[index('gus-case-010')];
+    caseFixtures[index('gus-case-010')] = {
+      ...r,
+      servicePreparation: {
+        ...r.servicePreparation!,
+        releaseEvents: [
+          { eventId: 'r', type: 'released', at: NOW, actorId: 'x', actorName: null, roleKey: 'funeralDirector', approval: {} as never },
+          { eventId: 'h', type: 'hold_placed', at: NOW, actorId: 'y', actorName: null, roleKey: 'manager', reason: 'Family asked to wait' },
+        ],
+      },
+    };
+    expect((await listUpcomingServices(GUS, 'mock', NOW))![0]).toMatchObject({ onHold: true, released: false, awaitingRelease: true });
   });
 
   it('ignores cancelled services, services outside the window, and archived cases', async () => {

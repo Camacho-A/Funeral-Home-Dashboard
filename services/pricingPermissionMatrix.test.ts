@@ -35,7 +35,8 @@ describe('Gus (granular model): catalog editing and repricing are Administrator-
       administrator: row(true, true, true, true, true, true),
       // Views the catalog and adds custom order items; nothing else.
       manager: row(true, false, false, false, true, false),
-      funeralDirector: row(true, false, false, false, false, false),
+      // Custom order items: operational, aligned with Manager (2026-11).
+      funeralDirector: row(true, false, false, false, true, false),
       arranger: row(true, false, false, false, false, false),
       officeStaff: row(true, false, false, false, false, false),
       accounting: row(false, false, false, false, false, false),
@@ -50,7 +51,7 @@ describe('Gus (granular model): catalog editing and repricing are Administrator-
   });
 
   it('the Manager restriction is a standing organization override, written at onboarding and never re-imposed over an administrator\'s change', async () => {
-    expect(getRegisteredOrganizationProfile(GUS_ORGANIZATION_ID).features.standingRoleOverrides).toEqual([
+    expect(getRegisteredOrganizationProfile(GUS_ORGANIZATION_ID).features.standingRoleOverrides.filter((o) => o.action === 'revoke')).toEqual([
       expect.objectContaining({ roleKey: 'manager', permissionKey: 'serviceCatalog.edit', action: 'revoke' }),
     ]);
     const id = organizationRolePermissionOverrideId(GUS_ORGANIZATION_ID, 'manager', 'serviceCatalog.edit');

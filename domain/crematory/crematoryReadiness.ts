@@ -78,7 +78,7 @@ export type CrematoryReadinessInput = {
       releaseForCremation.ts › crematoryReleaseGate). Absent or null = no
       such requirement (Manors; Gus until approved). A condition for
       SENDING, never for building or previewing the package. */
-  releaseGate?: { serviceName: string; released: boolean; undecided: boolean } | null;
+  releaseGate?: { serviceName: string; released: boolean; undecided: boolean; onHold?: boolean; holdReason?: string | null } | null;
 };
 
 export type CrematoryReadiness = {
@@ -172,7 +172,9 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
   const gate = input.releaseGate;
   if (gate && input.sentAt === null) {
     add('released_for_cremation', `Released for cremation after the ${gate.serviceName.toLowerCase()}`, gate.released,
-      gate.undecided
+      gate.onHold
+        ? `The release is on hold${gate.holdReason ? ` (${gate.holdReason})` : ''}. Nothing may be sent until it is reauthorized.`
+        : gate.undecided
         ? `Answer whether cremation waits for the ${gate.serviceName.toLowerCase()} in Service readiness; until then it is treated as waiting.`
         : `A licensed funeral director must release the remains for cremation after the ${gate.serviceName.toLowerCase()} (Service readiness).`);
   }

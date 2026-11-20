@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PreparationChange } from '@/domain/servicePreparation/preparationUpdates';
 import type { ServicePreparationView } from '@/services/servicePreparationService';
-import type { ReleaseEvaluation } from '@/domain/servicePreparation/releaseForCremation';
+import type { CallerReleaseView } from '@/services/cremationReleaseService';
 import type { MedicalExaminerApprovalView } from '@/services/medicalExaminerApprovalService';
 
 /**
@@ -13,7 +13,7 @@ import type { MedicalExaminerApprovalView } from '@/services/medicalExaminerAppr
 export type ServicePreparationResponse = {
   preparation: ServicePreparationView;
   canEdit: boolean;
-  release: ReleaseEvaluation | null;
+  release: CallerReleaseView | null;
   /** Gus Phase 5G: the recorded ME cremation approval, when this organization records it. */
   medicalExaminer?: MedicalExaminerApprovalView | null;
 };
@@ -85,11 +85,11 @@ export function useServicePreparation(organizationId: string, caseId: string, en
 
   // Gus Phase 5K: release for cremation (refused by the server while inactive).
   const releaseForCremation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (input: { action: 'release' | 'sign_off' | 'hold' | 'reauthorize'; reason?: string } = { action: 'release' }) => {
       const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/cremation-release`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ organizationId, confirm: true }),
+        body: JSON.stringify({ organizationId, confirm: true, action: input.action, ...(input.reason !== undefined ? { reason: input.reason } : {}) }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new ServicePreparationSaveError(body.error ?? 'Could not release. Nothing was released.', response.status);

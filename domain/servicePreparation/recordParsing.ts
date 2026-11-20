@@ -1,4 +1,4 @@
-import type { PreparationAuditEntry, PreparationItemRecord, PreparationStatus, PreparationValueRecord, ReleaseForCremationRecord, ServicePreparationRecord } from './types';
+import type { ReleaseEvent, PreparationAuditEntry, PreparationItemRecord, PreparationStatus, PreparationValueRecord, ReleaseForCremationRecord, ServicePreparationRecord } from './types';
 
 /**
  * Reading the stored `servicePreparation` case field (Gus Phase 5C). Read
@@ -67,7 +67,9 @@ function readHistory(raw: unknown): PreparationAuditEntry[] | null {
     itself, or its history. Saving over it would lose what is stored. */
 export function isServicePreparationReadable(value: unknown): boolean {
   if (value === undefined || value === null) return true;
-  return readServicePreparationRecord(value) !== null && readHistory((value as Record<string, unknown>).history) !== null;
+  const events = (value as Record<string, unknown>).releaseEvents;
+  const eventsReadable = events === undefined || events === null || (Array.isArray(events) && events.every((e) => isObject(e) && typeof e.eventId === 'string' && typeof e.type === 'string'));
+  return readServicePreparationRecord(value) !== null && readHistory((value as Record<string, unknown>).history) !== null && eventsReadable;
 }
 
 export function readServicePreparationRecord(value: unknown): ServicePreparationRecord | null {
@@ -82,5 +84,6 @@ export function readServicePreparationRecord(value: unknown): ServicePreparation
     details: readMap(value.details, readValue),
     items: readMap(value.items, readItem),
     release: readRelease(value.release),
+    ...(Array.isArray(value.releaseEvents) ? { releaseEvents: value.releaseEvents as ReleaseEvent[] } : {}),
   };
 }

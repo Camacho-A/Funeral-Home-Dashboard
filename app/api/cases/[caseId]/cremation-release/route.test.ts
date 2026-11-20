@@ -15,8 +15,9 @@ vi.mock('@/services/authorizationPolicyService', () => ({ canEditCase: vi.fn(asy
 const approve = vi.hoisted(() => vi.fn());
 vi.mock('@/services/cremationReleaseService', async () => {
   const actual = await vi.importActual<typeof import('@/services/cremationReleaseService')>('@/services/cremationReleaseService');
-  return { ...actual, approveCremationRelease: approve };
+  return { ...actual, performReleaseAction: approve };
 });
+vi.mock('@/services/staffProfileService', () => ({ resolveStaffProfileForCaller: vi.fn(async () => ({ displayName: 'Jordan Demo' })) }));
 
 const { POST } = await import('./route');
 const { CremationReleaseError } = await import('@/services/cremationReleaseService');
@@ -30,10 +31,18 @@ beforeEach(() => {
 describe('POST cremation-release', () => {
   it('needs an explicit confirm, and nothing else from the body is used', async () => {
     expect((await call({ organizationId: 'gus-camacho-jr' })).status).toBe(400);
-    approve.mockResolvedValue({ release: { eventId: 'r' }, evaluation: {} });
+    approve.mockResolvedValue({ event: { eventId: 'r' }, status: 'released', evaluation: {} });
     const response = await call({ organizationId: 'gus-camacho-jr', confirm: true, approvedBy: 'someone-else', now: '2020-01-01' });
     expect(response.status).toBe(200);
-    expect(approve).toHaveBeenCalledWith({ organizationId: 'gus-camacho-jr', userId: 'identity-gus-director', role: 'funeralDirector' }, 'gus-case-010', 'mock');
+    expect(approve).toHaveBeenCalledWith({ organizationId: 'gus-camacho-jr', userId: 'identity-gus-director', role: 'funeralDirector' }, 'gus-case-010', 'mock', { action: 'release', reason: null, actorName: 'Jordan Demo' });
+  });
+
+  it('passes a hold with its reason; refuses unknown actions and oversized reasons', async () => {
+    approve.mockResolvedValue({ event: { eventId: 'h' }, status: 'on_hold', evaluation: {} });
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'hold', reason: 'Family asked to wait' })).status).toBe(200);
+    expect(approve.mock.calls[0][3]).toMatchObject({ action: 'hold', reason: 'Family asked to wait' });
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'delete' })).status).toBe(400);
+    expect((await call({ organizationId: 'gus-camacho-jr', confirm: true, action: 'hold', reason: 'x'.repeat(301) })).status).toBe(400);
   });
 
   it('passes the server’s refusal through — 423 while release is not active', async () => {

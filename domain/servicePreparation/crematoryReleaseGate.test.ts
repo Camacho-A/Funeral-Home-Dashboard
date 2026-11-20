@@ -25,7 +25,7 @@ describe('crematoryReleaseGate', () => {
   });
 
   it('enforced: Viewing and Final Goodbye wait for their release; Direct Cremation never', () => {
-    expect(crematoryReleaseGate(caseOf(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), true)).toEqual({ serviceName: 'Viewing', released: false, undecided: false });
+    expect(crematoryReleaseGate(caseOf(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), true)).toEqual({ serviceName: 'Viewing', released: false, undecided: false, onHold: false, holdReason: null });
     expect(crematoryReleaseGate(caseOf(SERVICE_TYPE_CODES.DIRECT_CREMATION), true)).toBeNull();
     expect(crematoryReleaseGate(caseOf(null), true)).toBeNull();
   });

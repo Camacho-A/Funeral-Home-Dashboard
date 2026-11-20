@@ -18,7 +18,7 @@ vi.mock('../domain/servicePreparation/releaseForCremation', async () => ({
   RELEASE_FOR_CREMATION_AVAILABLE: true,
 }));
 
-const { approveCremationRelease, CremationReleaseError, evaluateCremationReleaseForCaller } = await import('./cremationReleaseService');
+const { approveCremationRelease, CremationReleaseError, evaluateCremationReleaseForCaller, performReleaseAction } = await import('./cremationReleaseService');
 const { changeServicePreparation, ServicePreparationError } = await import('./servicePreparationService');
 
 const GUS = GUS_CAMACHO_ORGANIZATION_ID;
@@ -57,15 +57,15 @@ describe('recording a release (switch on in this test only)', () => {
   it('every requirement met: the director releases; the release, its history entry and one Activity event share one id', async () => {
     expect((await evaluateCremationReleaseForCaller(director, 'gus-case-010', 'mock', NOW))!.allPrerequisitesMet).toBe(true);
     const { release } = await approveCremationRelease(director, 'gus-case-010', 'mock', { now: NOW, eventId: 'release-1' });
-    expect(release).toMatchObject({ releasedAt: NOW, releasedBy: 'identity-gus-director', releasedByName: 'Jordan Demo', roleKey: 'funeralDirector', eventId: 'release-1' });
-    expect(release.approval).toMatchObject({ basis: 'funeral_director_role', licenseState: 'FL', serviceAppointmentId: 'appt-viewing' });
-    expect(release.approval!.licenseNumber).toBeTruthy();
-    expect(release.approval!.prerequisites.map((p) => p.key)).toContain('medical_examiner_approval');
+    expect(release!).toMatchObject({ releasedAt: NOW, releasedBy: 'identity-gus-director', releasedByName: 'Jordan Demo', roleKey: 'funeralDirector', eventId: 'release-1' });
+    expect(release!.approval).toMatchObject({ basis: 'funeral_director_role', licenseState: 'FL', serviceAppointmentId: 'appt-viewing' });
+    expect(release!.approval!.licenseNumber).toBeTruthy();
+    expect(release!.approval!.prerequisites.map((p) => p.key)).toContain('medical_examiner_approval');
 
     const record = stored().servicePreparation!;
     expect(record.release!.eventId).toBe('release-1');
     const entry = record.history!.at(-1)!;
-    expect(entry).toMatchObject({ eventId: 'release-1', target: { kind: 'release', key: 'release_for_cremation' }, previous: null, actorId: 'identity-gus-director' });
+    expect(entry).toMatchObject({ eventId: 'release-1', target: { kind: 'release', key: 'released' }, previous: null, actorId: 'identity-gus-director' });
     expect(record.history!.slice(0, -1).map((e) => e.eventId)).toEqual(['prep-0', 'prep-1']);
     const events = activityEventFixtures.filter((e) => e.eventType === ACTIVITY_EVENT_TYPES.CASE_RELEASED_FOR_CREMATION);
     expect(events).toHaveLength(1);
@@ -92,9 +92,21 @@ describe('recording a release (switch on in this test only)', () => {
     ).rejects.toBeInstanceOf(ServicePreparationError);
   });
 
-  it('an administrator without Funeral Director authorization or license is refused; nothing is written', async () => {
+  it('an administrator (no license) may REQUEST release; it waits for a licensed sign-off and releases nothing', async () => {
+    const result = await performReleaseAction(admin, 'gus-case-010', 'mock', { action: 'release', now: NOW, eventId: 'req-1' });
+    expect(result.status).toBe('awaiting_signoff');
+    expect(stored().servicePreparation!.release ?? null).toBeNull();
+    expect((await refusal(performReleaseAction(admin, 'gus-case-010', 'mock', { action: 'sign_off', now: NOW }))).status).toBe(403);
+    expect(activityEventFixtures.map((e) => e.eventType)).toEqual([ACTIVITY_EVENT_TYPES.CASE_RELEASE_WORKFLOW_UPDATED]);
+    const signed = await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'sign_off', now: NOW, eventId: 'sign-1' });
+    expect(signed.status).toBe('released');
+    expect(stored().servicePreparation!.release!.eventId).toBe('sign-1');
+    expect(stored().servicePreparation!.releaseEvents!.map((e) => e.type)).toEqual(['release_requested', 'released']);
+  });
+
+  it('a read-only user may do nothing; nothing is written', async () => {
     const before = JSON.stringify(stored());
-    expect((await refusal(approveCremationRelease(admin, 'gus-case-010', 'mock', { now: NOW }))).status).toBe(403);
+    expect((await refusal(performReleaseAction({ ...admin, role: 'readOnly' }, 'gus-case-010', 'mock', { action: 'release', now: NOW }))).status).toBe(403);
     expect(JSON.stringify(stored())).toBe(before);
     expect(activityEventFixtures).toHaveLength(0);
   });
@@ -122,6 +134,62 @@ describe('recording a release (switch on in this test only)', () => {
   it('an archived case is refused', async () => {
     makeReady({ isDeleted: true });
     expect((await refusal(approveCremationRelease(director, 'gus-case-010', 'mock', { now: NOW }))).status).toBe(409);
+  });
+});
+
+describe('holds and reauthorization (switch on in this test only)', () => {
+  const manager = { organizationId: GUS, userId: 'identity-gus-manager-fictional', role: 'manager' };
+  const release = () => performReleaseAction(director, 'gus-case-010', 'mock', { action: 'release', now: NOW, eventId: 'rel' });
+
+  it('a Manager places a hold with a reason; the original release is kept; the hold says nothing was sent yet', async () => {
+    await release();
+    const original = structuredClone(stored().servicePreparation!.release);
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: '', now: NOW }))).status).toBe(400);
+    const held = await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: 'Family asked to wait', actorName: 'Morgan Demo', now: NOW, eventId: 'hold' });
+    expect(held).toMatchObject({ status: 'on_hold', event: { type: 'hold_placed', reason: 'Family asked to wait', actorName: 'Morgan Demo', roleKey: 'manager', paperworkAlreadyTransmitted: false } });
+    expect(stored().servicePreparation!.release).toEqual(original);
+  });
+
+  it('a hold after the paperwork went out says the crematory must be contacted', async () => {
+    await release();
+    const c = stored();
+    caseFixtures[index()] = { ...c, crematory: { ...c.crematory, lastSubmission: { submissionId: 's', status: 'submitted', packageDocumentId: 'd', packageVersion: 1 } as never } };
+    const held = await performReleaseAction(admin, 'gus-case-010', 'mock', { action: 'hold', reason: 'Family asked to wait', now: NOW });
+    expect(held.event.paperworkAlreadyTransmitted).toBe(true);
+    expect(stored().servicePreparation!.history!.at(-1)!.description).toMatch(/crematory must be contacted/);
+  });
+
+  it('read-only users and other organizations cannot hold', async () => {
+    await release();
+    expect((await refusal(performReleaseAction({ ...manager, role: 'readOnly' }, 'gus-case-010', 'mock', { action: 'hold', reason: 'x', now: NOW }))).status).toBe(403);
+    expect((await refusal(performReleaseAction({ ...manager, organizationId: 'managed-cremations' }, 'gus-case-010', 'mock', { action: 'hold', reason: 'x', now: NOW }))).status).toBe(404);
+  });
+
+  it('lifting a hold rechecks the latest requirements: a requirement that lapsed refuses it', async () => {
+    await release();
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: 'Family asked to wait', now: NOW });
+    const c = stored();
+    caseFixtures[index()] = { ...c, crematory: { ...c.crematory, medicalExaminerApproval: null } };
+    expect((await refusal(performReleaseAction(director, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW }))).status).toBe(409);
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW }))).status).toBe(409);
+  });
+
+  it('a licensed director lifts a hold in one step; a Manager only requests it, and cannot sign off', async () => {
+    await release();
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: 'Family asked to wait', now: NOW });
+    expect((await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW })).status).toBe('awaiting_reauthorization');
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'sign_off', now: NOW }))).status).toBe(403);
+    expect((await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'sign_off', now: NOW })).status).toBe('reauthorized');
+    await performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: 'Second hold', now: NOW });
+    expect((await performReleaseAction(director, 'gus-case-010', 'mock', { action: 'reauthorize', now: NOW })).status).toBe('reauthorized');
+    expect(stored().servicePreparation!.releaseEvents!.map((e) => e.type)).toEqual(['released', 'hold_placed', 'reauthorization_requested', 'reauthorized', 'hold_placed', 'reauthorized']);
+  });
+
+  it('a hold is refused before any release, and a duplicate release is refused', async () => {
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'hold', reason: 'x', now: NOW }))).status).toBe(409);
+    await release();
+    expect((await refusal(release())).status).toBe(409);
+    expect((await refusal(performReleaseAction(manager, 'gus-case-010', 'mock', { action: 'release', now: NOW }))).status).toBe(409);
   });
 });
 

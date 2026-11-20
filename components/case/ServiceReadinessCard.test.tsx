@@ -200,65 +200,76 @@ describe('ServiceReadinessCard — medical examiner approval (Phase 5G)', () => 
   });
 });
 
-describe('ServiceReadinessCard — release for cremation (Phase 5K)', () => {
+describe('ServiceReadinessCard — release workflow (Phase 5K, holds 2026-11)', () => {
+  const caps = (overrides: Record<string, boolean> = {}) => ({ canRequestRelease: false, canSignOff: false, canHold: false, canReauthorize: false, isOperator: true, isLicensedSigner: false, ...overrides });
   const evaluation = (overrides: Record<string, unknown> = {}) => ({
     applies: true,
     released: false,
+    status: 'not_released',
+    hold: null,
+    casePrerequisitesMet: true,
     prerequisites: [{ key: 'service_completed', label: 'Viewing marked completed', met: true }],
-    allPrerequisitesMet: true,
-    canRelease: true,
+    allPrerequisitesMet: false,
+    canRelease: false,
     unavailableReason: null,
+    active: true,
+    capabilities: caps({ canRequestRelease: true }),
     ...overrides,
   });
+  const releasedRecord = (events: unknown[]): ServicePreparationRecord =>
+    ({ definitionKey: 'prep.viewing', definitionVersion: 2, serviceAppointmentId: 'appt-fictional', choices: {}, details: {}, items: {}, releaseEvents: events }) as ServicePreparationRecord;
+  const ev = (type: string, extra: Record<string, unknown> = {}) => ({ eventId: type, type, at: '2026-12-11T15:00:00.000Z', actorId: 'x', actorName: 'Jordan Demo', roleKey: 'funeralDirector', ...extra });
 
-  it('when release is allowed, it asks the director to confirm, then posts only a confirmation', async () => {
-    const fetchMock = stubFetch({ preparation: view(), canEdit: true, release: evaluation() } as never, () => ({ status: 200, body: { release: {} } }));
+  it('an operational user without a license sees "Request release"; confirming posts only the action', async () => {
+    const fetchMock = stubFetch({ preparation: view(), canEdit: true, release: evaluation() } as never, () => ({ status: 200, body: { status: 'awaiting_signoff' } }));
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    fireEvent.click(await screen.findByRole('button', { name: 'Request release' }));
+    expect(screen.getByText(/sign-off is still required/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/cremation-release') && init?.method === 'POST')).toBe(true));
+    const post = fetchMock.mock.calls.find(([url]) => String(url).includes('/cremation-release'))!;
+    expect(JSON.parse(String(post[1]!.body))).toEqual({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, confirm: true, action: 'release' });
+  });
+
+  it('a licensed director with everything met sees "Release for cremation" and the sign-off wording', async () => {
+    stubFetch({ preparation: view(), canEdit: true, release: evaluation({ allPrerequisitesMet: true, capabilities: caps({ canRequestRelease: true, isLicensedSigner: true }) }) } as never);
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
     fireEvent.click(await screen.findByRole('button', { name: 'Release for cremation' }));
     expect(screen.getByText(/recorded with your name and license/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm release' }));
-    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/cremation-release') && init?.method === 'POST')).toBe(true));
-    const post = fetchMock.mock.calls.find(([url]) => String(url).includes('/cremation-release'))!;
-    expect(JSON.parse(String(post[1]!.body))).toEqual({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, confirm: true });
   });
 
-  it('shows the server’s refusal and releases nothing', async () => {
-    stubFetch({ preparation: view(), canEdit: true, release: evaluation() } as never, () => ({ status: 423, body: { error: 'Release for cremation is not active yet. Nothing was released.' } }));
+  it('a hold needs a reason, and posts it', async () => {
+    const fetchMock = stubFetch({ preparation: view({ record: releasedRecord([ev('released')]) }), canEdit: true, release: evaluation({ status: 'released', released: true, capabilities: caps({ canHold: true }) }) } as never, () => ({ status: 200, body: {} }));
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
-    fireEvent.click(await screen.findByRole('button', { name: 'Release for cremation' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm release' }));
-    expect((await screen.findByRole('alert')).textContent).toMatch(/Nothing was released/);
+    fireEvent.click(await screen.findByRole('button', { name: 'Place on hold' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    fireEvent.change(screen.getByLabelText('Reason for the hold'), { target: { value: 'Family asked to wait' } });
+    fireEvent.click(confirm);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/cremation-release'))).toBe(true));
+    expect(JSON.parse(String(fetchMock.mock.calls.find(([url]) => String(url).includes('/cremation-release'))![1]!.body))).toMatchObject({ action: 'hold', reason: 'Family asked to wait' });
   });
 
-  it('with requirements unmet, the button stays disabled and says why', async () => {
-    stubFetch({ preparation: view(), canEdit: true, release: evaluation({ allPrerequisitesMet: false, canRelease: false }) } as never);
+  it('on hold after paperwork was sent: says to contact the crematory — a hold recalls nothing', async () => {
+    const hold = { reason: 'Family asked to wait', at: '2026-12-12T15:00:00.000Z', byName: 'Morgan Demo', paperworkAlreadyTransmitted: true };
+    stubFetch({ preparation: view({ record: releasedRecord([ev('released'), ev('hold_placed', { reason: hold.reason, paperworkAlreadyTransmitted: true })]) }), canEdit: true, release: evaluation({ status: 'on_hold', hold, capabilities: caps({ canReauthorize: true }) }) } as never);
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
-    expect((await screen.findByRole('button', { name: 'Release for cremation' })).hasAttribute('disabled')).toBe(true);
-    expect(screen.getByText('Every requirement above must be met first.')).toBeTruthy();
+    expect((await screen.findByTestId('release-hold')).textContent).toMatch(/On hold: Family asked to wait/);
+    expect(screen.getByTestId('release-hold-contact-crematory').textContent).toMatch(/does not recall anything/);
+    expect(screen.getByRole('button', { name: 'Request reauthorization' })).toBeTruthy();
+    expect(screen.getByTestId('release-history').textContent).toMatch(/Placed on hold[\s\S]*Released/);
   });
 
-  it('a recorded release shows who released it, when, and on which license — and no button', async () => {
-    const record: ServicePreparationRecord = {
-      definitionKey: 'prep.viewing',
-      definitionVersion: 2,
-      serviceAppointmentId: 'appt-fictional',
-      choices: {},
-      details: {},
-      items: {},
-      release: {
-        releasedAt: '2026-12-11T15:00:00.000Z',
-        releasedBy: 'identity-gus-director',
-        releasedByName: 'Jordan Demo',
-        roleKey: 'funeralDirector',
-        eventId: 'r1',
-        approval: { staffProfileId: 's', basis: 'funeral_director_role', licenseNumber: 'FD-FICTIONAL-0001', licenseState: 'FL', licenseExpiresOn: '2030-01-31', licenseVerifiedAt: null, licenseVerifiedBy: null, serviceAppointmentId: 'appt-fictional', prerequisites: [] },
-      },
-    };
-    stubFetch({ preparation: view({ record }), canEdit: true, release: evaluation({ released: true, canRelease: false }) } as never);
+  it('while release is not active, controls are disabled and say why', async () => {
+    stubFetch({ preparation: view(), canEdit: true, release: evaluation({ active: false, unavailableReason: 'Release for cremation is not active yet.' }) } as never);
     renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
-    const recorded = await screen.findByTestId('release-recorded');
-    expect(recorded.textContent).toMatch(/Released for cremation by Jordan Demo/);
-    expect(recorded.textContent).toMatch(/FL license FD-FICTIONAL-0001/);
-    expect(screen.queryByRole('button', { name: 'Release for cremation' })).toBeNull();
+    expect((await screen.findByRole('button', { name: 'Request release' })).hasAttribute('disabled')).toBe(true);
+    expect(screen.getAllByText(/not active yet/).length).toBeGreaterThan(0);
+  });
+
+  it('a read-only viewer sees the status but no enabled control', async () => {
+    stubFetch({ preparation: view(), canEdit: false, release: evaluation() } as never);
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    expect((await screen.findByRole('button', { name: 'Request release' })).hasAttribute('disabled')).toBe(true);
   });
 });

@@ -17,6 +17,7 @@ const when = (iso: string, timeZone: string) =>
   new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(iso));
 
 function state(s: UpcomingServiceSummary): { label: string; variant: 'success' | 'warning' | 'danger' | 'neutral' | 'brand' } {
+  if (s.onHold) return { label: 'On hold', variant: 'danger' };
   if (s.status === 'completed') return s.awaitingRelease ? { label: 'Awaiting release', variant: 'brand' } : { label: 'Completed', variant: 'neutral' };
   if (s.overdue > 0) return { label: `${s.overdue} overdue`, variant: 'danger' };
   if (s.ready) return { label: 'Ready', variant: 'success' };

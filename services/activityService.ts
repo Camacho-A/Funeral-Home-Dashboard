@@ -1620,14 +1620,14 @@ export function recordMedicalExaminerApprovalChange(
 export function recordCremationRelease(
   ctx: ActivityContext,
   caseId: string,
-  details: { description: string; release: Record<string, unknown> },
+  details: { description: string; release: Record<string, unknown>; workflowUpdate?: boolean },
   dataAdapterMode: DataAdapterMode,
 ): Promise<ActivityEvent> {
   return record(
     envelope(ctx, {
       caseId,
       category: 'cases',
-      eventType: ACTIVITY_EVENT_TYPES.CASE_RELEASED_FOR_CREMATION,
+      eventType: details.workflowUpdate ? ACTIVITY_EVENT_TYPES.CASE_RELEASE_WORKFLOW_UPDATED : ACTIVITY_EVENT_TYPES.CASE_RELEASED_FOR_CREMATION,
       resourceType: 'case',
       resourceId: caseId,
       previousValue: null,

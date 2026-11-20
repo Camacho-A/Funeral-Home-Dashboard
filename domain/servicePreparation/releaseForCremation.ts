@@ -7,8 +7,8 @@ import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
 import { serviceHoldsCremation, type ServiceReadiness } from './readiness';
 import { servicePreparationFor } from './serviceDefinitions';
-import { emptyPreparationRecord, PREPARATION_RECORD_MAX_BYTES, PreparationChangeError, PreparationLimitError, preparationRecordBytes } from './preparationUpdates';
-import type { PreparationAuditEntry, ReleaseApprovalSnapshot, ReleaseForCremationRecord, ServicePreparationDefinition, ServicePreparationRecord } from './types';
+import { appendReleaseEvent, currentHold, isReleasedStatus, releaseStatusOf, type ReleaseStatus } from './releaseHolds';
+import type { ReleaseApprovalSnapshot, ReleaseEvent, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
 /**
  * Release for cremation (Gus Phase 5F, 2026-11).
@@ -65,7 +65,14 @@ export type ReleasePrerequisite = { key: ReleasePrerequisiteKey; label: string; 
 
 export type ReleaseEvaluation = {
   applies: boolean | 'undecided';
+  /** Released and not on hold. */
   released: boolean;
+  /** Where the release-hold workflow stands (releaseHolds.ts). */
+  status: ReleaseStatus;
+  /** The hold in force, if any. */
+  hold: { reason: string | null; at: string; byName: string | null; paperworkAlreadyTransmitted: boolean } | null;
+  /** Every requirement except who approves (the approver checks). */
+  casePrerequisitesMet: boolean;
   prerequisites: ReleasePrerequisite[];
   /** Every prerequisite met — what release WOULD allow once active. */
   allPrerequisitesMet: boolean;
@@ -201,11 +208,18 @@ export function evaluateReleaseForCremation(params: {
     },
   ];
 
-  const released = Boolean(case_.servicePreparation?.release);
+  const record = case_.servicePreparation && case_.servicePreparation.definitionKey === definition.key ? case_.servicePreparation : null;
+  const status = releaseStatusOf(record);
+  const released = isReleasedStatus(status);
+  const hold = currentHold(record);
   const allPrerequisitesMet = readiness.holdsCremation === true && prerequisites.every((p) => p.met);
+  const casePrerequisitesMet = readiness.holdsCremation === true && prerequisites.every((p) => p.met || p.key === 'approver_authorized' || p.key === 'approver_licensed');
   return {
     applies: readiness.holdsCremation,
     released,
+    status,
+    hold: hold ? { reason: hold.reason ?? null, at: hold.at, byName: hold.actorName, paperworkAlreadyTransmitted: hold.paperworkAlreadyTransmitted === true } : null,
+    casePrerequisitesMet,
     prerequisites,
     allPrerequisitesMet,
     canRelease: RELEASE_FOR_CREMATION_AVAILABLE && allPrerequisitesMet && !released,
@@ -248,7 +262,7 @@ export function buildCremationReleaseRecord(params: {
 }): CremationReleaseRecord {
   const { evaluation, approver } = params;
   const license = approver.staffProfile?.funeralDirectorLicense;
-  if (!evaluation.allPrerequisitesMet || evaluation.released || !approver.staffProfile || !license) {
+  if (!evaluation.allPrerequisitesMet || !approver.staffProfile || !license) {
     throw new ReleaseRefusedError('Release refused: not every prerequisite is met.');
   }
   const authorization = approverAuthorization(approver, params.case_.organizationId, params.approverRoleKeys ?? [approver.roleKey]);
@@ -274,56 +288,44 @@ export function buildCremationReleaseRecord(params: {
   };
 }
 
+/** The licensed sign-off as stored on a `released` / `reauthorized` event. */
+export function approvalSnapshotOf(release: CremationReleaseRecord): ReleaseApprovalSnapshot {
+  return {
+    staffProfileId: release.approvedBy.staffProfileId,
+    basis: release.approvedBy.basis,
+    licenseNumber: release.approvedBy.licenseNumber,
+    licenseState: release.approvedBy.licenseState,
+    licenseExpiresOn: release.approvedBy.licenseExpiresOn,
+    licenseVerifiedAt: release.approvedBy.licenseVerifiedAt,
+    licenseVerifiedBy: release.approvedBy.licenseVerifiedBy,
+    serviceAppointmentId: release.serviceAppointmentId,
+    prerequisites: release.prerequisites,
+  };
+}
+
 /**
- * The preparation record with the release added (Gus Phase 5K) — the
- * release and its history entry in ONE record, so they are saved together
- * or not at all. A record can be released once; afterwards preparation is
- * read-only (applyPreparationChange refuses). Nothing is ever removed.
+ * The preparation record with a licensed sign-off added (Gus Phase 5K;
+ * holds 2026-11): `released` for the first release, `reauthorized` to lift
+ * a hold. The event and its history entry are in ONE record, so they are
+ * saved together or not at all. The original release is never overwritten.
  */
 export function applyCremationRelease(params: {
   definition: ServicePreparationDefinition;
   record: ServicePreparationRecord | null;
   release: CremationReleaseRecord;
   eventId: string;
+  type?: 'released' | 'reauthorized';
 }): ServicePreparationRecord {
-  const { definition, release } = params;
-  if (params.record && params.record.definitionKey !== definition.key) throw new PreparationChangeError('This preparation belongs to a different service.');
-  if (params.record?.release) throw new ReleaseRefusedError('Already released for cremation.');
-  const record: ServicePreparationRecord = structuredClone(params.record ?? emptyPreparationRecord(definition, release.serviceAppointmentId));
-  const stored: ReleaseForCremationRecord = {
-    releasedAt: release.approvedAt,
-    releasedBy: release.approvedBy.identityId,
-    releasedByName: release.approvedBy.name,
-    roleKey: release.approvedBy.roleKey,
+  const event: ReleaseEvent = {
     eventId: params.eventId,
-    approval: {
-      staffProfileId: release.approvedBy.staffProfileId,
-      basis: release.approvedBy.basis,
-      licenseNumber: release.approvedBy.licenseNumber,
-      licenseState: release.approvedBy.licenseState,
-      licenseExpiresOn: release.approvedBy.licenseExpiresOn,
-      licenseVerifiedAt: release.approvedBy.licenseVerifiedAt,
-      licenseVerifiedBy: release.approvedBy.licenseVerifiedBy,
-      serviceAppointmentId: release.serviceAppointmentId,
-      prerequisites: release.prerequisites,
-    },
+    type: params.type ?? 'released',
+    at: params.release.approvedAt,
+    actorId: params.release.approvedBy.identityId,
+    actorName: params.release.approvedBy.name,
+    roleKey: params.release.approvedBy.roleKey,
+    approval: approvalSnapshotOf(params.release),
   };
-  record.release = stored;
-  const entry: PreparationAuditEntry = {
-    eventId: params.eventId,
-    target: { kind: 'release', key: 'release_for_cremation' },
-    description: `Released for cremation by ${release.approvedBy.name} (${release.approvedBy.licenseState} license ${release.approvedBy.licenseNumber})`,
-    previous: null,
-    next: stored,
-    actorId: release.approvedBy.identityId,
-    actorName: release.approvedBy.name,
-    at: release.approvedAt,
-  };
-  record.history = [...(record.history ?? []), entry];
-  if (preparationRecordBytes(record) > PREPARATION_RECORD_MAX_BYTES) {
-    throw new PreparationLimitError("This case's preparation record is full (including its history). Nothing was released. Please contact SolisCode support.");
-  }
-  return record;
+  return appendReleaseEvent({ definition: params.definition, record: params.record, event });
 }
 
 /**
@@ -336,7 +338,7 @@ export function applyCremationRelease(params: {
  * `sendToCrematory.requireReleaseAfterService` — OFF everywhere until
  * approved.
  */
-export type CrematoryReleaseGate = { serviceName: string; released: boolean; undecided: boolean };
+export type CrematoryReleaseGate = { serviceName: string; released: boolean; undecided: boolean; onHold?: boolean; holdReason?: string | null };
 
 export function crematoryReleaseGate(case_: Pick<Case, 'workflowSnapshot' | 'servicePreparation'>, enforced: boolean): CrematoryReleaseGate | null {
   if (!enforced) return null;
@@ -345,5 +347,22 @@ export function crematoryReleaseGate(case_: Pick<Case, 'workflowSnapshot' | 'ser
   const record = case_.servicePreparation && case_.servicePreparation.definitionKey === definition.key ? case_.servicePreparation : null;
   const holds = serviceHoldsCremation(definition, record);
   if (holds === false) return null;
-  return { serviceName: definition.serviceName, released: Boolean(record?.release), undecided: holds === 'undecided' };
+  const status = releaseStatusOf(record);
+  const hold = currentHold(record);
+  return { serviceName: definition.serviceName, released: isReleasedStatus(status), undecided: holds === 'undecided', onHold: hold !== null, holdReason: hold?.reason ?? null };
+}
+
+/**
+ * Refusal for anything that would record paperwork as SENT to the crematory
+ * — the "sent to crematory" checklist steps, or a send recorded as made
+ * outside SOLIS — while the release gate applies and the case is not
+ * released (or is on hold). Null when allowed. The gate's own setting
+ * decides whether this applies at all (off everywhere today).
+ */
+export function releaseGateRefusal(case_: Pick<Case, 'workflowSnapshot' | 'servicePreparation'>, enforced: boolean): string | null {
+  const gate = crematoryReleaseGate(case_, enforced);
+  if (!gate || gate.released) return null;
+  return gate.onHold
+    ? `The release is on hold${gate.holdReason ? ` (${gate.holdReason})` : ''}. Nothing may be recorded as sent to the crematory until it is reauthorized.`
+    : `The remains must be released for cremation after the ${gate.serviceName.toLowerCase()} before anything is recorded as sent to the crematory.`;
 }

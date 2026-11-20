@@ -21,6 +21,7 @@ const row = (overrides: Record<string, unknown> = {}) => ({
   ready: false,
   awaitingRelease: true,
   released: false,
+  onHold: false,
   ...overrides,
 });
 
@@ -43,15 +44,16 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('UpcomingServicesPanel', () => {
   it('lists each service with its progress and state, linking to the case', async () => {
-    renderPanel(GUS_CAMACHO_ORGANIZATION_ID, [row(), row({ caseId: 'b', caseNumber: 'G2026-011', overdue: 2 }), row({ caseId: 'c', caseNumber: 'G2026-012', status: 'completed' })]);
+    renderPanel(GUS_CAMACHO_ORGANIZATION_ID, [row(), row({ caseId: 'b', caseNumber: 'G2026-011', overdue: 2 }), row({ caseId: 'c', caseNumber: 'G2026-012', status: 'completed' }), row({ caseId: 'd', caseNumber: 'G2026-013', status: 'completed', onHold: true })]);
     const panel = await screen.findByTestId('upcoming-services');
     const links = await within(panel).findAllByRole('link');
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(4);
     expect(links[0].getAttribute('href')).toBe('/cases/gus-case-010');
     expect(links[0].textContent).toMatch(/Viewing · G2026-010 · 3\/12 prepared/);
     expect(links[0].textContent).toMatch(/9 to do/);
     expect(links[1].textContent).toMatch(/2 overdue/);
     expect(links[2].textContent).toMatch(/Awaiting release/);
+    expect(links[3].textContent).toMatch(/On hold/);
   });
 
   it('says when there is nothing coming up', async () => {

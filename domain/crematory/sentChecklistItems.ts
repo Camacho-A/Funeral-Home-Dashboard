@@ -36,3 +36,19 @@ export function adminOnlyChecklistChanges(
   const keys = crematorySentChecklistKeys(case_);
   return keys.filter((key) => key in patch && patch[key] !== (case_.checklistState?.[key] === true));
 }
+
+/**
+ * Whether the crematory has (or may have) the paperwork already (2026-11):
+ * a SOLIS send that went out or may have, one being sent, a send recorded
+ * as made outside SOLIS, or the "sent to crematory" steps checked. Used to
+ * warn that a release hold does NOT recall anything — the crematory must be
+ * contacted.
+ */
+export function crematoryPaperworkMayHaveBeenSent(case_: Pick<Case, 'organizationId' | 'workflowSnapshot' | 'checklistState' | 'crematory'>): boolean {
+  const record = case_.crematory;
+  const status = record?.lastSubmission?.status;
+  if (status === 'submitted' || status === 'uncertain' || record?.pendingSubmission) return true;
+  if (record?.previousSend?.decision === 'sent_outside_solis') return true;
+  const keys = crematorySentChecklistKeys(case_);
+  return keys.length > 0 && keys.some((key) => case_.checklistState?.[key] === true);
+}

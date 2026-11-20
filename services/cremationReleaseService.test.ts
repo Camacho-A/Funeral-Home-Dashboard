@@ -59,9 +59,9 @@ describe('approveCremationRelease', () => {
     expect(activityEventFixtures).toHaveLength(0);
   });
 
-  it('an administrator (display role "funeral director", no Funeral Director authorization, no license) is refused on the server', async () => {
+  it('an administrator (no Funeral Director authorization, no license) is not a licensed signer; with requirements unmet nothing is recorded', async () => {
     const error = await refusal(approveCremationRelease(admin, 'gus-case-010', 'mock'));
-    expect(error.status).toBe(403);
+    expect(error.status).toBe(409);
     expect(error.evaluation!.prerequisites.find((p) => p.key === 'approver_authorized')!.met).toBe(false);
     expect(error.evaluation!.prerequisites.find((p) => p.key === 'approver_licensed')!.detail).toMatch(/No funeral director license/);
   });

@@ -3,7 +3,7 @@ import { servicePreparationFor } from '../domain/servicePreparation/serviceDefin
 import { selectServiceEvent, summarizeServiceReadiness } from '../domain/servicePreparation/readiness';
 import crypto from 'crypto';
 import {
-  applyCremationRelease,
+  approvalSnapshotOf,
   buildCremationReleaseRecord,
   evaluateReleaseForCremation,
   RELEASE_FOR_CREMATION_AVAILABLE,
@@ -13,7 +13,9 @@ import {
   type ReleaseEvaluation,
 } from '../domain/servicePreparation/releaseForCremation';
 import { PreparationLimitError } from '../domain/servicePreparation/preparationUpdates';
-import type { ReleaseForCremationRecord, ServiceEvent, ServicePreparationDefinition } from '../domain/servicePreparation/types';
+import { appendReleaseEvent, ReleaseTransitionError, RELEASE_STATUS_LABEL, type ReleaseStatus } from '../domain/servicePreparation/releaseHolds';
+import { crematoryPaperworkMayHaveBeenSent } from '../domain/crematory/sentChecklistItems';
+import type { ReleaseEvent, ServiceEvent, ServicePreparationDefinition, ServicePreparationRecord } from '../domain/servicePreparation/types';
 import { buildCaseFieldPatch } from '../lib/wixCaseMapper';
 import type { DataAdapterMode } from '../lib/env';
 import type { Case, CaseUpdate } from '../types/case';
@@ -65,6 +67,7 @@ type ReleaseContext = {
   service: ServiceEvent | null;
   approver: ReleaseApprover;
   approverRoleKeys: readonly string[];
+  operatorRoleKeys: readonly string[];
   licenseReverifyDays: number | null;
   timeZone: string;
 };
@@ -89,6 +92,7 @@ async function loadReleaseContext(caller: ReleaseCaller, caseId: string, mode: D
     service: selectServiceEvent(appointments, { organizationId: caller.organizationId, caseId, appointmentType: definition.serviceAppointmentType }),
     approver: { identityId: caller.userId, roleKey: caller.role, staffProfile: approverProfile },
     approverRoleKeys: profile.features.cremationReleaseApproverRoleKeys,
+    operatorRoleKeys: profile.features.cremationReleaseOperatorRoleKeys,
     licenseReverifyDays: profile.features.funeralDirectorLicenseReverifyDays,
     timeZone: organization?.timezone ?? DEFAULT_TIME_ZONE,
   };
@@ -109,71 +113,126 @@ function evaluateFor(context: ReleaseContext, case_: Case, now: string): Release
   });
 }
 
-export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, caseId: string, mode: DataAdapterMode, now = new Date().toISOString()): Promise<ReleaseEvaluation | null> {
+/** The evaluation for the person asking, with what they may do now and
+    whether release actions are active on this site at all. */
+export type CallerReleaseView = ReleaseEvaluation & { capabilities: ReleaseCapabilities; active: boolean };
+
+export async function evaluateCremationReleaseForCaller(caller: ReleaseCaller, caseId: string, mode: DataAdapterMode, now = new Date().toISOString()): Promise<CallerReleaseView | null> {
   const context = await loadReleaseContext(caller, caseId, mode);
   if (!context) return null;
   const evaluation = evaluateFor(context, context.case_, now);
+  const active = cremationReleaseRecordingAvailable(mode);
+  const capabilities = releaseCapabilities(evaluation, caller.role, context.operatorRoleKeys);
   // Release also needs preparation saving on this site.
-  if (evaluation.canRelease && !cremationReleaseRecordingAvailable(mode)) {
-    return { ...evaluation, canRelease: false, unavailableReason: RELEASE_FOR_CREMATION_UNAVAILABLE_REASON };
-  }
-  return evaluation;
+  if (!active) return { ...evaluation, canRelease: false, unavailableReason: RELEASE_FOR_CREMATION_UNAVAILABLE_REASON, capabilities, active };
+  return { ...evaluation, capabilities, active };
 }
 
-/** The refusal, if any, for this evaluation — the approver first, so a
-    non-director learns only that they may not release. */
-function refusalFor(evaluation: ReleaseEvaluation): CremationReleaseError | null {
-  const approverProblems = evaluation.prerequisites.filter((p) => (p.key === 'approver_authorized' || p.key === 'approver_licensed') && !p.met);
-  if (approverProblems.length > 0) return new CremationReleaseError('Only an authorized Funeral Director with a verified license may release for cremation.', 403, evaluation);
-  if (evaluation.released) return new CremationReleaseError('Already released for cremation.', 409, evaluation);
-  if (!evaluation.allPrerequisitesMet) return new CremationReleaseError('Not every requirement for release is met.', 409, evaluation);
-  return null;
-}
+export type ReleaseAction = 'release' | 'sign_off' | 'hold' | 'reauthorize';
 
 export const RELEASE_NOT_ACTIVE_MESSAGE = 'Release for cremation is not active yet. Nothing was released.';
 
-/** Whether a release may be recorded in this data mode. */
+/** Whether release actions may be recorded in this data mode. */
 export function cremationReleaseRecordingAvailable(mode: DataAdapterMode): boolean {
   return RELEASE_FOR_CREMATION_AVAILABLE && servicePreparationStorageAvailable(mode);
 }
 
-export async function approveCremationRelease(
+const signerQualified = (evaluation: ReleaseEvaluation) =>
+  evaluation.prerequisites.every((p) => (p.key !== 'approver_authorized' && p.key !== 'approver_licensed') || p.met);
+
+/** What this caller may do now — shown on the card; the server decides again on every action. */
+export type ReleaseCapabilities = { canRequestRelease: boolean; canSignOff: boolean; canHold: boolean; canReauthorize: boolean; isOperator: boolean; isLicensedSigner: boolean };
+
+export function releaseCapabilities(evaluation: ReleaseEvaluation, roleKey: string, operatorRoleKeys: readonly string[]): ReleaseCapabilities {
+  const isOperator = operatorRoleKeys.includes(roleKey);
+  const isLicensedSigner = signerQualified(evaluation);
+  const s = evaluation.status;
+  return {
+    isOperator,
+    isLicensedSigner,
+    canRequestRelease: (isOperator || isLicensedSigner) && s === 'not_released' && evaluation.casePrerequisitesMet,
+    canSignOff: isLicensedSigner && (s === 'awaiting_signoff' || s === 'awaiting_reauthorization') && evaluation.allPrerequisitesMet,
+    canHold: isOperator && (s === 'released' || s === 'reauthorized' || s === 'awaiting_reauthorization'),
+    canReauthorize: (isOperator || isLicensedSigner) && s === 'on_hold' && evaluation.casePrerequisitesMet,
+  };
+}
+
+/**
+ * The event this action records, decided from the evaluation of the case
+ * as it is now — or the refusal. A licensed, authorized director with every
+ * requirement met signs off in the same step; anyone else in the
+ * operational roles records a request awaiting that sign-off.
+ */
+function decideEvent(
+  action: ReleaseAction,
+  evaluation: ReleaseEvaluation,
+  context: ReleaseContext,
+  current: Case,
+  base: { eventId: string; now: string; actorName: string | null; reason: string | null },
+): ReleaseEvent {
+  const caps = releaseCapabilities(evaluation, context.approver.roleKey, context.operatorRoleKeys);
+  const status: ReleaseStatus = evaluation.status;
+  const stamp = { eventId: base.eventId, at: base.now, actorId: context.approver.identityId, actorName: base.actorName, roleKey: context.approver.roleKey };
+  const wrongState = () => new CremationReleaseError(`This can't be done while the release is "${RELEASE_STATUS_LABEL[status]}".`, 409, evaluation);
+  const signOff = (type: 'released' | 'reauthorized'): ReleaseEvent => {
+    if (!evaluation.allPrerequisitesMet) throw new CremationReleaseError('Not every requirement for release is met.', 409, evaluation);
+    const release = buildCremationReleaseRecord({ case_: current, evaluation, approver: context.approver, approverRoleKeys: context.approverRoleKeys, serviceAppointmentId: context.service?.appointmentId ?? null, now: base.now });
+    return { ...stamp, actorName: release.approvedBy.name, type, approval: approvalSnapshotOf(release) };
+  };
+
+  if (action === 'sign_off') {
+    if (!caps.isLicensedSigner) throw new CremationReleaseError('Only an authorized Funeral Director with a verified license may sign off a release.', 403, evaluation);
+    if (status === 'awaiting_signoff') return signOff('released');
+    if (status === 'awaiting_reauthorization') return signOff('reauthorized');
+    throw wrongState();
+  }
+  if (!caps.isOperator && !caps.isLicensedSigner) {
+    throw new CremationReleaseError('Only an Administrator, Manager or Funeral Director may do this.', 403, evaluation);
+  }
+  if (action === 'hold') {
+    if (!caps.isOperator) throw new CremationReleaseError('Only an Administrator, Manager or Funeral Director may place a hold.', 403, evaluation);
+    if (!['released', 'reauthorized', 'awaiting_reauthorization'].includes(status)) throw wrongState();
+    if (!base.reason?.trim()) throw new CremationReleaseError('Give a reason for the hold.', 400, evaluation);
+    return { ...stamp, type: 'hold_placed', reason: base.reason, paperworkAlreadyTransmitted: crematoryPaperworkMayHaveBeenSent(current) };
+  }
+  const requested = action === 'release' ? 'release_requested' : 'reauthorization_requested';
+  const signed = action === 'release' ? 'released' : 'reauthorized';
+  if ((action === 'release' && status !== 'not_released') || (action === 'reauthorize' && status !== 'on_hold')) throw wrongState();
+  if (!evaluation.casePrerequisitesMet) throw new CremationReleaseError('Not every requirement for release is met.', 409, evaluation);
+  return caps.isLicensedSigner && evaluation.allPrerequisitesMet ? signOff(signed) : { ...stamp, type: requested };
+}
+
+export type ReleaseActionResult = { event: ReleaseEvent; status: ReleaseStatus; evaluation: ReleaseEvaluation; record: ServicePreparationRecord };
+
+export async function performReleaseAction(
   caller: ReleaseCaller,
   caseId: string,
   mode: DataAdapterMode,
-  options: { now?: string; eventId?: string } = {},
-): Promise<{ release: ReleaseForCremationRecord; evaluation: ReleaseEvaluation }> {
-  const now = options.now ?? new Date().toISOString();
+  input: { action: ReleaseAction; reason?: string | null; actorName?: string | null; now?: string; eventId?: string },
+): Promise<ReleaseActionResult> {
+  const now = input.now ?? new Date().toISOString();
   const context = await loadReleaseContext(caller, caseId, mode);
   if (!context) throw new CremationReleaseError('This case has no release for cremation.', 404);
-  const first = evaluateFor(context, context.case_, now);
-  const refusal = refusalFor(first);
-  if (refusal) throw refusal;
-  if (!cremationReleaseRecordingAvailable(mode)) throw new CremationReleaseError(RELEASE_NOT_ACTIVE_MESSAGE, 423, first);
+  const actorName = input.actorName ?? context.approver.staffProfile?.displayName ?? null;
+  const eventId = input.eventId ?? crypto.randomUUID();
+  const base = { eventId, now, actorName, reason: input.reason ?? null };
+  // Refuse early, before anything is written.
+  decideEvent(input.action, evaluateFor(context, context.case_, now), context, context.case_, base);
+  if (!cremationReleaseRecordingAvailable(mode)) throw new CremationReleaseError(RELEASE_NOT_ACTIVE_MESSAGE, 423, evaluateFor(context, context.case_, now));
 
-  const eventId = options.eventId ?? crypto.randomUUID();
   // Decided again from the case as it is at write time.
   const decide = (current: Case) => {
     if (current.isDeleted) throw new CremationReleaseError('This case is archived and read-only.', 409);
     if (current.servicePreparationUnreadable) {
-      throw new CremationReleaseError("This case's saved preparation could not be read, so nothing was released. Please contact SolisCode support.", 409);
+      throw new CremationReleaseError("This case's saved preparation could not be read, so nothing was changed. Please contact SolisCode support.", 409);
     }
-    const evaluation = evaluateFor(context, current, now);
-    const refused = refusalFor(evaluation);
-    if (refused) throw refused;
-    const release = buildCremationReleaseRecord({
-      case_: current,
-      evaluation,
-      approver: context.approver,
-      approverRoleKeys: context.approverRoleKeys,
-      serviceAppointmentId: context.service?.appointmentId ?? null,
-      now,
-    });
+    const event = decideEvent(input.action, evaluateFor(context, current, now), context, current, base);
     const previous = current.servicePreparation && current.servicePreparation.definitionKey === context.definition.key ? current.servicePreparation : null;
-    return applyCremationRelease({ definition: context.definition, record: previous, release, eventId });
+    return appendReleaseEvent({ definition: context.definition, record: previous, event });
   };
-  const releasedHere = (case_: Case | null | undefined) => case_?.servicePreparation?.release?.eventId === eventId;
-  const isDecision = (error: unknown) => error instanceof CremationReleaseError || error instanceof ReleaseRefusedError || error instanceof PreparationLimitError;
+  const savedHere = (case_: Case | null | undefined) => Boolean(case_?.servicePreparation?.releaseEvents?.some((e) => e.eventId === eventId));
+  const isDecision = (error: unknown) =>
+    error instanceof CremationReleaseError || error instanceof ReleaseRefusedError || error instanceof ReleaseTransitionError || error instanceof PreparationLimitError;
 
   let saved: Case | null;
   try {
@@ -185,38 +244,46 @@ export async function approveCremationRelease(
         outcome = await updateCaseWithRetry(caller.organizationId, caseId, (row) => buildCaseFieldPatch(row.data, { servicePreparation: decide(row.case_) } as CaseUpdate));
       } catch (error) {
         if (isDecision(error)) throw error;
-        console.error(`Release for case ${caseId}: no clear answer from Wix:`, error instanceof Error ? error.message : error);
+        console.error(`Release action on case ${caseId}: no clear answer from Wix:`, error instanceof Error ? error.message : error);
         outcome = { result: 'unclear' };
       }
-      if (outcome.result === 'conflict') throw new CremationReleaseError('The case changed while this was being saved. Nothing was released — please check it and try again.', 409);
+      if (outcome.result === 'conflict') throw new CremationReleaseError('The case changed while this was being saved. Nothing was changed — please check it and try again.', 409);
       if (outcome.result === 'failed' || outcome.result === 'unclear') {
         const readBack = await loadCaseRow(caller.organizationId, caseId).catch(() => undefined);
-        if (readBack === undefined) throw new CremationReleaseError('SOLIS could not confirm whether the release was saved. Refresh the case and check it before trying again.', 503);
-        if (!releasedHere(readBack?.case_)) throw new CremationReleaseError('The release was not saved. Please try again.', 503);
+        if (readBack === undefined) throw new CremationReleaseError('SOLIS could not confirm whether this was saved. Refresh the case and check it before trying again.', 503);
+        if (!savedHere(readBack?.case_)) throw new CremationReleaseError('This was not saved. Please try again.', 503);
         saved = readBack!.case_;
       } else {
         saved = outcome.result === 'not_found' ? null : outcome.case_;
       }
     }
   } catch (error) {
-    if (error instanceof ReleaseRefusedError) throw new CremationReleaseError(error.message, 409);
+    if (error instanceof ReleaseRefusedError || error instanceof ReleaseTransitionError) throw new CremationReleaseError(error.message, 409);
     if (error instanceof PreparationLimitError) throw new CremationReleaseError(error.message, 413);
     throw error;
   }
-  const release = saved?.servicePreparation?.release;
   if (!saved) throw new CremationReleaseError('This case has no release for cremation.', 404);
-  if (!release || release.eventId !== eventId) throw new CremationReleaseError('The release was not saved. Please check the case and try again.', 409);
+  const record = saved.servicePreparation;
+  const event = record?.releaseEvents?.find((e) => e.eventId === eventId);
+  if (!record || !event) throw new CremationReleaseError('This was not saved. Please check the case and try again.', 409);
 
   try {
-    const entry = saved.servicePreparation?.history?.find((e) => e.eventId === eventId);
+    const entry = record.history?.find((e) => e.eventId === eventId);
     await recordCremationRelease(
       { organizationId: caller.organizationId, actorIdentityId: caller.userId, actorMembershipId: null, actorRoleKey: caller.role, correlationId: eventId },
       caseId,
-      { description: entry?.description ?? 'Released for cremation', release: release as unknown as Record<string, unknown> },
+      { description: entry?.description ?? event.type, release: event as unknown as Record<string, unknown>, workflowUpdate: event.type !== 'released' },
       mode,
     );
   } catch (error) {
-    console.error(`Activity event for release ${eventId} on case ${caseId} was not recorded; the release and its history entry are saved on the case:`, error instanceof Error ? error.message : error);
+    console.error(`Activity event for release action ${eventId} on case ${caseId} was not recorded; it is saved in the case's history:`, error instanceof Error ? error.message : error);
   }
-  return { release, evaluation: evaluateFor(context, saved, now) };
+  const evaluation = evaluateFor(context, saved, now);
+  return { event, status: evaluation.status, evaluation, record };
+}
+
+/** Release (or request release). Kept for callers of Phase 5K. */
+export async function approveCremationRelease(caller: ReleaseCaller, caseId: string, mode: DataAdapterMode, options: { now?: string; eventId?: string } = {}) {
+  const result = await performReleaseAction(caller, caseId, mode, { action: 'release', ...options });
+  return { ...result, release: result.record.release ?? null };
 }

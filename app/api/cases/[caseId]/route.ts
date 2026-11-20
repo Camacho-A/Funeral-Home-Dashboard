@@ -53,6 +53,8 @@ import { composeDecedentName } from '@/domain/cases/decedentName';
 import { archivedCaseWriteRefusal } from '@/domain/cases/archivedCaseWrites';
 import { syncExpectedPickupForCase } from '@/services/cremainsPickupService';
 import { findInvalidChecklistStatePatchEntries } from '@/domain/workflow/checklistItemKey';
+import { releaseGateRefusal } from '@/domain/servicePreparation/releaseForCremation';
+import { sendToCrematoryConfig } from '@/domain/crematory/crematorySettings';
 
 /**
  * Phase 15C (Wix Case Read Integration). Retrieves one case by its Solis
@@ -397,6 +399,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ca
         // a change. Judged on the case as stored, every attempt.
         if (!isAdministrator && adminOnlyChecklistChanges(current, patch.checklistState).length > 0) {
           return NextResponse.json({ case: null, error: CREMATORY_SENT_ITEMS_ADMIN_ONLY_MESSAGE }, { status: 403 });
+        }
+        // Release gate (2026-11): checking a "sent to crematory" step records
+        // that the crematory has the paperwork — refused while the case must
+        // be released and is not (or is on hold). Unchecking is allowed.
+        if (adminOnlyChecklistChanges(current, patch.checklistState).some((key) => patch.checklistState![key] === true)) {
+          const refusal = releaseGateRefusal(current, sendToCrematoryConfig(organizationId)?.requireReleaseAfterService === true);
+          if (refusal) return NextResponse.json({ case: null, error: refusal }, { status: 409 });
         }
       }
       return null;
