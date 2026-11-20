@@ -24,6 +24,7 @@ import { resolveCaseNumberPrefix } from '@/domain/cases/caseNumber';
 import { createHistoricalCaseNumberAuthorization } from '@/lib/auth/historicalCaseNumberAuthorization';
 import { externalFormSubmissionId, isCaseCreationClaimToken } from '@/types/externalFormSubmission';
 import { recordExternalFormSubmissionLinked } from '@/services/activityService';
+import { JOTFORM_KEY_NOT_CONFIGURED_MESSAGE, jotformOptionsForConfig } from '@/services/externalForms/jotformReadCredentials';
 
 /**
  * Manors Jotform integration — historical CASE creation (2026-09).
@@ -176,10 +177,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Form configuration not found.' }, { status: 404 });
   }
 
+  const jotformOptions = jotformOptionsForConfig(config);
+  if (!jotformOptions) return NextResponse.json({ error: JOTFORM_KEY_NOT_CONFIGURED_MESSAGE }, { status: 409 });
   let jotformSubmission;
   try {
-    jotformSubmission = config.apiKeyReference
-      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+    jotformSubmission = jotformOptions.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, jotformOptions)
       : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });
@@ -283,10 +286,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Form configuration not found.' }, { status: 404 });
   }
 
+  const jotformOptions = jotformOptionsForConfig(config);
+  if (!jotformOptions) return NextResponse.json({ error: JOTFORM_KEY_NOT_CONFIGURED_MESSAGE }, { status: 409 });
   let jotformSubmission;
   try {
-    jotformSubmission = config.apiKeyReference
-      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+    jotformSubmission = jotformOptions.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, jotformOptions)
       : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });

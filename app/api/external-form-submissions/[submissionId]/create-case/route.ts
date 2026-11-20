@@ -19,6 +19,7 @@ import { extractMappedFieldsForForm } from '@/domain/externalForms/arrangementNo
 import { findDuplicateCandidates, type DuplicateCandidate } from '@/domain/externalForms/duplicateCandidates';
 import { isCaseCreationClaimToken } from '@/types/externalFormSubmission';
 import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
+import { JOTFORM_KEY_NOT_CONFIGURED_MESSAGE, jotformOptionsForConfig } from '@/services/externalForms/jotformReadCredentials';
 
 /**
  * Unmatched Forms → "Create Case" (2026-10).
@@ -117,6 +118,9 @@ async function loadVerifiedFields(
   config: ExternalFormConfig,
   submission: ExternalFormSubmission,
 ): Promise<{ ok: true; fields: Partial<Record<MappedSolisField, string>> } | { ok: false; response: NextResponse }> {
+  // A non-Manors form must name its own JotForm key (Gus Phase 5M).
+  const jotformOptions = jotformOptionsForConfig(config);
+  if (!jotformOptions) return { ok: false, response: NextResponse.json({ error: JOTFORM_KEY_NOT_CONFIGURED_MESSAGE }, { status: 409 }) };
   const authenticated = await authenticateJotformSubmission({
     claimedFormId: config.externalFormId,
     claimedSubmissionId: submission.externalSubmissionId,
@@ -126,7 +130,7 @@ async function loadVerifiedFields(
     // Re-fetching by id still proves the submission genuinely exists on
     // this form, which is the provenance check that matters here.
     skipAgeCheck: true,
-    ...(config.apiKeyReference ? { apiKeyReference: config.apiKeyReference } : {}),
+    ...jotformOptions,
   });
   if (!authenticated.authentic) {
     return {

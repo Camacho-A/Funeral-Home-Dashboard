@@ -30,6 +30,7 @@ import {
 import { resolveFormRole, type ExternalFormRole } from '@/domain/externalForms/formRegistry';
 import { isOrganizationAllowedInDeployment } from '@/lib/auth/deploymentOrganizations';
 import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
+import { JOTFORM_KEY_NOT_CONFIGURED_MESSAGE, jotformOptionsForConfig } from '@/services/externalForms/jotformReadCredentials';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). Public
@@ -235,10 +236,16 @@ export async function POST(request: Request) {
   // uses `authenticated.answers` — Jotform's own record of what was
   // submitted — and never `parsed.answers`/`parsed.rawRequest`, which an
   // attacker controls.
+  // A non-Manors form must name its own JotForm key (Gus Phase 5M).
+  const jotformOptions = jotformOptionsForConfig(config);
+  if (!jotformOptions) {
+    console.error(`[POST /api/webhooks/jotform] Form ${config.externalFormId} names no JotForm key of its own — delivery not processed.`);
+    return NextResponse.json({ error: JOTFORM_KEY_NOT_CONFIGURED_MESSAGE }, { status: 409 });
+  }
   const authenticated = await authenticateJotformSubmission({
     claimedFormId: config.externalFormId,
     claimedSubmissionId: parsed.submissionId,
-    ...(config.apiKeyReference ? { apiKeyReference: config.apiKeyReference } : {}),
+    ...jotformOptions,
   });
   if (!authenticated.authentic) {
     return NextResponse.json(

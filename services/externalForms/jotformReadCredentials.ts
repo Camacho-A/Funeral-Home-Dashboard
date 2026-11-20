@@ -1,5 +1,6 @@
 import type { DataAdapterMode } from '@/lib/env';
 import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
+import type { ExternalFormConfig } from '@/types/externalFormConfig';
 import { DEFAULT_JOTFORM_API_KEY_REFERENCE, isValidJotformApiKeyReference, type JotformRequestOptions } from '@/lib/jotform/jotformClient';
 import { getRegisteredOrganizationProfile } from '@/domain/organization/organizationProfiles';
 import { listForOrganization } from '../externalFormConfigService';
@@ -36,6 +37,37 @@ export async function jotformReadOptionsFor(
   if (!legacy && rows.length !== 1) return null;
   const reference = named ?? (legacy ? DEFAULT_JOTFORM_API_KEY_REFERENCE : null);
   if (!reference || !isValidJotformApiKeyReference(reference)) return null;
+  if (reference === DEFAULT_JOTFORM_API_KEY_REFERENCE && !legacy) return null;
+  return { apiKeyReference: reference };
+}
+
+export const JOTFORM_KEY_NOT_CONFIGURED_MESSAGE =
+  "This funeral home's JotForm connection is not set up: its form does not name its own JotForm key. Nothing was read from JotForm.";
+
+/** A form row names no usable key for its organization (non-Manors). */
+export class JotformKeyNotConfiguredError extends Error {
+  constructor() {
+    super(JOTFORM_KEY_NOT_CONFIGURED_MESSAGE);
+  }
+}
+
+/**
+ * The key for a call made through a form row the caller already resolved
+ * (webhook verification, case import, historical import, the populated
+ * PDF) — Gus Phase 5M, closing the follow-up above:
+ *
+ *   - the row names a valid key → that key (the original SOLIS key only
+ *     for an organization whose profile declares it — Manors);
+ *   - the row names none → the original key for Manors, exactly as before;
+ *     for any other home, null: nothing is read (fails closed).
+ *
+ * `{}` means "the original key" (lib/jotform/jotformClient.ts's default).
+ */
+export function jotformOptionsForConfig(config: Pick<ExternalFormConfig, 'organizationId' | 'apiKeyReference'>): JotformRequestOptions | null {
+  const legacy = getRegisteredOrganizationProfile(config.organizationId).features.jotformLegacyDefaultApiKey;
+  const reference = config.apiKeyReference?.trim() || null;
+  if (!reference) return legacy ? {} : null;
+  if (!isValidJotformApiKeyReference(reference)) return null;
   if (reference === DEFAULT_JOTFORM_API_KEY_REFERENCE && !legacy) return null;
   return { apiKeyReference: reference };
 }

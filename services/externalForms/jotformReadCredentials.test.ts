@@ -68,3 +68,19 @@ describe('jotformReadOptionsFor', () => {
     expect(await jotformReadOptionsFor(MANORS, { ...sub(MANORS), provider: 'other' }, 'mock')).toBeNull();
   });
 });
+
+describe('jotformOptionsForConfig (Gus Phase 5M)', () => {
+  it('Manors: a row without a reference keeps the original key; a named key is used', async () => {
+    const { jotformOptionsForConfig } = await import('./jotformReadCredentials');
+    expect(jotformOptionsForConfig({ organizationId: 'managed-cremations', apiKeyReference: null })).toEqual({});
+    expect(jotformOptionsForConfig({ organizationId: 'managed-cremations', apiKeyReference: 'JOTFORM_API_KEY' })).toEqual({ apiKeyReference: 'JOTFORM_API_KEY' });
+  });
+
+  it('any other home must name its own key: none, blank, the original key or a non-JotForm name → nothing is read', async () => {
+    const { jotformOptionsForConfig } = await import('./jotformReadCredentials');
+    for (const apiKeyReference of [null, undefined, '', '  ', 'JOTFORM_API_KEY', 'WIX_API_KEY']) {
+      expect(jotformOptionsForConfig({ organizationId: 'gus-camacho-jr', apiKeyReference }), String(apiKeyReference)).toBeNull();
+    }
+    expect(jotformOptionsForConfig({ organizationId: 'gus-camacho-jr', apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR' })).toEqual({ apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR' });
+  });
+});

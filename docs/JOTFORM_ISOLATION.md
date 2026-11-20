@@ -22,11 +22,14 @@ Only env var NAMES are handled; the key value stays inside
 `lib/jotform/jotformClient.ts` and is never logged or returned. Provider
 errors are swallowed without their text, as before.
 
-Not changed here: the webhook, case-import and historical-import paths
-still use a row's `apiKeyReference` or the default key. They resolve the
-row by form id first (ambiguous → refused), so a Gus form only reaches the
-default key if its own row omits a reference — covered by the checklist
-below; tightening them is a follow-up.
+**Gus Phase 5M (2026-11):** the webhook, case-import, historical-import and
+populated-PDF paths now take their key from
+`jotformOptionsForConfig(config)` (same file). A row naming a valid key
+uses it; a row naming none uses the original key **only for Manors**
+(`jotformLegacyDefaultApiKey`), exactly as before. For any other home — a
+row with no key, a blank one, the original `JOTFORM_API_KEY` or a
+non-JotForm name — nothing is read from JotForm (409 / the PDF is marked
+failed with a plain reason). Manors' calls are unchanged byte for byte.
 
 ### Before enabling Gus JotForm (live, needs approval)
 

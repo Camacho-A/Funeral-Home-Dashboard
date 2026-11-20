@@ -20,6 +20,7 @@ import { recordExternalFormSubmissionLinked } from '@/services/activityService';
 import { reconcileCaseWorkflow } from '@/services/workflowReconciliationService';
 import type { Case } from '@/types/case';
 import { captureCaseSsnFromSubmission } from '@/services/caseSsnService';
+import { JOTFORM_KEY_NOT_CONFIGURED_MESSAGE, jotformOptionsForConfig } from '@/services/externalForms/jotformReadCredentials';
 
 /**
  * Manors Jotform integration — historical-submission ingestion (2026-09).
@@ -125,10 +126,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ case
     return NextResponse.json({ error: 'Case not found.' }, { status: 404 });
   }
 
+  const jotformOptions = jotformOptionsForConfig(config);
+  if (!jotformOptions) return NextResponse.json({ error: JOTFORM_KEY_NOT_CONFIGURED_MESSAGE }, { status: 409 });
   let jotformSubmission;
   try {
-    jotformSubmission = config.apiKeyReference
-      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+    jotformSubmission = jotformOptions.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, jotformOptions)
       : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });
@@ -177,10 +180,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
     return NextResponse.json({ error: 'Case not found.' }, { status: 404 });
   }
 
+  const jotformOptions = jotformOptionsForConfig(config);
+  if (!jotformOptions) return NextResponse.json({ error: JOTFORM_KEY_NOT_CONFIGURED_MESSAGE }, { status: 409 });
   let jotformSubmission;
   try {
-    jotformSubmission = config.apiKeyReference
-      ? await fetchSubmissionAnswers(externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+    jotformSubmission = jotformOptions.apiKeyReference
+      ? await fetchSubmissionAnswers(externalSubmissionId, jotformOptions)
       : await fetchSubmissionAnswers(externalSubmissionId);
   } catch (error) {
     return NextResponse.json({ error: sanitizedFetchErrorMessage(error) }, { status: 502 });

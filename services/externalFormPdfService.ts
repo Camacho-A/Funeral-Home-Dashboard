@@ -11,6 +11,7 @@ import type { ActivityContext } from './activityService';
 import { recordExternalFormPdfStored, recordExternalFormPdfFailed } from './activityService';
 import { runAfterResponse } from '../lib/afterResponse';
 import { ARRANGEMENT_FORMS_DOCUMENT_TYPE_KEY } from '../domain/documents/arrangementPageExtracts';
+import { JotformKeyNotConfiguredError, jotformOptionsForConfig } from './externalForms/jotformReadCredentials';
 
 /**
  * Manors Jotform integration (case-first architecture, 2026-09). PDF
@@ -119,8 +120,11 @@ export async function preservePdfForSubmission(
     }
     const documentId = attempts.length === 0 ? baseDocumentId : `${baseDocumentId}-${attempts.length + 1}`;
 
-    const buffer = config?.apiKeyReference
-      ? await fetchSubmissionPdf(submission.externalFormId, submission.externalSubmissionId, { apiKeyReference: config.apiKeyReference })
+    // A non-Manors form must name its own JotForm key (Gus Phase 5M).
+    const jotformOptions = jotformOptionsForConfig(config ?? { organizationId: submission.organizationId, apiKeyReference: null });
+    if (!jotformOptions) throw new JotformKeyNotConfiguredError();
+    const buffer = jotformOptions.apiKeyReference
+      ? await fetchSubmissionPdf(submission.externalFormId, submission.externalSubmissionId, jotformOptions)
       : await fetchSubmissionPdf(submission.externalFormId, submission.externalSubmissionId);
 
     document = await uploadDocument(
@@ -146,7 +150,12 @@ export async function preservePdfForSubmission(
     // never submission content. A JotformClientError's own `category`
     // is safe to persist/report; anything else is reduced to a fixed,
     // generic phrase.
-    const sanitizedReason = error instanceof JotformClientError ? `Jotform PDF retrieval failed (${error.category}).` : 'PDF preservation failed unexpectedly.';
+    const sanitizedReason =
+      error instanceof JotformKeyNotConfiguredError
+        ? 'JotForm is not set up for this funeral home (no JotForm key of its own).'
+        : error instanceof JotformClientError
+          ? `Jotform PDF retrieval failed (${error.category}).`
+          : 'PDF preservation failed unexpectedly.';
     await externalFormSubmissionService.updatePdfFailed(submission.id, sanitizedReason, dataAdapterMode);
 
     try {

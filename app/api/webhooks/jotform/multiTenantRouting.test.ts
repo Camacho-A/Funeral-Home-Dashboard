@@ -147,11 +147,11 @@ function seedConfigs(extra: Array<[string, Record<string, unknown>]> = []) {
     ],
     [
       GUS_FORM_CONFIG_ID,
-      configRow({ organizationId: GUS, externalFormId: GUS_FORM_ID, label: 'Gus Form', linkTokenFieldName: 'solisLinkToken', linkTokenFieldQid: GUS_LINK_QID }),
+      configRow({ organizationId: GUS, externalFormId: GUS_FORM_ID, label: 'Gus Form', linkTokenFieldName: 'solisLinkToken', linkTokenFieldQid: GUS_LINK_QID, apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR' }),
     ],
     [
       'cfg-gus-intake',
-      configRow({ organizationId: GUS, externalFormId: GUS_INTAKE_FORM_ID, label: 'Gus Intake', purpose: 'case_create' }),
+      configRow({ organizationId: GUS, externalFormId: GUS_INTAKE_FORM_ID, label: 'Gus Intake', purpose: 'case_create', apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR' }),
     ],
   ]);
   for (const [id, row] of extra) configs.set(id, row);
@@ -246,6 +246,30 @@ describe('two organizations with distinct form ids route independently', () => {
     expect(vi.mocked(fetchSubmissionAnswers)).toHaveBeenCalledWith('2000000000000000003', {
       apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR',
     });
+  });
+
+  it('a Gus config naming no key of its own is refused — never read with the original SOLIS key (Gus Phase 5M)', async () => {
+    const gusConfig = store.get('externalFormConfigs')!.get(GUS_FORM_CONFIG_ID)!;
+    gusConfig.apiKeyReference = '';
+    givenJotformHasSubmission(GUS_FORM_ID, '2000000000000000005');
+
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    const { POST } = await import('./route');
+    const response = await POST(webhookRequest({ formID: GUS_FORM_ID, submissionID: '2000000000000000005' }));
+    expect(response.status).toBe(409);
+    expect(fetchSubmissionAnswers).not.toHaveBeenCalled();
+    expect(writes).toEqual([]);
+  });
+
+  it('a Gus config naming the original SOLIS key is refused too', async () => {
+    const gusConfig = store.get('externalFormConfigs')!.get(GUS_FORM_CONFIG_ID)!;
+    gusConfig.apiKeyReference = 'JOTFORM_API_KEY';
+    givenJotformHasSubmission(GUS_FORM_ID, '2000000000000000006');
+
+    const { fetchSubmissionAnswers } = await import('@/lib/jotform/jotformClient');
+    const { POST } = await import('./route');
+    expect((await POST(webhookRequest({ formID: GUS_FORM_ID, submissionID: '2000000000000000006' }))).status).toBe(409);
+    expect(fetchSubmissionAnswers).not.toHaveBeenCalled();
   });
 
   it('a Gus config naming a non-Jotform secret is refused before Jotform is called and nothing is written', async () => {

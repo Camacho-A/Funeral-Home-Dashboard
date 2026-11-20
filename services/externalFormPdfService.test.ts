@@ -196,8 +196,17 @@ describe('preservePdfForSubmission — organization-aware document typing (2026-
     externalFormSubmissionFixtures.push(submission);
 
     const { preservePdfForSubmission } = await import('./externalFormPdfService');
-    await preservePdfForSubmission(submission, 'case-gus', { ...CTX, organizationId: 'gus-camacho-jr' }, 'mock');
+    // Gus Phase 5M: without a form row naming Gus's own key, nothing is read
+    // from JotForm (never with the original SOLIS key).
+    const refused = await preservePdfForSubmission(submission, 'case-gus', { ...CTX, organizationId: 'gus-camacho-jr' }, 'mock');
+    expect(refused.outcome).toBe('failed');
+    expect(fetchSubmissionPdf).not.toHaveBeenCalled();
 
+    const gusConfig = { organizationId: 'gus-camacho-jr', provider: 'jotform' as const, externalFormId: '261945978664175', mappingKey: null, apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR' };
+    const retry = { ...submission, pdfStatus: 'pending' as const };
+    await preservePdfForSubmission(retry as never, 'case-gus', { ...CTX, organizationId: 'gus-camacho-jr' }, 'mock', { config: gusConfig as never });
+
+    expect(vi.mocked(fetchSubmissionPdf).mock.calls[0][2]).toEqual({ apiKeyReference: 'JOTFORM_API_KEY_GUS_CAMACHO_JR' });
     const [uploadParams] = vi.mocked(upload).mock.calls[0];
     expect(uploadParams.fileName).toBe('261945978664175.pdf');
     expect(uploadParams.documentTypeKey).toBeUndefined();
