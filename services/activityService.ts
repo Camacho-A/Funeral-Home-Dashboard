@@ -1616,6 +1616,30 @@ export function recordMedicalExaminerApprovalChange(
   );
 }
 
+/** Gus Phase 5K: the remains were released for cremation. */
+export function recordCremationRelease(
+  ctx: ActivityContext,
+  caseId: string,
+  details: { description: string; release: Record<string, unknown> },
+  dataAdapterMode: DataAdapterMode,
+): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId,
+      category: 'cases',
+      eventType: ACTIVITY_EVENT_TYPES.CASE_RELEASED_FOR_CREMATION,
+      resourceType: 'case',
+      resourceId: caseId,
+      previousValue: null,
+      newValue: JSON.stringify(details.release),
+      description: details.description,
+      metadata: null,
+      severity: 'info',
+    }),
+    dataAdapterMode,
+  );
+}
+
 export function recordCrematoryEvent(
   ctx: ActivityContext,
   caseId: string,

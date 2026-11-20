@@ -615,6 +615,11 @@ export const ACTIVITY_EVENT_TYPES = {
   /** Gus Phase 5G: staff recorded (or corrected) the medical examiner
       cremation approval they confirmed in EDRS. */
   MEDICAL_EXAMINER_APPROVAL_RECORDED: 'case.medical_examiner_approval_recorded',
+  /** Gus Phase 5K: an authorized, licensed Funeral Director released the
+      remains for cremation after the service. Mirrors the release entry in
+      the case's service preparation history. Inactive until approved
+      (RELEASE_FOR_CREMATION_AVAILABLE). */
+  CASE_RELEASED_FOR_CREMATION: 'case.released_for_cremation',
 } as const;
 
 export type ActivityEventType = (typeof ACTIVITY_EVENT_TYPES)[keyof typeof ACTIVITY_EVENT_TYPES];

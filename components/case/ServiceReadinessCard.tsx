@@ -210,12 +210,45 @@ function ItemRow({
   );
 }
 
+/** Two steps: the director confirms they are releasing the remains. */
+function ReleaseConfirm({ serviceName, isSaving, error, onConfirm }: { serviceName: string; isSaving: boolean; error: string | null; onConfirm: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  if (!confirming) {
+    return (
+      <button type="button" className={styles.releaseButton} onClick={() => setConfirming(true)}>
+        Release for cremation
+      </button>
+    );
+  }
+  return (
+    <div role="group" aria-label="Confirm release for cremation">
+      <p className={styles.note}>
+        You are releasing the remains for cremation after the {serviceName.toLowerCase()}, as the approving funeral director. This is recorded with your name and license and
+        cannot be undone here.
+      </p>
+      {error && (
+        <p className="sx-form-banner sx-form-banner-error" role="alert">
+          {error}
+        </p>
+      )}
+      <span className={styles.controls}>
+        <button type="button" className={styles.releaseButton} disabled={isSaving} onClick={onConfirm}>
+          {isSaving ? 'Releasing…' : 'Confirm release'}
+        </button>
+        <button type="button" className={styles.linkButton} disabled={isSaving} onClick={() => setConfirming(false)}>
+          Cancel
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: Case; now?: string; onOpenDocuments?: () => void }) {
   const { organizationId } = useOrganization();
   const organizationRecord = useOrganizationRecord();
   const enabled = getRegisteredOrganizationProfile(organizationId).features.servicePreparation;
   const definition: ServicePreparationDefinition | null = enabled ? servicePreparationFor(case_.workflowSnapshot?.serviceTypeCode) : null;
-  const { query, save, recordMedicalExaminer } = useServicePreparation(organizationId, case_.id, Boolean(definition));
+  const { query, save, recordMedicalExaminer, releaseForCremation } = useServicePreparation(organizationId, case_.id, Boolean(definition));
   if (!definition) return null;
 
   if (query.isPending) {
@@ -402,12 +435,33 @@ export function ServiceReadinessCard({ case_, now, onOpenDocuments }: { case_: C
               ))}
             </ul>
           )}
-          <button type="button" className={styles.releaseButton} disabled aria-describedby={`release-unavailable-${case_.id}`}>
-            Release for cremation
-          </button>
-          <p id={`release-unavailable-${case_.id}`} className={styles.note}>
-            {release?.unavailableReason ?? RELEASE_FOR_CREMATION_UNAVAILABLE_REASON}
-          </p>
+          {record?.release ? (
+            <p className={styles.released} data-testid="release-recorded">
+              Released for cremation by {record.release.releasedByName ?? 'a funeral director'}, {when(record.release.releasedAt, timezone)}
+              {record.release.approval && (
+                <span className={styles.itemHint}>
+                  {' '}
+                  — {record.release.approval.licenseState} license {record.release.approval.licenseNumber}
+                </span>
+              )}
+            </p>
+          ) : release?.canRelease ? (
+            <ReleaseConfirm
+              serviceName={readiness.serviceName}
+              isSaving={releaseForCremation.isPending}
+              error={releaseForCremation.isError ? releaseForCremation.error.message : null}
+              onConfirm={() => releaseForCremation.mutate()}
+            />
+          ) : (
+            <>
+              <button type="button" className={styles.releaseButton} disabled aria-describedby={`release-unavailable-${case_.id}`}>
+                Release for cremation
+              </button>
+              <p id={`release-unavailable-${case_.id}`} className={styles.note}>
+                {release?.unavailableReason ?? (release?.allPrerequisitesMet === false ? 'Every requirement above must be met first.' : RELEASE_FOR_CREMATION_UNAVAILABLE_REASON)}
+              </p>
+            </>
+          )}
         </div>
       )}
     </section>

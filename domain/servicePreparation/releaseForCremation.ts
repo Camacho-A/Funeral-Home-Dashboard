@@ -6,7 +6,8 @@ import { checkMedicalExaminerApproval } from '../crematory/medicalExaminerApprov
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
 import type { ServiceReadiness } from './readiness';
-import type { ServicePreparationDefinition } from './types';
+import { emptyPreparationRecord, PREPARATION_RECORD_MAX_BYTES, PreparationChangeError, PreparationLimitError, preparationRecordBytes } from './preparationUpdates';
+import type { PreparationAuditEntry, ReleaseApprovalSnapshot, ReleaseForCremationRecord, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
 /**
  * Release for cremation (Gus Phase 5F, 2026-11).
@@ -118,14 +119,20 @@ export function deathInstant(dateOfDeath: string, timeOfDeath: string, timeZone:
 /** Is this person an authorized Funeral Director for the case's
     organization? Their own profile, in that organization, and either the
     Funeral Director role or an explicit authorization someone ELSE granted. */
-export function approverAuthorization(approver: ReleaseApprover, organizationId: string, funeralDirectorRoleKeys: readonly string[]): { ok: boolean; detail: string } {
+export function approverAuthorization(
+  approver: ReleaseApprover,
+  organizationId: string,
+  funeralDirectorRoleKeys: readonly string[],
+): { ok: boolean; detail: string; basis?: ReleaseApprovalSnapshot['basis'] } {
   const profile = approver.staffProfile;
   if (!profile || profile.organizationId !== organizationId || profile.identityId !== approver.identityId) {
     return { ok: false, detail: 'No staff profile for this person in this funeral home.' };
   }
-  if (funeralDirectorRoleKeys.includes(approver.roleKey)) return { ok: true, detail: '' };
+  if (funeralDirectorRoleKeys.includes(approver.roleKey)) return { ok: true, detail: '', basis: 'funeral_director_role' };
   const grant = profile.funeralDirectorAuthorization;
-  if (grant && grant.authorizedBy && grant.authorizedBy !== approver.identityId && !Number.isNaN(Date.parse(grant.authorizedAt))) return { ok: true, detail: '' };
+  if (grant && grant.authorizedBy && grant.authorizedBy !== approver.identityId && !Number.isNaN(Date.parse(grant.authorizedAt))) {
+    return { ok: true, detail: '', basis: 'funeral_director_authorization' };
+  }
   if (grant && grant.authorizedBy === approver.identityId) return { ok: false, detail: 'Funeral Director authorization cannot be self-granted.' };
   return { ok: false, detail: 'Not authorized as a Funeral Director (the role alone, e.g. Administrator, is not enough).' };
 }
@@ -205,24 +212,46 @@ export function evaluateReleaseForCremation(params: {
   };
 }
 
-/** What a release WILL record once active: the approving director, the
-    case, the time and every satisfied prerequisite. Refuses unless every
-    prerequisite is met. */
+/** What a release records: the approving director (and why they count as
+    one), their license, the case, the time and every satisfied
+    prerequisite. Refuses unless every prerequisite is met. */
 export type CremationReleaseRecord = {
   caseId: string;
   organizationId: string;
   serviceAppointmentId: string | null;
   approvedAt: string;
-  approvedBy: { identityId: string; staffProfileId: string; name: string; roleKey: string; licenseNumber: string; licenseState: string; licenseExpiresOn: string };
+  approvedBy: {
+    identityId: string;
+    staffProfileId: string;
+    name: string;
+    roleKey: string;
+    basis: ReleaseApprovalSnapshot['basis'];
+    licenseNumber: string;
+    licenseState: string;
+    licenseExpiresOn: string;
+    licenseVerifiedAt: string | null;
+    licenseVerifiedBy: string | null;
+  };
   prerequisites: { key: ReleasePrerequisiteKey; label: string }[];
 };
 
-export function buildCremationReleaseRecord(params: { case_: Case; evaluation: ReleaseEvaluation; approver: ReleaseApprover; serviceAppointmentId: string | null; now: string }): CremationReleaseRecord {
+export class ReleaseRefusedError extends Error {}
+
+export function buildCremationReleaseRecord(params: {
+  case_: Case;
+  evaluation: ReleaseEvaluation;
+  approver: ReleaseApprover;
+  approverRoleKeys?: readonly string[];
+  serviceAppointmentId: string | null;
+  now: string;
+}): CremationReleaseRecord {
   const { evaluation, approver } = params;
   const license = approver.staffProfile?.funeralDirectorLicense;
-  if (!evaluation.allPrerequisitesMet || !approver.staffProfile || !license) {
-    throw new Error('Release refused: not every prerequisite is met.');
+  if (!evaluation.allPrerequisitesMet || evaluation.released || !approver.staffProfile || !license) {
+    throw new ReleaseRefusedError('Release refused: not every prerequisite is met.');
   }
+  const authorization = approverAuthorization(approver, params.case_.organizationId, params.approverRoleKeys ?? [approver.roleKey]);
+  if (!authorization.ok || !authorization.basis) throw new ReleaseRefusedError('Release refused: not every prerequisite is met.');
   return {
     caseId: params.case_.id,
     organizationId: params.case_.organizationId,
@@ -233,10 +262,65 @@ export function buildCremationReleaseRecord(params: { case_: Case; evaluation: R
       staffProfileId: approver.staffProfile.id,
       name: approver.staffProfile.displayName,
       roleKey: approver.roleKey,
+      basis: authorization.basis,
       licenseNumber: license.licenseNumber,
       licenseState: license.state,
       licenseExpiresOn: license.expiresOn,
+      licenseVerifiedAt: license.verification?.verifiedAt ?? null,
+      licenseVerifiedBy: license.verification?.verifiedBy ?? null,
     },
     prerequisites: evaluation.prerequisites.map((p) => ({ key: p.key, label: p.label })),
   };
+}
+
+/**
+ * The preparation record with the release added (Gus Phase 5K) — the
+ * release and its history entry in ONE record, so they are saved together
+ * or not at all. A record can be released once; afterwards preparation is
+ * read-only (applyPreparationChange refuses). Nothing is ever removed.
+ */
+export function applyCremationRelease(params: {
+  definition: ServicePreparationDefinition;
+  record: ServicePreparationRecord | null;
+  release: CremationReleaseRecord;
+  eventId: string;
+}): ServicePreparationRecord {
+  const { definition, release } = params;
+  if (params.record && params.record.definitionKey !== definition.key) throw new PreparationChangeError('This preparation belongs to a different service.');
+  if (params.record?.release) throw new ReleaseRefusedError('Already released for cremation.');
+  const record: ServicePreparationRecord = structuredClone(params.record ?? emptyPreparationRecord(definition, release.serviceAppointmentId));
+  const stored: ReleaseForCremationRecord = {
+    releasedAt: release.approvedAt,
+    releasedBy: release.approvedBy.identityId,
+    releasedByName: release.approvedBy.name,
+    roleKey: release.approvedBy.roleKey,
+    eventId: params.eventId,
+    approval: {
+      staffProfileId: release.approvedBy.staffProfileId,
+      basis: release.approvedBy.basis,
+      licenseNumber: release.approvedBy.licenseNumber,
+      licenseState: release.approvedBy.licenseState,
+      licenseExpiresOn: release.approvedBy.licenseExpiresOn,
+      licenseVerifiedAt: release.approvedBy.licenseVerifiedAt,
+      licenseVerifiedBy: release.approvedBy.licenseVerifiedBy,
+      serviceAppointmentId: release.serviceAppointmentId,
+      prerequisites: release.prerequisites,
+    },
+  };
+  record.release = stored;
+  const entry: PreparationAuditEntry = {
+    eventId: params.eventId,
+    target: { kind: 'release', key: 'release_for_cremation' },
+    description: `Released for cremation by ${release.approvedBy.name} (${release.approvedBy.licenseState} license ${release.approvedBy.licenseNumber})`,
+    previous: null,
+    next: stored,
+    actorId: release.approvedBy.identityId,
+    actorName: release.approvedBy.name,
+    at: release.approvedAt,
+  };
+  record.history = [...(record.history ?? []), entry];
+  if (preparationRecordBytes(record) > PREPARATION_RECORD_MAX_BYTES) {
+    throw new PreparationLimitError("This case's preparation record is full (including its history). Nothing was released. Please contact SolisCode support.");
+  }
+  return record;
 }

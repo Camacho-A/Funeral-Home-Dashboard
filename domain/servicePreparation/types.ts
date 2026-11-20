@@ -165,9 +165,30 @@ export type PreparationItemRecord = {
 
 export type ReleaseForCremationRecord = {
   releasedAt: string;
+  /** The approving funeral director's identity id. */
   releasedBy: string;
   releasedByName: string | null;
   roleKey: string;
+  /** Server-generated; also the history entry's and the Activity event's id
+      (Phase 5K). Absent only on records written before it existed. */
+  eventId?: string;
+  /** What the release rested on, as it was at that moment (Phase 5K). */
+  approval?: ReleaseApprovalSnapshot;
+};
+
+/** The approving director and every satisfied prerequisite, frozen at the
+    moment of release (domain/servicePreparation/releaseForCremation.ts). */
+export type ReleaseApprovalSnapshot = {
+  staffProfileId: string;
+  /** Why this person counts as a Funeral Director. */
+  basis: 'funeral_director_role' | 'funeral_director_authorization';
+  licenseNumber: string;
+  licenseState: string;
+  licenseExpiresOn: string;
+  licenseVerifiedAt: string | null;
+  licenseVerifiedBy: string | null;
+  serviceAppointmentId: string | null;
+  prerequisites: { key: string; label: string }[];
 };
 
 /** Who last set a choice or detail, and when. */
@@ -198,10 +219,11 @@ export type ServicePreparationRecord = {
     and is also the correlationId of the matching Activity event. */
 export type PreparationAuditEntry = {
   eventId: string;
-  target: { kind: 'item' | 'choice' | 'detail'; key: string };
+  /** 'release' (Phase 5K): the release for cremation itself. */
+  target: { kind: 'item' | 'choice' | 'detail' | 'release'; key: string };
   description: string;
-  previous: PreparationItemRecord | PreparationValueRecord | null;
-  next: PreparationItemRecord | PreparationValueRecord;
+  previous: PreparationItemRecord | PreparationValueRecord | ReleaseForCremationRecord | null;
+  next: PreparationItemRecord | PreparationValueRecord | ReleaseForCremationRecord;
   actorId: string;
   actorName: string | null;
   at: string;

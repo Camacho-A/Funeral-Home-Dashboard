@@ -249,14 +249,42 @@ release roles are unaffected), enter/verify their own license, or grant
 themselves Funeral Director authorization. Deployment variables:
 `docs/GUS_DEPLOYMENT_ENVIRONMENT.md`.
 
+### Recording the release (Phase 5K) — built, NOT active
+
+`POST /api/cases/[caseId]/cremation-release { organizationId, confirm: true }`
+→ `services/cremationReleaseService.ts › approveCremationRelease`.
+
+- Refused (423) unless BOTH `RELEASE_FOR_CREMATION_AVAILABLE` and
+  preparation saving on this site (`SERVICE_PREPARATION_WIX_FIELD_ADDED`
+  on Wix) are on. Both are off. The card's button stays disabled.
+- The approver, time and every requirement come from the server (session,
+  case, the approver's own credential record). The body carries only the
+  confirmation.
+- Decided again from the case as it is at write time; a requirement that
+  stopped being met in between refuses the release.
+- Saved as `servicePreparation.release` together with a `release` history
+  entry, in ONE revision-checked case write. The stored release keeps the
+  approver, why they count as a Funeral Director (role or authorization),
+  their license (number, state, expiry, who verified it and when), the
+  service appointment and every satisfied requirement.
+- Once and only once: a second release is refused, and preparation becomes
+  read-only. There is no "undo" — whether and how a release may be
+  reversed is an open decision (below).
+- An unclear Wix answer is settled by reading the case back (the event id
+  decides); never a blind retry.
+- One `case.released_for_cremation` Activity event, with the same id.
+- Sends nothing. The checklist, stage, crematory record and Send to
+  Crematory are not touched.
+
 ### Still needed before release can be activated
 
-- A Gus Wix-connected deployment (none exists) and approval to set
+- A Gus Wix-connected deployment and approval to set
   `SOLIS_FD_CREDENTIALS_STORAGE=wix` on it.
 - Approval to write ME approvals to live case rows
   (`MEDICAL_EXAMINER_APPROVAL_LIVE_SAVING`).
-- Writing the release record (`servicePreparation.release`, with its
-  history entry), then `RELEASE_FOR_CREMATION_AVAILABLE`.
+- Approval to save preparation on live Wix
+  (`SERVICE_PREPARATION_WIX_FIELD_ADDED`), then
+  `RELEASE_FOR_CREMATION_AVAILABLE`.
 - Send to Crematory refusing a Viewing/Final Goodbye case until released —
   a separate, approved change.
 
@@ -321,3 +349,7 @@ unrecorded approval.
   with organization.manage, never for themselves)?
 - Prayer cards, register book, crucifix for a Final Goodbye: offered or not?
 - Are the default deadline targets right for Gus's vendors and parishes?
+- Reversing a release (Phase 5K): may a release be withdrawn (e.g. the
+  family asks to wait), by whom, and does it need a reason? Not built; a
+  release is final in SOLIS until decided.
+

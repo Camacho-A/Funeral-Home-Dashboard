@@ -83,5 +83,23 @@ export function useServicePreparation(organizationId: string, caseId: string, en
     },
   });
 
-  return { query, save, recordMedicalExaminer };
+  // Gus Phase 5K: release for cremation (refused by the server while inactive).
+  const releaseForCremation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch(`/api/cases/${encodeURIComponent(caseId)}/cremation-release`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ organizationId, confirm: true }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new ServicePreparationSaveError(body.error ?? 'Could not release. Nothing was released.', response.status);
+      return body;
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: key });
+      queryClient.invalidateQueries({ queryKey: ['activityEvents'] });
+    },
+  });
+
+  return { query, save, recordMedicalExaminer, releaseForCremation };
 }

@@ -46,7 +46,15 @@ function readMap<T>(raw: unknown, read: (value: unknown) => T | null): Record<st
 
 function readRelease(raw: unknown): ReleaseForCremationRecord | null {
   if (!isObject(raw) || typeof raw.releasedAt !== 'string' || typeof raw.releasedBy !== 'string' || typeof raw.roleKey !== 'string') return null;
-  return { releasedAt: raw.releasedAt, releasedBy: raw.releasedBy, releasedByName: textOrNull(raw.releasedByName), roleKey: raw.roleKey };
+  return {
+    releasedAt: raw.releasedAt,
+    releasedBy: raw.releasedBy,
+    releasedByName: textOrNull(raw.releasedByName),
+    roleKey: raw.roleKey,
+    ...(typeof raw.eventId === 'string' ? { eventId: raw.eventId } : {}),
+    // Kept exactly as stored — it is the record of what release rested on.
+    ...(isObject(raw.approval) ? { approval: raw.approval as unknown as ReleaseForCremationRecord['approval'] } : {}),
+  };
 }
 
 function readHistory(raw: unknown): PreparationAuditEntry[] | null {

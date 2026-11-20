@@ -315,3 +315,10 @@
   gap: 6px;
   font-size: 12.5px;
 }
+
+/* Gus Phase 5K: a recorded release. */
+.released {
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--color-text);
+}

@@ -199,3 +199,66 @@ describe('ServiceReadinessCard — medical examiner approval (Phase 5G)', () => 
     expect(within(section).queryByRole('button', { name: 'Record the approval' })).toBeNull();
   });
 });
+
+describe('ServiceReadinessCard — release for cremation (Phase 5K)', () => {
+  const evaluation = (overrides: Record<string, unknown> = {}) => ({
+    applies: true,
+    released: false,
+    prerequisites: [{ key: 'service_completed', label: 'Viewing marked completed', met: true }],
+    allPrerequisitesMet: true,
+    canRelease: true,
+    unavailableReason: null,
+    ...overrides,
+  });
+
+  it('when release is allowed, it asks the director to confirm, then posts only a confirmation', async () => {
+    const fetchMock = stubFetch({ preparation: view(), canEdit: true, release: evaluation() } as never, () => ({ status: 200, body: { release: {} } }));
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    fireEvent.click(await screen.findByRole('button', { name: 'Release for cremation' }));
+    expect(screen.getByText(/recorded with your name and license/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm release' }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/cremation-release') && init?.method === 'POST')).toBe(true));
+    const post = fetchMock.mock.calls.find(([url]) => String(url).includes('/cremation-release'))!;
+    expect(JSON.parse(String(post[1]!.body))).toEqual({ organizationId: GUS_CAMACHO_ORGANIZATION_ID, confirm: true });
+  });
+
+  it('shows the server’s refusal and releases nothing', async () => {
+    stubFetch({ preparation: view(), canEdit: true, release: evaluation() } as never, () => ({ status: 423, body: { error: 'Release for cremation is not active yet. Nothing was released.' } }));
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    fireEvent.click(await screen.findByRole('button', { name: 'Release for cremation' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm release' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/Nothing was released/);
+  });
+
+  it('with requirements unmet, the button stays disabled and says why', async () => {
+    stubFetch({ preparation: view(), canEdit: true, release: evaluation({ allPrerequisitesMet: false, canRelease: false }) } as never);
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    expect((await screen.findByRole('button', { name: 'Release for cremation' })).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText('Every requirement above must be met first.')).toBeTruthy();
+  });
+
+  it('a recorded release shows who released it, when, and on which license — and no button', async () => {
+    const record: ServicePreparationRecord = {
+      definitionKey: 'prep.viewing',
+      definitionVersion: 2,
+      serviceAppointmentId: 'appt-fictional',
+      choices: {},
+      details: {},
+      items: {},
+      release: {
+        releasedAt: '2026-12-11T15:00:00.000Z',
+        releasedBy: 'identity-gus-director',
+        releasedByName: 'Jordan Demo',
+        roleKey: 'funeralDirector',
+        eventId: 'r1',
+        approval: { staffProfileId: 's', basis: 'funeral_director_role', licenseNumber: 'FD-FICTIONAL-0001', licenseState: 'FL', licenseExpiresOn: '2030-01-31', licenseVerifiedAt: null, licenseVerifiedBy: null, serviceAppointmentId: 'appt-fictional', prerequisites: [] },
+      },
+    };
+    stubFetch({ preparation: view({ record }), canEdit: true, release: evaluation({ released: true, canRelease: false }) } as never);
+    renderCard(caseWith(SERVICE_TYPE_CODES.CREMATION_WITH_VIEWING), GUS_CAMACHO_ORGANIZATION_ID);
+    const recorded = await screen.findByTestId('release-recorded');
+    expect(recorded.textContent).toMatch(/Released for cremation by Jordan Demo/);
+    expect(recorded.textContent).toMatch(/FL license FD-FICTIONAL-0001/);
+    expect(screen.queryByRole('button', { name: 'Release for cremation' })).toBeNull();
+  });
+});
