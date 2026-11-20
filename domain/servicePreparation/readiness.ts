@@ -139,6 +139,15 @@ function evaluateItem(params: {
   };
 }
 
+/** Whether cremation waits for this service, from the record alone (no
+    appointment needed): true, false, or undecided while the choice that
+    decides it is not made. */
+export function serviceHoldsCremation(definition: ServicePreparationDefinition, record: ServicePreparationRecord | null): boolean | 'undecided' {
+  if (definition.holdsCremation === 'always') return true;
+  const choices: Record<string, string> = Object.fromEntries(Object.entries(record?.choices ?? {}).map(([key, v]) => [key, v.value]));
+  return conditionState(definition.holdsCremation, choices);
+}
+
 export function summarizeServiceReadiness(params: {
   definition: ServicePreparationDefinition;
   record: ServicePreparationRecord | null;

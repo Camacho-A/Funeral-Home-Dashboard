@@ -23,6 +23,7 @@ export type CrematoryRequirementKey =
   | 'ready_date'
   | 'package'
   | 'send_outcome'
+  | 'released_for_cremation'
   | 'permission';
 
 export type CrematoryRequirement = { key: CrematoryRequirementKey; label: string; ok: boolean; detail: string | null };
@@ -72,6 +73,12 @@ export type CrematoryReadinessInput = {
       sources and confirmed date produce. */
   package: { fileName: string; current: boolean } | null;
   canSend: boolean;
+  /** Gus Phase 5K: the case's service holds cremation and the organization
+      requires its release before sending (domain/servicePreparation/
+      releaseForCremation.ts › crematoryReleaseGate). Absent or null = no
+      such requirement (Manors; Gus until approved). A condition for
+      SENDING, never for building or previewing the package. */
+  releaseGate?: { serviceName: string; released: boolean; undecided: boolean } | null;
 };
 
 export type CrematoryReadiness = {
@@ -162,6 +169,13 @@ export function evaluateCrematoryReadiness(input: CrematoryReadinessInput): Crem
 
   add('package', 'Crematory Package up to date', input.package !== null && input.package.current,
     input.package === null ? 'Build the Crematory Package.' : 'The permit, page 3 or the expected date changed. Review and rebuild the Crematory Package.');
+  const gate = input.releaseGate;
+  if (gate && input.sentAt === null) {
+    add('released_for_cremation', `Released for cremation after the ${gate.serviceName.toLowerCase()}`, gate.released,
+      gate.undecided
+        ? `Answer whether cremation waits for the ${gate.serviceName.toLowerCase()} in Service readiness; until then it is treated as waiting.`
+        : `A licensed funeral director must release the remains for cremation after the ${gate.serviceName.toLowerCase()} (Service readiness).`);
+  }
   add('permission', 'Allowed to send documents', input.canSend, 'You do not have permission to send documents to the crematory.');
 
   return { requirements: r, readyToBuild, readyToSend: r.every((requirement) => requirement.ok) };

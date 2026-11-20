@@ -5,7 +5,8 @@ import { checkFuneralDirectorLicense } from '../staff/funeralDirectorLicense';
 import { checkMedicalExaminerApproval } from '../crematory/medicalExaminerApproval';
 import type { Case } from '../../types/case';
 import type { StaffProfile } from '../../types/staffProfile';
-import type { ServiceReadiness } from './readiness';
+import { serviceHoldsCremation, type ServiceReadiness } from './readiness';
+import { servicePreparationFor } from './serviceDefinitions';
 import { emptyPreparationRecord, PREPARATION_RECORD_MAX_BYTES, PreparationChangeError, PreparationLimitError, preparationRecordBytes } from './preparationUpdates';
 import type { PreparationAuditEntry, ReleaseApprovalSnapshot, ReleaseForCremationRecord, ServicePreparationDefinition, ServicePreparationRecord } from './types';
 
@@ -323,4 +324,26 @@ export function applyCremationRelease(params: {
     throw new PreparationLimitError("This case's preparation record is full (including its history). Nothing was released. Please contact SolisCode support.");
   }
   return record;
+}
+
+/**
+ * The Send to Crematory release gate (Gus Phase 5K). For a case whose
+ * service holds cremation (Viewing, Final Goodbye — and a Mass while
+ * "body present?" is unanswered), the crematory package may not be SENT
+ * until the release is recorded. Null when the gate does not apply: the
+ * organization does not enforce it, or the case has no such service.
+ * Enforcement is the organization profile's
+ * `sendToCrematory.requireReleaseAfterService` — OFF everywhere until
+ * approved.
+ */
+export type CrematoryReleaseGate = { serviceName: string; released: boolean; undecided: boolean };
+
+export function crematoryReleaseGate(case_: Pick<Case, 'workflowSnapshot' | 'servicePreparation'>, enforced: boolean): CrematoryReleaseGate | null {
+  if (!enforced) return null;
+  const definition = servicePreparationFor(case_.workflowSnapshot?.serviceTypeCode);
+  if (!definition) return null;
+  const record = case_.servicePreparation && case_.servicePreparation.definitionKey === definition.key ? case_.servicePreparation : null;
+  const holds = serviceHoldsCremation(definition, record);
+  if (holds === false) return null;
+  return { serviceName: definition.serviceName, released: Boolean(record?.release), undecided: holds === 'undecided' };
 }

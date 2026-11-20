@@ -261,6 +261,11 @@ export type OrganizationFeaturePreferences = {
         Absent = 'arrangement_form_page' (Manors). Further sources (an
         uploaded document, a native form) are added here when built. */
     authorizationDocumentSource?: CrematoryAuthorizationDocumentSource;
+    /** Gus Phase 5K: a case whose service holds cremation (Viewing, Final
+        Goodbye) may not be SENT until a funeral director's release is
+        recorded. Absent/false = not enforced. Off for everyone until
+        approved — turning it on is its own change. */
+    requireReleaseAfterService?: boolean;
   } | null;
   /** Service-based workflows (2026-11): every new case names its service
       (e.g. Direct Cremation, Cremation with Viewing) and gets that
@@ -702,7 +707,7 @@ const GUS_CAMACHO_PROFILE: OrganizationProfileEntry = {
     cremationStageLabels: { 'cremation.arrangement_form': 'JotForm Application', 'cremation.death_certificate': 'Death Certificate Application Sent' },
     // Prepared and reviewed in SOLIS, never emailed until Gus's recipients,
     // Outlook mailbox and authorization document source are set up.
-    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured' },
+    sendToCrematory: { emailOrganizationName: 'Gus Camacho Jr. Funeral Home', authorizationWorkflowStage: 2, sendingEnabled: false, authorizationDocumentSource: 'not_configured', requireReleaseAfterService: false },
     // Catalog changes are Administrator-only to begin with (decided
     // 2026-11): its Manager keeps viewing the catalog and custom order
     // items. Prices, deactivation and repricing are Administrator-only by

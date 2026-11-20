@@ -103,3 +103,28 @@ describe('evaluateCrematoryReadiness', () => {
     expect(gus?.detail).toBe('Check every step of the authorization stage on the case.');
   });
 });
+
+describe('release gate (Gus Phase 5K)', () => {
+  it('absent or null: no requirement (Manors; Gus until approved)', () => {
+    expect(evaluateCrematoryReadiness({ ...ready, releaseGate: null }).requirements.some((r) => r.key === 'released_for_cremation')).toBe(false);
+    expect(evaluateCrematoryReadiness(ready).readyToSend).toBe(true);
+  });
+
+  it('a service that holds cremation and is not released blocks SENDING, never building', () => {
+    const result = evaluateCrematoryReadiness({ ...ready, releaseGate: { serviceName: 'Viewing', released: false, undecided: false } });
+    expect(result).toMatchObject({ readyToBuild: true, readyToSend: false });
+    expect(failing({ ...ready, releaseGate: { serviceName: 'Viewing', released: false, undecided: false } })).toEqual([
+      ['released_for_cremation', 'A licensed funeral director must release the remains for cremation after the viewing (Service readiness).'],
+    ]);
+  });
+
+  it('released: ready to send; undecided is treated as waiting', () => {
+    expect(evaluateCrematoryReadiness({ ...ready, releaseGate: { serviceName: 'Viewing', released: true, undecided: false } }).readyToSend).toBe(true);
+    expect(failing({ ...ready, releaseGate: { serviceName: 'Mass', released: false, undecided: true } })[0][1]).toMatch(/treated as waiting/);
+  });
+
+  it('once sent, the gate no longer adds a requirement', () => {
+    const sent = evaluateCrematoryReadiness({ ...ready, sentAt: '2026-11-01T00:00:00.000Z', releaseGate: { serviceName: 'Viewing', released: false, undecided: false } });
+    expect(sent.requirements.some((r) => r.key === 'released_for_cremation')).toBe(false);
+  });
+});

@@ -276,6 +276,19 @@ themselves Funeral Director authorization. Deployment variables:
 - Sends nothing. The checklist, stage, crematory record and Send to
   Crematory are not touched.
 
+### Send to Crematory release gate (Phase 5K) — built, NOT enforced
+
+`sendToCrematory.requireReleaseAfterService` in the organization profile
+(Gus: `false`; Manors: absent). When true, a case whose service holds
+cremation (Viewing, Final Goodbye; a Mass while "body present?" is
+unanswered) gets the readiness requirement **Released for cremation after
+the …** (`domain/servicePreparation/releaseForCremation.ts ›
+crematoryReleaseGate`, `domain/crematory/crematoryReadiness.ts`). It blocks
+SENDING only — the package can still be built and previewed — and is
+re-checked at send time like every other requirement. Direct Cremation and
+Manors are never affected. Turning it on is its own approved change (and
+Gus crematory sending, `sendingEnabled`, is separately off).
+
 ### Still needed before release can be activated
 
 - A Gus Wix-connected deployment and approval to set
@@ -285,8 +298,8 @@ themselves Funeral Director authorization. Deployment variables:
 - Approval to save preparation on live Wix
   (`SERVICE_PREPARATION_WIX_FIELD_ADDED`), then
   `RELEASE_FOR_CREMATION_AVAILABLE`.
-- Send to Crematory refusing a Viewing/Final Goodbye case until released —
-  a separate, approved change.
+- Approval to enforce the Send to Crematory release gate for Gus
+  (`requireReleaseAfterService: true`).
 
 ## Medical examiner findings (Phase 5F.1, read-only review)
 

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { crematoryReleaseGate } from '../../domain/servicePreparation/releaseForCremation';
 import type { DataAdapterMode } from '@/lib/env';
 import type { Case, CaseCrematoryRecord, CaseUpdate } from '@/types/case';
 import type { CaseDocument } from '@/types/caseDocument';
@@ -350,6 +351,7 @@ function readinessOf(facts: Facts, canSend: boolean): CrematoryReadiness {
       confirmed: record.readyDate ? { date: record.readyDate.date, suggestedAtConfirmation: record.readyDate.suggestedAtConfirmation } : null,
     },
     package: facts.package ? { fileName: facts.package.fileName, current: packageIsCurrent(facts) } : null,
+    releaseGate: crematoryReleaseGate(facts.case_, config?.requireReleaseAfterService === true),
     canSend,
   });
 }
