@@ -190,3 +190,35 @@ describe('preflight guarantees (Phase 5P)', () => {
     expect(portalMfaSetupRedemptionFixtures).toHaveLength(1);
   });
 });
+
+describe('simultaneous issuance (Phase 5P)', () => {
+  it('two codes issued at the same moment by different administrators: only the latest can be redeemed, never the earlier', async () => {
+    asManorsProduction();
+    await enroll(ID);
+    asUnifiedPortal();
+    const t0 = '2026-11-20T12:00:00.000Z';
+    const t1 = '2026-11-20T12:00:00.001Z';
+    // Issued concurrently: both may read "no earlier code" before either saves.
+    const [earlier, later] = await Promise.all([
+      issuePortalMfaSetupCode({ actorIdentityId: GUS_ADMIN_IDENTITY_ID, organizationId: 'gus-camacho-jr', targetIdentityId: ID, now: t0, idFactory: () => 'grant-a' }, 'mock'),
+      issuePortalMfaSetupCode({ actorIdentityId: MANORS_ADMIN_IDENTITY_ID, organizationId: 'managed-cremations', targetIdentityId: ID, now: t1, idFactory: () => 'grant-b' }, 'mock'),
+    ]);
+    expect(await redeemPortalMfaSetupCode(ID, earlier.code, 'mock', t1)).toBe(false);
+    expect(await redeemPortalMfaSetupCode(ID, later.code, 'mock', t1)).toBe(true);
+    expect(await redeemPortalMfaSetupCode(ID, earlier.code, 'mock', t1)).toBe(false); // still never, even after the latest is used
+  });
+
+  it('same timestamp: a deterministic tie-break picks one, and the other is refused', async () => {
+    asManorsProduction();
+    await enroll(ID);
+    asUnifiedPortal();
+    const t0 = '2026-11-20T12:00:00.000Z';
+    const [x, y] = await Promise.all([
+      issuePortalMfaSetupCode({ actorIdentityId: GUS_ADMIN_IDENTITY_ID, organizationId: 'gus-camacho-jr', targetIdentityId: ID, now: t0, idFactory: () => 'grant-x' }, 'mock'),
+      issuePortalMfaSetupCode({ actorIdentityId: MANORS_ADMIN_IDENTITY_ID, organizationId: 'managed-cremations', targetIdentityId: ID, now: t0, idFactory: () => 'grant-y' }, 'mock'),
+    ]);
+    const results = [await redeemPortalMfaSetupCode(ID, x.code, 'mock', t0), await redeemPortalMfaSetupCode(ID, y.code, 'mock', t0)];
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(results[1]).toBe(true); // 'grant-y' sorts newest on the tie-break
+  });
+});

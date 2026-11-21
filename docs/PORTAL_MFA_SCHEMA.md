@@ -1,5 +1,25 @@
 # Portal-scoped MFA: Wix schema (Phase 5P preflight, 2026-11-20)
 
+**Live status (2026-11-21):** both collections are created, empty, in the
+Wix site "Beacon Development" (`35e77bc9-3037-4ce2-907a-7609620f998f`, the
+shared SOLIS backend):
+- `portalMfaEnrollments`: revision 1, 0 items, created 03:36:13Z.
+- `portalMfaSetupGrants`: revision 1, 0 items, created 03:36:27Z.
+- Read, insert, update and remove are all `ADMIN`.
+- The site went from 100 to 102 collections; every other collection's
+  revision is unchanged (e.g. `identities` 2, `cases` 33).
+- Nothing in the app writes to them until a portal-scoped deployment runs.
+
+**Differences from the request, all Wix defaults:**
+- Display names were derived from the keys (e.g. "ScopeId").
+- `displayField` is the first field (`scopeId` / `kind`).
+- The standard `EDITABLE_PAGE_LINK` plugin was added.
+- Item-level `dataPermissions` are `CMS_EDITOR`, meaning site
+  collaborators with CMS access in the dashboard.
+
+All of these match the existing `identities` collection. No public or
+site-member access.
+
 Two new, empty Wix CMS collections in the Beacon site, approved
 2026-11-20. Creating them is additive: no existing collection, field or
 record is changed, and the original MFA fields on `identities` (Manors
@@ -76,7 +96,7 @@ Wix enforces. An index can be added later without changing data.
 | Expiry | Redeem refuses after `expiresAt` (30 min) | › expires after 30 minutes |
 | Replay prevention | Single use: the redemption row's fixed `_id` can be inserted once (Wix 409 on a second) | › simultaneous redemptions, `portalMfaStore.wix.test.ts` |
 | Revocation | Issuing a new code sets `revokedAt` on earlier unused ones | › a new code revokes the earlier one |
-| Concurrency | Redemption: exactly one wins. Enrollment: one row per `_id`. Issuance: one request per explicit click (UI). Two simultaneous issues by different administrators could leave two valid codes for up to 30 minutes, both for the same person. | tests above, plus `PortalMfaSetupCodeDialog.test.tsx` |
+| Concurrency | Redemption: exactly one wins. Enrollment: one row per `_id`. Issuance: one request per explicit click (UI). If two administrators issue at the same moment and both rows survive, **only the newest unrevoked grant can ever be redeemed**: newest by `grantedAt`, with `id` as a deterministic tie-break. Once it is used or expired, no older code takes its place. | › simultaneous issuance, simultaneous redemptions, `PortalMfaSetupCodeDialog.test.tsx` |
 | Manors MFA untouched | Portal mode never reads or writes `identities` MFA fields | › "a Manors enrollment is never touched" |
 
 ## Creation request (Wix Data Collections API)

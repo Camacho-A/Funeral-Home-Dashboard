@@ -81,23 +81,29 @@ export async function issuePortalMfaSetupCode(
   return { code, expiresAt, grant, targetDisplayName: target.displayName ?? null };
 }
 
+/** Newest first: later grantedAt, then the larger id as a deterministic tie-break. */
+const newestFirst = (a: PortalMfaSetupGrant, b: PortalMfaSetupGrant) => (a.grantedAt === b.grantedAt ? (a.id < b.id ? 1 : -1) : a.grantedAt < b.grantedAt ? 1 : -1);
+
 /**
- * True (and the code is used up) only for this person's current, unexpired,
- * unrevoked, unused code in this portal. Exactly one of any simultaneous
- * redemptions can succeed (claimSetupGrant).
+ * True (and the code is used up) only for this person's LATEST code in
+ * this portal — the newest unrevoked grant, used or not — and only while
+ * it is unused and unexpired. Once it is used or has expired, no older
+ * code can take its place. If two administrators issue codes at the same moment, both
+ * rows may survive the revoke-earlier step, but only the newer one can
+ * ever be redeemed. Exactly one of any simultaneous redemptions can
+ * succeed (claimSetupGrant).
  */
 export async function redeemPortalMfaSetupCode(identityId: string, code: string, mode: DataAdapterMode, now: string = new Date().toISOString()): Promise<boolean> {
   if (!isPortalScopedMfa()) return false;
   const submitted = Buffer.from(portalCodeHash(normalize(code)));
   const grants = await listSetupGrants(portalMfaScopeId(), identityId, mode);
-  const match = grants.find((g) => {
-    if (g.usedAt || g.revokedAt || Date.parse(g.expiresAt) <= Date.parse(now)) return false;
-    const stored = Buffer.from(g.codeHash);
-    return stored.length === submitted.length && timingSafeEqual(stored, submitted);
-  });
-  if (!match) return false;
-  if (await isSetupGrantClaimed(match.id, mode)) return false;
-  if (!(await claimSetupGrant(match, now, mode))) return false;
-  await saveSetupGrant({ ...match, usedAt: now }, mode);
+  // The newest unrevoked grant — used or not — is the only one that can ever count.
+  const latest = grants.filter((g) => !g.revokedAt).sort(newestFirst)[0];
+  if (!latest || latest.usedAt || Date.parse(latest.expiresAt) <= Date.parse(now)) return false;
+  const stored = Buffer.from(latest.codeHash);
+  if (stored.length !== submitted.length || !timingSafeEqual(stored, submitted)) return false;
+  if (await isSetupGrantClaimed(latest.id, mode)) return false;
+  if (!(await claimSetupGrant(latest, now, mode))) return false;
+  await saveSetupGrant({ ...latest, usedAt: now }, mode);
   return true;
 }
