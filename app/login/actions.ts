@@ -12,7 +12,7 @@ import { findIdentityByEmail, getIdentityById, recordSuccessfulLogin } from '@/s
 import { verifyPassword } from '@/services/passwordService';
 import { recordLoginActivity, checkAndApplyLockout, unlockIfExpired } from '@/services/accountRecoveryService';
 import { createIdentitySession, revokeSession } from '@/services/sessionService';
-import { verifyMfaCode, verifyAndConsumeRecoveryCode } from '@/services/mfaService';
+import { isMfaSecretReadableHere, verifyMfaCode, verifyAndConsumeRecoveryCode } from '@/services/mfaService';
 import { createMfaChallengeToken, verifyMfaChallengeToken } from '@/lib/auth/mfaChallengeToken';
 import { setMfaChallengeCookie, readMfaChallengeCookie, clearMfaChallengeCookie } from '@/lib/auth/mfaChallengeCookie';
 import { identityMustEnrollMfa } from '@/services/mfaPolicyService';
@@ -257,6 +257,13 @@ export async function submitMfaChallenge(formData: FormData): Promise<void> {
   }
   if (code.length === 0) {
     redirect(`/login/mfa?error=invalid_code&next=${nextParam}`);
+  }
+
+  // Unified portal (Phase 5N): an authenticator enrolled through another
+  // SOLIS portal (a different key) cannot be checked here. Not the person's
+  // mistake, so it is not counted as a failed attempt.
+  if (!useRecoveryCode && !(await isMfaSecretReadableHere(identity.id, dataAdapterMode))) {
+    redirect(`/login/mfa?error=mfa_enrolled_elsewhere&next=${nextParam}`);
   }
 
   const factorOk = useRecoveryCode

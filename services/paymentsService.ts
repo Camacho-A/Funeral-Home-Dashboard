@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { assertIntegrationAvailable } from '@/lib/deployment/organizationIntegrations';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem, WixDataApiError } from '../lib/wixDataApi';
 import {
   mapWixPaymentIntegrationItem,
@@ -461,6 +462,7 @@ export async function refundPaymentAtProvider(
   payment: PaymentRecord,
   dataAdapterMode: DataAdapterMode,
 ): Promise<RefundResult> {
+  assertIntegrationAvailable(organizationId, 'payments');
   if (!payment.providerPaymentId) {
     throw new Error(`Payment "${payment.id}" has no providerPaymentId — cannot be refunded at the provider.`);
   }
@@ -519,6 +521,8 @@ export async function initiateCheckout(
   },
   dataAdapterMode: DataAdapterMode,
 ): Promise<InitiateCheckoutResult> {
+  // Unified portal (Phase 5N): refused before any pending payment record is written.
+  assertIntegrationAvailable(params.organizationId, 'payments');
   const integration = await getEnabledIntegration(params.organizationId, params.provider, dataAdapterMode);
   if (!integration) {
     throw new Error(`${params.provider} is not enabled for this organization.`);

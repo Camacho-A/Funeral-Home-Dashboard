@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '@/lib/env';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import type { ExternalFormSubmission } from '@/types/externalFormSubmission';
 import type { ExternalFormConfig } from '@/types/externalFormConfig';
 import { DEFAULT_JOTFORM_API_KEY_REFERENCE, isValidJotformApiKeyReference, type JotformRequestOptions } from '@/lib/jotform/jotformClient';
@@ -29,6 +30,8 @@ export async function jotformReadOptionsFor(
   mode: DataAdapterMode,
 ): Promise<JotformRequestOptions | null> {
   if (submission.provider !== 'jotform' || submission.organizationId !== organizationId) return null;
+  // Unified portal (Phase 5N): Manors' JotForm stays on Manors Production.
+  if (integrationUnavailableReason(organizationId, 'jotform')) return null;
   const legacy = getRegisteredOrganizationProfile(organizationId).features.jotformLegacyDefaultApiKey;
   const rows = (await listForOrganization(organizationId, mode)).filter((c) => c.provider === 'jotform' && c.externalFormId === submission.externalFormId);
   // Manors keeps reading exactly as before when its rows don't say otherwise
@@ -64,6 +67,7 @@ export class JotformKeyNotConfiguredError extends Error {
  * `{}` means "the original key" (lib/jotform/jotformClient.ts's default).
  */
 export function jotformOptionsForConfig(config: Pick<ExternalFormConfig, 'organizationId' | 'apiKeyReference'>): JotformRequestOptions | null {
+  if (integrationUnavailableReason(config.organizationId, 'jotform')) return null;
   const legacy = getRegisteredOrganizationProfile(config.organizationId).features.jotformLegacyDefaultApiKey;
   const reference = config.apiKeyReference?.trim() || null;
   if (!reference) return legacy ? {} : null;

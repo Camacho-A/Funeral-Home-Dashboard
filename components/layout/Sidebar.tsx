@@ -14,6 +14,7 @@ import { ImportHistoricalCaseModal } from '@/components/modals/ImportHistoricalC
 import { SidebarNavItem } from './SidebarNavItem';
 import { StaffOnlinePopover } from './StaffOnlinePopover';
 import { ProductBrand } from './ProductBrand';
+import { OrganizationSelector } from './OrganizationSelector';
 import styles from './Sidebar.module.css';
 
 /**
@@ -131,6 +132,9 @@ export function Sidebar({
       <div className={styles.brand}>
         <ProductBrand markSize={26} wordmarkClassName={styles.brandWordmark} />
       </div>
+
+      {/* Unified portal (Phase 5N): shown only to people in 2+ organizations. */}
+      {authAdapterMode === 'identity' && <OrganizationSelector onNavigate={onClose} />}
 
       <div className={styles.navList}>
         <SidebarNavItem href="/dashboard" label="Dashboard" icon="dashboard" onNavigate={onClose} />

@@ -376,6 +376,12 @@ export type OrganizationFeaturePreferences = {
       recording a medical examiner cremation approval on a case. Platform
       default: off. Manors: off. */
   funeralDirectorCredentials: boolean;
+  /** Unified portal transition (Phase 5N, 2026-11). 'active': new cases
+      may be opened. 'historical': existing cases stay readable and
+      workable, new cases (including imports and form intake) are refused.
+      Every organization is 'active'; moving one to 'historical' is a
+      separately approved change (domain/organization/organizationTransition.ts). */
+  transitionStatus: 'active' | 'historical';
   /** Manatee County DC application fax bundles (2026-11): where saved
       applications are faxed, through the connected mailbox and NuSo's
       email-to-fax gateway (domain/faxBundles/faxSettings.ts). Null = not
@@ -490,6 +496,7 @@ export const PLATFORM_DEFAULT_FEATURES: Readonly<OrganizationFeaturePreferences>
   funeralDirectorCredentialAdministratorRoleKeys: [],
   funeralDirectorLicenseReverifyDays: null,
   funeralDirectorCredentials: false,
+  transitionStatus: 'active',
 });
 
 export const PLATFORM_DEFAULT_PROFILE: Readonly<OrganizationProfile> = Object.freeze<OrganizationProfile>({

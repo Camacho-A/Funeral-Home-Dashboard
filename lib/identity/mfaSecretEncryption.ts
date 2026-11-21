@@ -37,6 +37,21 @@ export function encryptTotpSecret(secretBase32: string): string {
   return Buffer.concat([iv, authTag, encrypted]).toString('base64');
 }
 
+/**
+ * Unified portal (Phase 5N): identities are shared by every SOLIS
+ * deployment, but each deployment has its own MFA_ENCRYPTION_KEY. A secret
+ * enrolled through another deployment (e.g. Manors Production) cannot be
+ * decrypted here — null instead of an exception, so sign-in fails safely
+ * and says why. Nothing is ever re-encrypted or overwritten.
+ */
+export function tryDecryptTotpSecret(reference: string): string | null {
+  try {
+    return decryptTotpSecret(reference);
+  } catch {
+    return null;
+  }
+}
+
 export function decryptTotpSecret(reference: string): string {
   const key = getEncryptionKey();
   const raw = Buffer.from(reference, 'base64');

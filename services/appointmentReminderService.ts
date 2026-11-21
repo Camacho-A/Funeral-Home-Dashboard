@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import { queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
 import { asNullableString, claimWixSweepRow, deploymentOrganizationWixFilter, isClaimFresh, retainDeploymentRecords } from './scheduledJobs/sweepSupport';
@@ -289,6 +290,9 @@ async function upsertReminderRow(
 /** Called after an appointment is created (non-draft) or promoted from
     draft to scheduled — never for a still-draft appointment. */
 export async function scheduleRemindersForAppointment(appointment: Appointment, dataAdapterMode: DataAdapterMode): Promise<void> {
+  // Unified portal (Phase 5N): no reminder rows for another portal's sweep
+  // to send. (Cancelling reminders stays allowed — it can only stop a send.)
+  if (integrationUnavailableReason(appointment.organizationId, 'appointment_reminders')) return;
   if (appointment.status === 'draft') return;
 
   const policy = await getReminderPolicy(appointment.organizationId, dataAdapterMode);
@@ -439,6 +443,7 @@ export async function runAppointmentReminderSweep(dataAdapterMode: DataAdapterMo
   for (const entry of due) {
     // Defense in depth — re-checked immediately before acting.
     if (!isOrganizationAllowedInDeployment(entry.reminder.organizationId)) continue;
+    if (integrationUnavailableReason(entry.reminder.organizationId, 'appointment_reminders')) continue;
     const claim = await claimReminder(entry, nowIsoValue, dataAdapterMode);
     if (claim === 'in_flight') continue;
     if (claim === 'abandoned') {

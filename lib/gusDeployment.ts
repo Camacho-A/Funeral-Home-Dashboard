@@ -16,6 +16,16 @@
  */
 
 export const GUS_ORGANIZATION_ID = 'gus-camacho-jr';
+export const MANORS_ORGANIZATION_ID = 'managed-cremations';
+
+/**
+ * Unified portal (Phase 5N, approved 2026-11-20): the `gus-solis` project
+ * is the intended future portal for BOTH funeral homes. It may serve Gus
+ * alone, or Gus and Manors — never any other organization. Serving an
+ * organization here only makes it reachable; every request is still
+ * authorized per organization against the person's own membership.
+ */
+export const UNIFIED_PORTAL_ORGANIZATION_IDS: readonly string[] = [GUS_ORGANIZATION_ID, MANORS_ORGANIZATION_ID];
 
 /** Needed for a Production deployment on shared Wix data. */
 export const GUS_REQUIRED_ENV: readonly string[] = [
@@ -61,9 +71,31 @@ export const GUS_FORBIDDEN_ENV: readonly { pattern: RegExp; why: string }[] = [
 const GUS_EXPECTED_VALUES: Readonly<Record<string, string>> = {
   DATA_ADAPTER: 'wix',
   AUTH_ADAPTER: 'identity',
-  DEPLOYMENT_ORGANIZATION_IDS: GUS_ORGANIZATION_ID,
-  LOGIN_ORGANIZATION_ID: GUS_ORGANIZATION_ID,
 };
+
+const listOf = (raw: string | undefined) => (raw ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+
+/** Problems with the organizations this deployment serves and brands its sign-in for. */
+function organizationProblems(env: Record<string, string | undefined>): string[] {
+  const problems: string[] = [];
+  const allowed = UNIFIED_PORTAL_ORGANIZATION_IDS.join('", "');
+  if (isSet(env.DEPLOYMENT_ORGANIZATION_IDS)) {
+    const ids = listOf(env.DEPLOYMENT_ORGANIZATION_IDS);
+    const outside = ids.filter((id) => !UNIFIED_PORTAL_ORGANIZATION_IDS.includes(id));
+    if (outside.length > 0 || !ids.includes(GUS_ORGANIZATION_ID)) {
+      problems.push(`DEPLOYMENT_ORGANIZATION_IDS must include "${GUS_ORGANIZATION_ID}" and may only list "${allowed}"`);
+    }
+  }
+  const served = isSet(env.DEPLOYMENT_ORGANIZATION_IDS) ? listOf(env.DEPLOYMENT_ORGANIZATION_IDS) : [GUS_ORGANIZATION_ID];
+  if (isSet(env.LOGIN_ORGANIZATION_ID) && !served.includes(env.LOGIN_ORGANIZATION_ID!.trim())) {
+    problems.push('LOGIN_ORGANIZATION_ID must be an organization this deployment serves');
+  }
+  if (isSet(env.LOGIN_ORGANIZATION_HOSTS)) {
+    const unserved = listOf(env.LOGIN_ORGANIZATION_HOSTS).filter((pair) => !served.includes(pair.split('=')[1]?.trim() ?? ''));
+    if (unserved.length > 0) problems.push('LOGIN_ORGANIZATION_HOSTS may only map hosts to organizations this deployment serves');
+  }
+  return problems;
+}
 
 const isSet = (value: string | undefined) => value !== undefined && value.trim() !== '';
 
@@ -87,6 +119,7 @@ export function gusDeploymentProblems(env: Record<string, string | undefined>, o
     const value = env[name];
     if (isSet(value) && value!.trim() !== expected) problems.push(`${name} must be "${expected}"`);
   }
+  problems.push(...organizationProblems(env));
   for (const [name, value] of Object.entries(env)) {
     if (!isSet(value)) continue;
     const rule = GUS_FORBIDDEN_ENV.find((r) => r.pattern.test(name));

@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import type { DataAdapterMode } from '../lib/env';
 import { isTypeEnabled, IMPLEMENTED_NOTIFICATION_TYPES } from '../domain/notifications/notificationDefaults';
 import { countWixDataItems, queryWixDataItems, queryAllWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
@@ -381,6 +382,11 @@ async function dispatchChannel(
   // the rest of this notification's fields were stamped with, not
   // whatever the real clock reads by the time this function happens to
   // run. Tests inject `now` explicitly for exactly this reason.
+
+  // Unified portal (Phase 5N): no email/SMS — not even a queued or failed
+  // delivery row another portal's sweep could pick up — for an organization
+  // whose delivery runs elsewhere. The in-app notification is unaffected.
+  if (channel !== 'in_app' && integrationUnavailableReason(notification.organizationId, 'notification_delivery')) return;
 
   // An 'email' send whose
   // recipient batches (digestFrequency !== 'instant') or is currently

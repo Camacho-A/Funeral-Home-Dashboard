@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import crypto from 'crypto';
 import { requireAuthorizedOrganization } from '@/lib/auth/requireAuthorizedOrganization';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -89,6 +90,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ cas
   if (!(await getFamilyCase(organizationId, caseId, dataAdapterMode))) {
     return NextResponse.json({ error: 'Case not found.' }, { status: 404 });
   }
+
+  // Unified portal (Phase 5N): the invitation email could not be sent from
+  // here, so no invitation is created (it would otherwise report success).
+  const emailUnavailable = integrationUnavailableReason(organizationId, 'email');
+  if (emailUnavailable) return NextResponse.json({ error: emailUnavailable }, { status: 503 });
 
   try {
     const { invitation, rawToken } = await issueInvitation(

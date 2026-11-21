@@ -4,6 +4,7 @@ import { getForOrganization as getOrganizationForDigest } from './organizationsS
 import { isDigestGroupEligible } from '../domain/notifications/digestTiming';
 import type { NotificationDelivery } from '../types/notificationDelivery';
 import { isOrganizationAllowedInDeployment } from '../lib/auth/deploymentOrganizations';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 
 /**
  * Phase 33 (Real Notification Delivery). The thin, cron-triggered
@@ -66,6 +67,11 @@ export async function runNotificationDigestSweep(dataAdapterMode: DataAdapterMod
     // deployment; re-checked per group before any preference/organization
     // read or send (defense in depth — docs/SCHEDULED_JOBS.md).
     if (!isOrganizationAllowedInDeployment(organizationId)) {
+      result.groupsSkipped += 1;
+      continue;
+    }
+    // Unified portal (Phase 5N): never send another portal's digest.
+    if (integrationUnavailableReason(organizationId, 'notification_delivery')) {
       result.groupsSkipped += 1;
       continue;
     }

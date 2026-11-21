@@ -1,4 +1,5 @@
 import type { OrganizationContext } from '../types/organization';
+import { HISTORICAL_ORGANIZATION_MESSAGE, organizationAcceptsNewCases } from '../domain/organization/organizationTransition';
 import { isSlaTrackingEnabled } from '../domain/sla/slaSettings';
 import { isChecklistAutomationEnabled, staffChecklistCompletionUpdate } from '../domain/workflow/checklistAutomation';
 import { historicalChecklistKeys } from '../domain/workflow/earlierStages';
@@ -459,6 +460,8 @@ export async function create(
   template: WorkflowTemplate,
   dataAdapterMode: DataAdapterMode = 'mock',
 ): Promise<Case> {
+  // Unified portal transition (Phase 5N): mirrors POST /api/cases.
+  if (!organizationAcceptsNewCases(context.organizationId)) throw new Error(HISTORICAL_ORGANIZATION_MESSAGE);
   if (dataAdapterMode === 'wix') {
     const response = await fetch('/api/cases', {
       method: 'POST',

@@ -25,10 +25,27 @@ describe('Gus deployment preflight', () => {
     expect(gusDeploymentProblems({}, { requireAll: true })).toEqual(GUS_REQUIRED_ENV.map((n) => `${n} is not set`));
   });
 
-  it('serves only Gus: another organization, a Manors-scoped login, or mock adapters are refused', () => {
-    expect(gusDeploymentProblems({ ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'gus-camacho-jr,managed-cremations' })).toEqual(['DEPLOYMENT_ORGANIZATION_IDS must be "gus-camacho-jr"']);
-    expect(gusDeploymentProblems({ ...READY, LOGIN_ORGANIZATION_ID: 'managed-cremations' })).toEqual(['LOGIN_ORGANIZATION_ID must be "gus-camacho-jr"']);
+  it('unified portal (approved 2026-11-20): Gus alone, or Gus and Manors — nothing else', () => {
+    const ORG_RULE = 'DEPLOYMENT_ORGANIZATION_IDS must include "gus-camacho-jr" and may only list "gus-camacho-jr", "managed-cremations"';
+    expect(gusDeploymentProblems({ ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'gus-camacho-jr,managed-cremations' }, { requireAll: true })).toEqual([]);
+    expect(gusDeploymentProblems({ ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'managed-cremations,gus-camacho-jr', LOGIN_ORGANIZATION_ID: 'managed-cremations' })).toEqual([]);
+    expect(gusDeploymentProblems({ ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'gus-camacho-jr,evergreen-memorial-group' })).toEqual([ORG_RULE]);
+    // A Manors-only list is not this project at all (and is not a Gus deployment).
+    expect(gusDeploymentProblems({ ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'managed-cremations' })).toEqual([ORG_RULE, 'LOGIN_ORGANIZATION_ID must be an organization this deployment serves']);
+  });
+
+  it('sign-in branding may only name served organizations; mock adapters are refused', () => {
+    expect(gusDeploymentProblems({ ...READY, LOGIN_ORGANIZATION_ID: 'managed-cremations' })).toEqual(['LOGIN_ORGANIZATION_ID must be an organization this deployment serves']);
+    expect(gusDeploymentProblems({ ...READY, LOGIN_ORGANIZATION_HOSTS: 'gus-solis.vercel.app=managed-cremations' })).toEqual(['LOGIN_ORGANIZATION_HOSTS may only map hosts to organizations this deployment serves']);
+    expect(gusDeploymentProblems({ ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'gus-camacho-jr,managed-cremations', LOGIN_ORGANIZATION_HOSTS: 'gus-solis.vercel.app=gus-camacho-jr,manors.example.test=managed-cremations' })).toEqual([]);
     expect(gusDeploymentProblems({ ...READY, AUTH_ADAPTER: 'mock' })).toEqual(['AUTH_ADAPTER must be "identity"']);
+  });
+
+  it('serving Manors does not relax anything else: every Manors integration key stays forbidden', () => {
+    const unified = { ...READY, DEPLOYMENT_ORGANIZATION_IDS: 'gus-camacho-jr,managed-cremations' };
+    for (const name of ['JOTFORM_API_KEY', 'MICROSOFT_CLIENT_SECRET', 'MANATEE_DC_APPLICATION_TEMPLATE_PATH', 'CERTIFICATE_OF_CREMATION_TEMPLATE_STORAGE_KEY', 'RESEND_API_KEY', 'CLOVER_API_TOKEN']) {
+      expect(() => assertGusDeploymentSafe({ ...unified, [name]: 'x' }), name).toThrow(/refused to start/);
+    }
   });
 
   it('every live channel, Manors-only key and unapproved switch is refused at start-up', () => {

@@ -11,6 +11,8 @@ import { mockCollection } from './mockStore';
 import { buildGusCaseFixtures, buildGusStaffFixtures, buildGusTaskFixtures } from './gusFixtures';
 import { sandboxPaymentStatusFor, sandboxTasks } from './sandboxFixtures';
 import { sandboxReleaseStateCases } from './sandboxReleaseFixtures';
+import { buildDualOrganizationStaff } from './dualOrganizationFixtures';
+import { isSandboxEnabled } from '../../lib/sandbox';
 
 /**
  * Re-exported from ./organizationIds (not declared here) so
@@ -74,6 +76,8 @@ export const staffFixtures: StaffProfile[] = mockCollection('staffFixtures', ():
   // Gus Camacho Jr. demo roster (mock/local development only) — appended
   // after Manors' rows so every existing index-based reference is unchanged.
   ...buildGusStaffFixtures(),
+  // Unified portal (Phase 5N), sandbox only: dual-organization staff, one profile per organization.
+  ...(isSandboxEnabled() ? buildDualOrganizationStaff() : []),
 ]);
 
 function staffIdForOwnerName(ownerName: string): string | null {

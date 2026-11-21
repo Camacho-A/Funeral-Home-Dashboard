@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { HISTORICAL_ORGANIZATION_MESSAGE, organizationAcceptsNewCases } from '@/domain/organization/organizationTransition';
 import { isSlaTrackingEnabled } from '@/domain/sla/slaSettings';
 import { runAfterResponse } from '@/lib/afterResponse';
 import { regenerateOfficialDocumentsAfterCaseChange } from '@/services/automaticCaseDocuments';
@@ -466,6 +467,11 @@ export async function POST(request: Request) {
     if (!authResult.authorized) return authResult.response;
     organizationId = authResult.context.organizationId;
     context = authResult.context;
+  }
+
+  // Unified portal transition (Phase 5N): a historical organization opens no new cases.
+  if (!organizationAcceptsNewCases(organizationId)) {
+    return NextResponse.json({ case: null, error: HISTORICAL_ORGANIZATION_MESSAGE }, { status: 409 });
   }
 
   if (getDataAdapterMode() !== 'wix') {

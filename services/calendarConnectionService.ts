@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
 import { mapWixCalendarConnectionItem, buildWixCalendarConnectionData, applyCalendarConnectionUpdateToWixData, type WixCalendarConnectionItem } from '../lib/wixCalendarConnectionMapper';
 import type { CalendarConnection, CalendarProviderName } from '../types/calendarConnection';
@@ -163,7 +164,14 @@ export type BeginAuthorizationResult = { authorizeUrl: string; stateCookieValue:
     organizationId/staffProfileId/provider) into a short-lived cookie
     value the route sets, and returns the provider's own authorize URL
     to redirect to. */
+/** Unified portal (Phase 5N): another portal owns this organization's calendar connections. */
+function assertCalendarAvailable(organizationId: string): void {
+  const reason = integrationUnavailableReason(organizationId, 'calendar_sync');
+  if (reason) throw new CalendarConnectionServiceError(reason);
+}
+
 export async function beginAuthorization(organizationId: string, staffProfileId: string, provider: CalendarProviderName, dataAdapterMode: DataAdapterMode): Promise<BeginAuthorizationResult> {
+  assertCalendarAvailable(organizationId);
   // Re-verified here, not just by the route's own session check — the
   // caller must actually BE an active staff member of this
   // organization before any redirect to Google/Microsoft is built.
@@ -275,6 +283,8 @@ export async function completeAuthorization(
     staff member disconnecting their own calendar, or an administrator
     acting via `calendar.manage` — never invented here. */
 export async function disconnect(organizationId: string, connectionId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<CalendarConnection> {
+  // Never wipe a connection another portal is using.
+  assertCalendarAvailable(organizationId);
   const updated = await patchConnection(
     organizationId,
     connectionId,
@@ -309,6 +319,9 @@ export type ValidAccessTokenResult = { accessToken: string; connection: Calendar
     this and records it as a sync failure without ever touching the
     Appointment that triggered the sync. */
 export async function getValidAccessToken(connection: CalendarConnection, dataAdapterMode: DataAdapterMode): Promise<ValidAccessTokenResult> {
+  // Refused before decrypting anything — and without marking the connection
+  // as needing re-authorization, which would break it for the portal that owns it.
+  assertCalendarAvailable(connection.organizationId);
   const expiresAtMs = new Date(connection.tokenExpiresAt).getTime();
   if (Date.now() < expiresAtMs - REFRESH_BUFFER_MS) {
     return { accessToken: decryptCalendarToken(connection.accessTokenCiphertext), connection };

@@ -12,7 +12,7 @@ import { DEFAULT_ORGANIZATION_ID, SECOND_MOCK_ORGANIZATION_ID } from '@/services
 // function) so the new "Settings expanded" describe block below can
 // override the pathname per test — every pre-existing test in this file
 // relies on the '/dashboard' default and never touches this itself.
-vi.mock('next/navigation', () => ({ usePathname: vi.fn(() => '/dashboard') }));
+vi.mock('next/navigation', () => ({ usePathname: vi.fn(() => '/dashboard'), useRouter: vi.fn(() => ({ push: vi.fn(), refresh: vi.fn() })) }));
 
 vi.mock('@/lib/identityAuthClient', async () => {
   const actual = await vi.importActual<typeof import('@/lib/identityAuthClient')>('@/lib/identityAuthClient');

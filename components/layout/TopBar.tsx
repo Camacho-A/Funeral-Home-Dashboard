@@ -10,7 +10,6 @@ import { isModuleEnabled } from '@/domain/organization/moduleVisibility';
 import { initialsFromName } from '@/utils/string';
 import { SearchInput } from './SearchInput';
 import { AccountMenu } from './AccountMenu';
-import { OrganizationSwitcher } from './OrganizationSwitcher';
 import { NotificationBell } from './NotificationBell';
 import styles from './TopBar.module.css';
 
@@ -167,7 +166,6 @@ export function TopBar({
         hint="⌘K"
       />
       <div className={styles.spacer} />
-      {authAdapterMode === 'identity' && <OrganizationSwitcher />}
       {isModuleEnabled(organization, 'resources') && (
         <a href="/settings/resources" className={`${styles.signOutButton} ${styles.overflowLink}`}>
           Resources

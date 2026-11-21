@@ -10,6 +10,7 @@ import { hashPassword } from '../../lib/identity/passwordHashing';
 import { mockDefaultUser } from './authFixtures';
 import { mockCollection } from './mockStore';
 import { buildGusIdentityFixtures, buildGusMembershipFixtures } from './gusFixtures';
+import { buildDualOrganizationIdentities, buildDualOrganizationMemberships } from './dualOrganizationFixtures';
 
 /**
  * Phase 21 (Identity, Authentication & Session Management). Mock-mode
@@ -155,6 +156,8 @@ export const identityFixtures: MockIdentityRecord[] = mockCollection('identityFi
           mfaVerifiedAt: null,
           mfaRecoveryCodeHashes: [],
         },
+        // Unified portal (Phase 5N): fictional staff in both Manors and Gus.
+        ...buildDualOrganizationIdentities(),
       ]
     : []),
 ]);
@@ -209,6 +212,7 @@ export const membershipFixtures: Membership[] = mockCollection('membershipFixtur
           createdAt: NOW,
           updatedAt: NOW,
         },
+        ...buildDualOrganizationMemberships(),
       ]
     : []),
 ]);

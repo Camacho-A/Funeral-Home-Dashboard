@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import crypto from 'crypto';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
 import { requireSameOrigin } from '@/lib/auth/csrf';
@@ -109,6 +110,9 @@ export async function POST(request: Request) {
   if (!(await canInviteUser({ identityId: identity.id, organizationId: authz.context.organizationId, roleKey: authz.context.role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to invite members to this organization.' }, { status: 403 });
   }
+  // Unified portal (Phase 5N): no invitation (or new token) whose email cannot be sent from here.
+  const emailUnavailable = integrationUnavailableReason(authz.context.organizationId, 'email');
+  if (emailUnavailable) return NextResponse.json({ error: emailUnavailable }, { status: 503 });
 
   const result = await inviteToOrganization(
     {
@@ -206,6 +210,8 @@ export async function PATCH(request: Request) {
   if (!(await canInviteUser({ identityId: identity.id, organizationId: authz.context.organizationId, roleKey: authz.context.role }, dataAdapterMode))) {
     return NextResponse.json({ error: 'Not authorized to manage invitations for this organization.' }, { status: 403 });
   }
+  const resendUnavailable = integrationUnavailableReason(authz.context.organizationId, 'email');
+  if (resendUnavailable) return NextResponse.json({ error: resendUnavailable }, { status: 503 });
 
   // regenerateInvitation only needs identityId internally (it re-issues an
   // identity-scoped email-verification token, not an org-scoped one) — so

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import type { DataAdapterMode } from '../lib/env';
 import { getAppBaseUrl } from '../lib/env';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem } from '../lib/wixDataApi';
@@ -354,6 +355,9 @@ export async function createSignatureRequest(
   if (!(await isSignatureRequestsEnabledForOrganizationId(ctx.organizationId, dataAdapterMode))) {
     throw new SignatureServiceError('Signature requests are not enabled for this organization.');
   }
+  // Unified portal (Phase 5N): the signing email could not be sent from here.
+  const emailUnavailable = integrationUnavailableReason(ctx.organizationId, 'email');
+  if (emailUnavailable) throw new SignatureServiceError(emailUnavailable);
 
   const documents = await listCaseDocuments(ctx.organizationId, params.caseId, dataAdapterMode);
   const targetDocument = documents.find((d) => d.id === params.documentId);
@@ -455,6 +459,8 @@ async function dispatchAndAdvance(request: SignatureRequest, rawToken: string, c
 }
 
 export async function resendSignatureRequest(organizationId: string, caseId: string, requestId: string, ctx: ActivityContext, dataAdapterMode: DataAdapterMode): Promise<SignatureRequest> {
+  const emailUnavailable = integrationUnavailableReason(organizationId, 'email');
+  if (emailUnavailable) throw new SignatureServiceError(emailUnavailable);
   // Handwritten item #4 (2026-09). Resend mints a new token and extends
   // expiry (see dispatchAndAdvance below) — a reissue of the request, not
   // a read of the existing one — so it's gated exactly like creation.

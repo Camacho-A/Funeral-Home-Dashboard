@@ -89,7 +89,9 @@ export function CrematorySettingsPanel() {
 
       <section className="sx-span-all">
         <h2 className="sx-section-title">Outlook mailbox</h2>
-        {mailbox.connected ? (
+        {!mailbox.connected && mailbox.unavailableReason ? (
+          <p data-testid="mailbox-unavailable">{mailbox.unavailableReason}</p>
+        ) : mailbox.connected ? (
           <p>
             Sending from <strong>{mailbox.accountEmail}</strong> — connected {formatTimestamp(mailbox.connectedAt)}.
             {mailbox.status === 'reauth_required' && <strong> This mailbox needs to be signed in again.</strong>}
@@ -97,7 +99,7 @@ export function CrematorySettingsPanel() {
         ) : (
           <p>No mailbox is connected. Crematory Packages cannot be sent until one is.</p>
         )}
-        {!mailbox.configured && <p>Outlook sending is not set up on this server yet (Microsoft app settings are missing).</p>}
+        {!mailbox.configured && !(!mailbox.connected && mailbox.unavailableReason) && <p>Outlook sending is not set up on this server yet (Microsoft app settings are missing).</p>}
         <p>
           Connecting opens Microsoft sign-in. Sign in <strong>as the shared mailbox</strong> the crematory should receive email from.
         </p>

@@ -73,6 +73,8 @@ export default async function PortalLayout({ children }: { children: React.React
     if (!membershipResult.granted) {
       // MFA enrollment gate (2026-11): enrollment happens outside the portal.
       if (membershipResult.reason === 'mfa_enrollment_required') redirect('/mfa-setup');
+      // Unified portal (Phase 5N): more than one organization and none chosen yet.
+      if (membershipResult.reason === 'selection_required') redirect('/choose-organization');
       redirect(`/login?error=${membershipResult.reason}`);
     }
 

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import { loadCaseOnServer } from './serverCaseLoader';
 import { CREMATION_LABEL_MIME_TYPE } from '@/domain/labels/cremationLabel';
 import JSZip from 'jszip';
@@ -92,9 +93,38 @@ import {
  */
 
 const documentRenderer: DocumentRenderer = puppeteerDocumentRenderer;
-const documentStorageProvider: DocumentStorageProvider = vercelBlobStorageProvider;
-
 export class DocumentServiceError extends Error {}
+
+/**
+ * Unified portal (Phase 5N): every storage key begins with its organization
+ * id. Manors' documents live in Manors Production's store, so on the
+ * unified portal nothing is uploaded, read or deleted for Manors here —
+ * which also prevents a Manors file landing in the wrong store while its
+ * key is written to the shared records. Elsewhere, unchanged.
+ */
+function guardStorage(provider: DocumentStorageProvider): DocumentStorageProvider {
+  const check = (storageKey: string) => {
+    const reason = integrationUnavailableReason(storageKey.split('/')[0] ?? '', 'document_storage');
+    if (reason) throw new DocumentServiceError(reason);
+  };
+  return {
+    ...provider,
+    uploadFile: (storageKey, ...rest) => {
+      check(storageKey);
+      return provider.uploadFile(storageKey, ...rest);
+    },
+    downloadFile: (storageKey) => {
+      check(storageKey);
+      return provider.downloadFile(storageKey);
+    },
+    deleteFile: (storageKey) => {
+      check(storageKey);
+      return provider.deleteFile(storageKey);
+    },
+  };
+}
+
+const documentStorageProvider: DocumentStorageProvider = guardStorage(vercelBlobStorageProvider);
 
 /** Manors cleanup phase (Task #8, "All Case Data" report PDF export).
     `services/documentService.ts` is the only module allowed to import the

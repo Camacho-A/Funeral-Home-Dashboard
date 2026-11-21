@@ -4,6 +4,8 @@ import styles from '../page.module.css';
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_code: 'That code was not correct. Please try again.',
+  mfa_enrolled_elsewhere:
+    'Your two-step verification was set up in another SOLIS portal, so this portal cannot check its codes. Use one of your recovery codes, or sign in through the portal where you set it up.',
 };
 
 /**

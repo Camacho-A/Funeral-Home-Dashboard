@@ -10,6 +10,8 @@ import { useCaseSearch } from '@/hooks/useCaseSearch';
 import { useCaseCounts } from '@/hooks/useCaseCounts';
 import { useAdvanceCaseStage } from '@/hooks/useAdvanceCaseStage';
 import { useOrganization } from '@/hooks/useOrganization';
+import { usePortfolio } from '@/hooks/usePortfolio';
+import { CombinedCasesPage } from '@/components/portfolio/CombinedCasesPage';
 import { STAGES } from '@/domain/cases/stages';
 import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
 import { usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
@@ -322,6 +324,9 @@ function CasesPageContent() {
 }
 
 export default function CasesPage() {
+  // Unified portal (Phase 5N): "All authorized organizations" searches every organization the person belongs to.
+  const { combined } = usePortfolio();
+  if (combined) return <CombinedCasesPage />;
   return (
     <Suspense fallback={<EmptyState message="Loading…" />}>
       <CasesPageContent />

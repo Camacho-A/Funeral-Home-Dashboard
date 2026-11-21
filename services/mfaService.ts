@@ -1,6 +1,6 @@
 import type { DataAdapterMode } from '../lib/env';
 import { generateTotpSecret, verifyTotpCode } from '../lib/identity/totp';
-import { encryptTotpSecret, decryptTotpSecret } from '../lib/identity/mfaSecretEncryption';
+import { encryptTotpSecret, decryptTotpSecret, tryDecryptTotpSecret } from '../lib/identity/mfaSecretEncryption';
 import { hashToken } from '../lib/identity/tokens';
 import { randomBytes } from 'crypto';
 import { getIdentitySecrets, updateIdentitySecrets, updateIdentity } from './identityService';
@@ -67,7 +67,17 @@ export async function verifyMfaEnrollment(
 export async function verifyMfaCode(identityId: string, code: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   const secrets = await getIdentitySecrets(identityId, dataAdapterMode);
   if (!secrets?.mfaSecretReference) return false;
-  return verifyTotpCode(decryptTotpSecret(secrets.mfaSecretReference), code);
+  const secret = tryDecryptTotpSecret(secrets.mfaSecretReference);
+  return secret !== null && verifyTotpCode(secret, code);
+}
+
+/** Unified portal (Phase 5N): false when this identity's authenticator was
+    enrolled through another SOLIS deployment (a different encryption key),
+    so its codes cannot be checked here. Recovery codes (stored as hashes)
+    still work. */
+export async function isMfaSecretReadableHere(identityId: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
+  const secrets = await getIdentitySecrets(identityId, dataAdapterMode);
+  return Boolean(secrets?.mfaSecretReference) && tryDecryptTotpSecret(secrets!.mfaSecretReference!) !== null;
 }
 
 /** Single-use — a matched recovery code is removed from the stored list

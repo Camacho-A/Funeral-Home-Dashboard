@@ -6,6 +6,9 @@ import type { AuthAdapterMode } from '@/lib/env';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { NewCaseModal } from '@/components/modals/NewCaseModal';
+import { PortfolioScopeProvider, usePortfolio } from '@/hooks/usePortfolio';
+import { OrganizationChoiceModal } from '@/components/portfolio/OrganizationChoiceModal';
+import { CombinedViewNotice } from '@/components/portfolio/CombinedViewNotice';
 import styles from './AppShell.module.css';
 
 /**
@@ -40,8 +43,41 @@ export function AppShell({
   children: React.ReactNode;
   authAdapterMode?: AuthAdapterMode;
 }) {
+  return (
+    <PortfolioScopeProvider enabled={authAdapterMode === 'identity'}>
+      <AppShellInner authAdapterMode={authAdapterMode}>{children}</AppShellInner>
+    </PortfolioScopeProvider>
+  );
+}
+
+function AppShellInner({
+  children,
+  authAdapterMode,
+}: {
+  children: React.ReactNode;
+  authAdapterMode?: AuthAdapterMode;
+}) {
   const [isNewCaseModalOpen, setNewCaseModalOpen] = useState(false);
+  const [isOrganizationChoiceOpen, setOrganizationChoiceOpen] = useState(false);
   const [isMobileNavOpen, setMobileNavOpen] = useState(false);
+  const portfolio = usePortfolio();
+  const workingOrganizationName = portfolio.organizations.find((o) => o.organizationId === portfolio.workingOrganizationId)?.displayName;
+
+  // Unified portal (Phase 5N): in the combined view a new case first asks
+  // which funeral home it is for; after a switch, the reload lands here
+  // with ?newCase=1 and opens New Case in the chosen organization.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('newCase') !== '1') return;
+    params.delete('newCase');
+    const query = params.toString();
+    window.history.replaceState(null, '', `${window.location.pathname}${query ? `?${query}` : ''}`);
+    setNewCaseModalOpen(true);
+  }, []);
+  function handleNewCaseClick() {
+    if (portfolio.combined) setOrganizationChoiceOpen(true);
+    else setNewCaseModalOpen(true);
+  }
 
   // Standard off-canvas-drawer behavior: Escape closes it, and the
   // background (the `.content` region, the only thing in this layout
@@ -65,17 +101,26 @@ export function AppShell({
       )}
       <div className={styles.mainColumn}>
         <TopBar
-          onNewCaseClick={() => setNewCaseModalOpen(true)}
+          onNewCaseClick={handleNewCaseClick}
           authAdapterMode={authAdapterMode}
           onMenuClick={() => setMobileNavOpen(true)}
         />
         {/* UI refresh (2026-11, styles/solis-refresh.css): every page uses the canvas-and-cards design. */}
         <main id="main-content" className={`${styles.content} ${isMobileNavOpen ? styles.contentLocked : ''} sx-refresh`}>
           <SandboxBanner />
+          <CombinedViewNotice />
           {children}
         </main>
       </div>
-      <NewCaseModal open={isNewCaseModalOpen} onClose={() => setNewCaseModalOpen(false)} />
+      <NewCaseModal open={isNewCaseModalOpen} onClose={() => setNewCaseModalOpen(false)} organizationName={portfolio.isMultiOrganization ? workingOrganizationName : undefined} />
+      <OrganizationChoiceModal
+        open={isOrganizationChoiceOpen}
+        onClose={() => setOrganizationChoiceOpen(false)}
+        onChosen={() => {
+          setOrganizationChoiceOpen(false);
+          setNewCaseModalOpen(true);
+        }}
+      />
     </div>
   );
 }

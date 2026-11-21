@@ -160,7 +160,8 @@ function isSpanAllField(field: ResolvedIntakeField): boolean {
   return field.label.toLowerCase().includes('address');
 }
 
-export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+/** `organizationName` (unified portal, Phase 5N): shown to people in more than one organization, so they always see which funeral home the case is being created for. */
+export function NewCaseModal({ open, onClose, organizationName }: { open: boolean; onClose: () => void; organizationName?: string }) {
   const router = useRouter();
   const session = useSession();
   const organization = useOrganization();
@@ -822,6 +823,11 @@ export function NewCaseModal({ open, onClose }: { open: boolean; onClose: () => 
     <Modal open={open} onClose={handleClose} title="New Case — First Call" size="lg">
       <div className="sx-modal-header">
         <h2 className="sx-modal-title">New Case — First Call</h2>
+        {organizationName && (
+          <span className="sx-chip" data-testid="new-case-organization" style={{ marginLeft: 8 }}>
+            For {organizationName}
+          </span>
+        )}
         <button type="button" className="sx-icon-btn" onClick={handleClose} aria-label="Close">
           ×
         </button>

@@ -36,7 +36,7 @@ export type CrematoryCaseSummary = {
       administrator resolves it. Absent from older servers. */
   sendReview?: SendOutcomeReview | null;
 };
-export type CrematoryMailbox = { connected: false; configured: boolean } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
+export type CrematoryMailbox = { connected: false; configured: boolean; unavailableReason?: string } | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
 export type CrematoryOverview = {
   candidates: CrematoryCaseSummary[];
   settings: { to: string[]; cc: string[] };

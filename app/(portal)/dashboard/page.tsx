@@ -4,19 +4,16 @@ import { useMemo, useState, useEffect } from 'react';
 import { slaSummaryBucket, type SlaMilestoneEvaluation } from '@/domain/sla/slaMilestones';
 import { useCases } from '@/hooks/useCases';
 import { useCaseViewModels } from '@/hooks/useCaseViewModels';
-import { useCaseCounts } from '@/hooks/useCaseCounts';
-import { STAGES } from '@/domain/cases/stages';
-import { presentedStages } from '@/domain/organization/workflowStagePresentation';
 import { computeKpis } from '@/domain/reports/calculations';
 import { useOrganization } from '@/hooks/useOrganization';
-import { useWorkflowTemplates } from '@/hooks/useWorkflowTemplates';
-import { usesTemplateStages } from '@/domain/workflow/selectWorkflowTemplate';
-import { resolveOrganizationStages } from '@/domain/workflow/organizationStages';
 import { useDashboardData } from '@/hooks/useDashboard';
+import { usePortfolio } from '@/hooks/usePortfolio';
+import { CombinedDashboard } from '@/components/portfolio/CombinedDashboard';
 import { PageGreetingHeader } from '@/components/dashboard/PageGreetingHeader';
 import { DashboardKpiStrip } from '@/components/dashboard/DashboardKpiStrip';
 import { NeedsAttentionPanel } from '@/components/dashboard/NeedsAttentionPanel';
-import { CasesByStagePanel, type StageBarRow, type StagePreviewCase } from '@/components/dashboard/CasesByStagePanel';
+import { CasesByStagePanel, type StagePreviewCase } from '@/components/dashboard/CasesByStagePanel';
+import { useStageBreakdownRows } from '@/hooks/useStageBreakdownRows';
 import { RecentActivityPanel } from '@/components/dashboard/RecentActivityPanel';
 import { UpcomingServicesPanel } from '@/components/dashboard/UpcomingServicesPanel';
 import styles from './page.module.css';
@@ -50,7 +47,13 @@ import styles from './page.module.css';
  * accepted, reported tradeoff, the same one already documented below for
  * NeedsAttentionPanel's identical data source.
  */
+/** Unified portal (Phase 5N): "All authorized organizations" shows the combined, view-only Dashboard. */
 export default function DashboardPage() {
+  const { combined } = usePortfolio();
+  return combined ? <CombinedDashboard /> : <OrganizationDashboard />;
+}
+
+function OrganizationDashboard() {
   const { organizationId } = useOrganization();
   const { data: dashboardData, isLoading: isDashboardLoading, isError: isDashboardError } = useDashboardData(organizationId);
   const [todayLabel, setTodayLabel] = useState('');
@@ -89,53 +92,9 @@ export default function DashboardPage() {
   }, [allViewModels]);
 
   // Cases by Stage's navigation hub — server-side counts only (Phase 2),
-  // never every Case object.
-  const { data: countsData } = useCaseCounts({ searchQuery: '' });
-  // Manors intake-stage combination (2026-10). Rows are the USER-FACING
-  // stages, so Manors shows six instead of seven. A presented stage's
-  // count is the SUM of the canonical per-stage counts it covers; those
-  // canonical stages map to disjoint raw-stage sets (First Call is raw
-  // 0-1, Jotform Application is raw 2), so summing them can neither
-  // double-count nor omit a case, and the separate `total` is untouched.
-  // `displayStage` stays a canonical value — it only drives stage colour
-  // and the bottleneck flag. See
-  // domain/organization/workflowStagePresentation.ts.
-  // Service-specific workflows (2026-10): an organization whose cases run
-  // on several templates gets one row per ORGANIZATION stage (the ordered
-  // union across its approved workflows — domain/workflow/organizationStages.ts),
-  // counted server-side per (template, raw stage); the bottleneck flag
-  // comes from the templates' own isAttentionStage. Everyone else keeps
-  // the STAGES rows below, unchanged.
-  const stagesByTemplate = usesTemplateStages(organizationId);
-  const { data: workflowTemplates } = useWorkflowTemplates({ enabled: stagesByTemplate });
-  const stageBreakdownRows: StageBarRow[] = useMemo(() => {
-    if (stagesByTemplate) {
-      const model = resolveOrganizationStages(organizationId, workflowTemplates ?? []);
-      const counts = model.stages.map((stage) => countsData?.byStage[stage.label] ?? null);
-      const maxCount = Math.max(1, ...counts.map((c) => c ?? 0));
-      return model.stages.map((stage, index) => ({
-        label: stage.label,
-        count: counts[index],
-        pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
-        displayStage: index,
-        isAttentionStage: stage.isAttentionStage,
-      }));
-    }
-    const presented = presentedStages(organizationId, STAGES);
-    const counts = presented.map((stage) => {
-      const parts = stage.canonicalDisplayStages.map((ds) => countsData?.byStage[STAGES[ds]] ?? null);
-      return parts.every((part) => part === null)
-        ? null
-        : parts.reduce((sum, part) => (sum ?? 0) + (part ?? 0), 0 as number | null);
-    });
-    const maxCount = Math.max(1, ...counts.map((c) => c ?? 0));
-    return presented.map((stage, index) => ({
-      label: stage.label,
-      count: counts[index],
-      pct: counts[index] === null ? 0 : Math.round((counts[index]! / maxCount) * 100),
-      displayStage: stage.canonicalDisplayStages[0],
-    }));
-  }, [countsData, organizationId, stagesByTemplate, workflowTemplates]);
+  // never every Case object; this organization's own stage model
+  // (hooks/useStageBreakdownRows.ts).
+  const { rows: stageBreakdownRows, total: allCasesCount } = useStageBreakdownRows();
 
   // Stage Preview's own case rows (SOLIS true redesign, Phase 1) — grouped
   // from the already-fetched `allViewModels`, keyed by the case's own
@@ -174,7 +133,7 @@ export default function DashboardPage() {
           <UpcomingServicesPanel />
         </div>
         <div className={styles.stageArea}>
-          <CasesByStagePanel allCasesCount={countsData?.total ?? null} rows={stageBreakdownRows} casesByStage={casesByStage} />
+          <CasesByStagePanel allCasesCount={allCasesCount} rows={stageBreakdownRows} casesByStage={casesByStage} />
         </div>
         <div className={styles.activityArea}>
           <RecentActivityPanel />

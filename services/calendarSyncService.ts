@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import { queryWixDataItems, insertWixDataItem, updateWixDataItem, deleteWixDataItem } from '../lib/wixDataApi';
 import {
   mapWixCalendarEventLinkItem,
@@ -171,6 +172,8 @@ export async function listLinksForOrganization(organizationId: string, dataAdapt
  */
 export async function markPendingForAppointment(appointment: Appointment, dataAdapterMode: DataAdapterMode): Promise<void> {
   if (!appointment.ownerStaffProfileId) return;
+  // Unified portal (Phase 5N): never leave work for another portal's sync sweep.
+  if (integrationUnavailableReason(appointment.organizationId, 'calendar_sync')) return;
   const connections = await listActiveConnectionsForStaffProfile(appointment.organizationId, appointment.ownerStaffProfileId, dataAdapterMode);
   for (const connection of connections) {
     await upsertPendingLink(appointment, connection, dataAdapterMode);
@@ -215,6 +218,7 @@ async function upsertPendingLink(appointment: Appointment, connection: CalendarC
  * past events (§16 of the plan, a decision, not an oversight).
  */
 export async function markPendingForCancellation(organizationId: string, appointmentId: string, dataAdapterMode: DataAdapterMode): Promise<void> {
+  if (integrationUnavailableReason(organizationId, 'calendar_sync')) return;
   const links = await listLinksForAppointment(organizationId, appointmentId, dataAdapterMode);
   for (const link of links) {
     if (link.syncStatus === 'disconnected') continue; // never retried — see runCalendarSyncSweep's own comment
@@ -457,6 +461,7 @@ export async function runCalendarSyncSweep(dataAdapterMode: DataAdapterMode, now
     const { link } = candidate;
     // Defense in depth — re-checked immediately before any token refresh or provider call.
     if (!isOrganizationAllowedInDeployment(link.organizationId)) continue;
+    if (integrationUnavailableReason(link.organizationId, 'calendar_sync')) continue;
     if (!isRetryDue(link, nowMs)) continue;
     if (!(await claimLink(candidate, now, dataAdapterMode))) continue;
     await processLink(link, dataAdapterMode);

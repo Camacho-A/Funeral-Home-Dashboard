@@ -1,5 +1,6 @@
 import type { DataAdapterMode } from '@/lib/env';
 import { queryWixDataItems, updateWixDataItem, WixDataApiError } from '@/lib/wixDataApi';
+import { integrationUnavailableReason } from '@/lib/deployment/organizationIntegrations';
 import { decryptCalendarToken, encryptCalendarToken } from '@/lib/identity/calendarTokenEncryption';
 import { generateOAuthState, generatePkcePair, signOAuthStateCookie, verifyOAuthStateCookie } from '@/lib/auth/calendarOAuthState';
 
@@ -104,7 +105,7 @@ type StoredMailbox = {
 };
 
 export type CrematoryMailboxStatus =
-  | { connected: false; configured: boolean }
+  | { connected: false; configured: boolean; /** Unified portal (Phase 5N): this organization's mailbox is used from another portal. */ unavailableReason?: string }
   | { connected: true; configured: boolean; accountEmail: string; status: 'connected' | 'reauth_required'; connectedAt: string; connectedBy: string };
 
 function oauthConfig() {
@@ -118,6 +119,12 @@ function oauthConfig() {
     );
   }
   return { clientId, clientSecret, redirectUri };
+}
+
+/** Unified portal (Phase 5N): refused before any token is read or any row written. */
+function assertMailboxAvailable(organizationId: string): void {
+  const reason = integrationUnavailableReason(organizationId, 'crematory_mailbox');
+  if (reason) throw new CrematoryMailboxError(reason, 503);
 }
 
 export function isCrematoryMailboxConfigured(): boolean {
@@ -161,6 +168,8 @@ export function resetMockCrematoryMailboxes(): void {
 }
 
 export async function getCrematoryMailboxStatus(organizationId: string, mode: DataAdapterMode): Promise<CrematoryMailboxStatus> {
+  const unavailableReason = integrationUnavailableReason(organizationId, 'crematory_mailbox');
+  if (unavailableReason) return { connected: false, configured: false, unavailableReason };
   const configured = isCrematoryMailboxConfigured();
   const stored = await readStored(organizationId, mode);
   if (!stored) return { connected: false, configured };
@@ -172,6 +181,7 @@ export async function getCrematoryMailboxStatus(organizationId: string, mode: Da
 // ---------------------------------------------------------------------------
 
 export function beginMailboxAuthorization(organizationId: string, identityId: string): { authorizeUrl: string; cookieValue: string } {
+  assertMailboxAvailable(organizationId);
   const { clientId, redirectUri } = oauthConfig();
   const state = generateOAuthState();
   const { codeVerifier, codeChallenge } = generatePkcePair();
@@ -206,6 +216,7 @@ export async function completeMailboxAuthorization(
   expectedOrganizationId: string,
   mode: DataAdapterMode,
 ): Promise<{ accountEmail: string }> {
+  assertMailboxAvailable(expectedOrganizationId);
   const payload = verifyOAuthStateCookie(cookieValue, state);
   if (!payload || payload.organizationId !== expectedOrganizationId) throw new CrematoryMailboxError('The Microsoft sign-in expired or did not match. Please try again.', 400);
   const { clientId, clientSecret, redirectUri } = oauthConfig();
@@ -300,11 +311,14 @@ export async function completeMailboxAuthorization(
 }
 
 export async function disconnectCrematoryMailbox(organizationId: string, mode: DataAdapterMode): Promise<void> {
+  // Never disconnect a mailbox another portal is using.
+  assertMailboxAvailable(organizationId);
   await writeStored(organizationId, null, mode);
 }
 
 /** A usable access token for the mailbox, refreshed when needed. */
 export async function getCrematoryMailboxAccess(organizationId: string, mode: DataAdapterMode): Promise<{ accessToken: string; accountEmail: string }> {
+  assertMailboxAvailable(organizationId);
   const stored = await readStored(organizationId, mode);
   if (!stored) throw new CrematoryMailboxError('No Outlook mailbox is connected for sending to the crematory. An administrator can connect one in Settings → Crematory.', 409);
   if (stored.status === 'reauth_required') throw new CrematoryMailboxError(`The Outlook mailbox ${stored.accountEmail} needs to be signed in again (Settings → Crematory).`, 409);
