@@ -3,12 +3,13 @@ import { generateTotpCode } from '@/lib/identity/totp';
 import { identityFixtures, membershipFixtures, MANORS_ADMIN_IDENTITY_ID } from './__mocks__/identityFixtures';
 import { GUS_ADMIN_IDENTITY_ID } from './__mocks__/gusFixtures';
 import { buildDualOrganizationIdentities, buildDualOrganizationMemberships, CASEY_DUAL_IDENTITY_ID } from './__mocks__/dualOrganizationFixtures';
-import { portalMfaEnrollmentFixtures, portalMfaSetupGrantFixtures } from './portalMfaStore';
+import { portalMfaEnrollmentFixtures, portalMfaSetupGrantFixtures, portalMfaSetupRedemptionFixtures } from './portalMfaStore';
 import { beginMfaEnrollment, verifyMfaEnrollment, verifyMfaCode, verifyAndConsumeRecoveryCode, getMfaState, disableMfa, countRemainingRecoveryCodes, regenerateRecoveryCodes } from './mfaService';
 import { getIdentityById, getIdentitySecrets } from './identityService';
 import { identityMustEnrollMfa, mfaEnrollmentRequiredFor } from './mfaPolicyService';
 import { issuePortalMfaSetupCode, redeemPortalMfaSetupCode, PortalMfaSetupError, SETUP_CODE_TTL_MS } from './portalMfaSetupGrantService';
-import { portalMfaScopeId } from '@/lib/identity/portalMfaScope';
+import { portalCodeHash, portalMfaScopeId } from '@/lib/identity/portalMfaScope';
+import { hashToken } from '@/lib/identity/tokens';
 
 /**
  * Portal-scoped MFA (Phase 5N follow-up). Fictional identities and keys.
@@ -49,6 +50,7 @@ beforeEach(() => {
   membershipFixtures.push(...buildDualOrganizationMemberships());
   portalMfaEnrollmentFixtures.length = 0;
   portalMfaSetupGrantFixtures.length = 0;
+  portalMfaSetupRedemptionFixtures.length = 0;
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -157,5 +159,34 @@ describe('one-time setup codes', () => {
     expect(await redeemPortalMfaSetupCode(ID, second.code, 'mock', t0)).toBe(false); // revoked by the newer one
     expect(await redeemPortalMfaSetupCode(GUS_ADMIN_IDENTITY_ID, third.code, 'mock', t0)).toBe(false);
     expect(await redeemPortalMfaSetupCode(ID, third.code, 'mock', t0)).toBe(true);
+  });
+});
+
+describe('preflight guarantees (Phase 5P)', () => {
+  it('codes are stored only as keyed hashes: not the code, not a plain SHA-256, different under another portal key', async () => {
+    asManorsProduction();
+    await enroll(ID);
+    asUnifiedPortal();
+    const { recoveryCodes } = await enroll(ID);
+    const stored = portalMfaEnrollmentFixtures[0].recoveryCodeHashes;
+    expect(stored).toContain(portalCodeHash(recoveryCodes[0]));
+    expect(stored).not.toContain(hashToken(recoveryCodes[0]));
+    expect(stored.join()).not.toContain(recoveryCodes[0]);
+    const underPortalKey = portalCodeHash(recoveryCodes[0]);
+    vi.stubEnv('MFA_ENCRYPTION_KEY', 'fictional-other-key');
+    expect(portalCodeHash(recoveryCodes[0])).not.toBe(underPortalKey);
+    // The secret is ciphertext under the portal key, not the plain secret.
+    asUnifiedPortal();
+    expect(portalMfaEnrollmentFixtures[0].secretReference).not.toMatch(/^[A-Z2-7]{16,}$/);
+  });
+
+  it('simultaneous redemptions of one code: exactly one succeeds', async () => {
+    asManorsProduction();
+    await enroll(ID);
+    asUnifiedPortal();
+    const { code } = await issuePortalMfaSetupCode({ actorIdentityId: GUS_ADMIN_IDENTITY_ID, organizationId: 'gus-camacho-jr', targetIdentityId: ID, idFactory: () => crypto.randomUUID() }, 'mock');
+    const results = await Promise.all(Array.from({ length: 6 }, () => redeemPortalMfaSetupCode(ID, code, 'mock')));
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(portalMfaSetupRedemptionFixtures).toHaveLength(1);
   });
 });

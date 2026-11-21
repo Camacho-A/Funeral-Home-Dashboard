@@ -4,7 +4,7 @@ import { encryptTotpSecret, tryDecryptTotpSecret } from '../lib/identity/mfaSecr
 import { hashToken } from '../lib/identity/tokens';
 import { randomBytes } from 'crypto';
 import { getIdentityById, getIdentitySecrets, updateIdentitySecrets, updateIdentity } from './identityService';
-import { isPortalScopedMfa, portalMfaScopeId } from '../lib/identity/portalMfaScope';
+import { isPortalScopedMfa, portalCodeHash, portalMfaScopeId } from '../lib/identity/portalMfaScope';
 import { deletePortalEnrollment, getPortalEnrollment, savePortalEnrollment } from './portalMfaStore';
 import type { Identity } from '../types/identity';
 
@@ -101,6 +101,9 @@ export async function beginMfaEnrollment(identityId: string, dataAdapterMode: Da
   return { secret };
 }
 
+/** Legacy: plain SHA-256 (unchanged). Portal-scoped: keyed with this portal's key. */
+const codeHash = (code: string) => (isPortalScopedMfa() ? portalCodeHash(code) : hashToken(code));
+
 function newRecoveryCodes(): { codes: string[]; hashes: string[] } {
   const codes: string[] = [];
   const hashes: string[] = [];
@@ -109,7 +112,7 @@ function newRecoveryCodes(): { codes: string[]; hashes: string[] } {
     // bytes) — 40 bits of entropy each; only their hashes are stored.
     const code = randomBytes(5).toString('hex');
     codes.push(code);
-    hashes.push(hashToken(code));
+    hashes.push(codeHash(code));
   }
   return { codes, hashes };
 }
@@ -151,7 +154,7 @@ export async function isMfaSecretReadableHere(identityId: string, dataAdapterMod
 export async function verifyAndConsumeRecoveryCode(identityId: string, code: string, dataAdapterMode: DataAdapterMode): Promise<boolean> {
   const enrollment = await readEnrollment(identityId, dataAdapterMode);
   if (!enrollment) return false;
-  const matchIndex = enrollment.recoveryCodeHashes.indexOf(hashToken(code));
+  const matchIndex = enrollment.recoveryCodeHashes.indexOf(codeHash(code));
   if (matchIndex === -1) return false;
   const remaining = [...enrollment.recoveryCodeHashes];
   remaining.splice(matchIndex, 1);

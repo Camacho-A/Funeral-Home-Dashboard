@@ -1,8 +1,7 @@
 import { randomBytes, timingSafeEqual } from 'crypto';
 import type { DataAdapterMode } from '../lib/env';
-import { hashToken } from '../lib/identity/tokens';
-import { isPortalScopedMfa, portalMfaScopeId } from '../lib/identity/portalMfaScope';
-import { listSetupGrants, saveSetupGrant, type PortalMfaSetupGrant } from './portalMfaStore';
+import { isPortalScopedMfa, portalCodeHash, portalMfaScopeId } from '../lib/identity/portalMfaScope';
+import { claimSetupGrant, isSetupGrantClaimed, listSetupGrants, saveSetupGrant, type PortalMfaSetupGrant } from './portalMfaStore';
 import { getMembership, isActiveMembership } from './membershipService';
 import { getIdentityById } from './identityService';
 import { getMfaState } from './mfaService';
@@ -66,10 +65,11 @@ export async function issuePortalMfaSetupCode(
   const code = newCode();
   const expiresAt = new Date(Date.parse(nowIso) + SETUP_CODE_TTL_MS).toISOString();
   const grant: PortalMfaSetupGrant = {
+    kind: 'grant',
     id: params.idFactory(),
     scopeId,
     identityId: params.targetIdentityId,
-    codeHash: hashToken(normalize(code)),
+    codeHash: portalCodeHash(normalize(code)),
     organizationId: params.organizationId,
     grantedBy: params.actorIdentityId,
     grantedAt: nowIso,
@@ -81,10 +81,14 @@ export async function issuePortalMfaSetupCode(
   return { code, expiresAt, grant, targetDisplayName: target.displayName ?? null };
 }
 
-/** True (and the code is used up) only for this person's current, unexpired, unused code in this portal. */
+/**
+ * True (and the code is used up) only for this person's current, unexpired,
+ * unrevoked, unused code in this portal. Exactly one of any simultaneous
+ * redemptions can succeed (claimSetupGrant).
+ */
 export async function redeemPortalMfaSetupCode(identityId: string, code: string, mode: DataAdapterMode, now: string = new Date().toISOString()): Promise<boolean> {
   if (!isPortalScopedMfa()) return false;
-  const submitted = Buffer.from(hashToken(normalize(code)));
+  const submitted = Buffer.from(portalCodeHash(normalize(code)));
   const grants = await listSetupGrants(portalMfaScopeId(), identityId, mode);
   const match = grants.find((g) => {
     if (g.usedAt || g.revokedAt || Date.parse(g.expiresAt) <= Date.parse(now)) return false;
@@ -92,6 +96,8 @@ export async function redeemPortalMfaSetupCode(identityId: string, code: string,
     return stored.length === submitted.length && timingSafeEqual(stored, submitted);
   });
   if (!match) return false;
+  if (await isSetupGrantClaimed(match.id, mode)) return false;
+  if (!(await claimSetupGrant(match, now, mode))) return false;
   await saveSetupGrant({ ...match, usedAt: now }, mode);
   return true;
 }

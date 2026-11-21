@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import { isGusDeployment } from '../gusDeployment';
 
 /**
@@ -23,8 +23,25 @@ export function isPortalScopedMfa(env: Record<string, string | undefined> = proc
 
 const DEVELOPMENT_KEY = 'beacon-development-only-insecure-mfa-key-do-not-use-in-production';
 
-export function portalMfaScopeId(env: Record<string, string | undefined> = process.env): string {
+function portalKey(env: Record<string, string | undefined>): string {
   const key = env.MFA_ENCRYPTION_KEY || (env.NODE_ENV === 'production' ? null : DEVELOPMENT_KEY);
   if (!key) throw new Error('MFA_ENCRYPTION_KEY is not set. A real, random 32-byte key is required in production.');
-  return `portal-${createHash('sha256').update(`solis-portal-mfa-scope:${key}`).digest('hex').slice(0, 20)}`;
+  return key;
+}
+
+export function portalMfaScopeId(env: Record<string, string | undefined> = process.env): string {
+  return `portal-${createHash('sha256').update(`solis-portal-mfa-scope:${portalKey(env)}`).digest('hex').slice(0, 20)}`;
+}
+
+/**
+ * Keyed hash (HMAC-SHA-256) for this portal's recovery codes and one-time
+ * setup codes. Only these hashes are stored. Keyed with a value derived
+ * from this portal's MFA key, so a copy of the stored hashes alone cannot
+ * be brute-forced offline (recovery codes are short by design). The key
+ * itself is never stored; rotating it invalidates the hashes along with
+ * the enrollments they belong to.
+ */
+export function portalCodeHash(code: string, env: Record<string, string | undefined> = process.env): string {
+  const hmacKey = createHash('sha256').update(`solis-portal-mfa-code-hmac:${portalKey(env)}`).digest();
+  return createHmac('sha256', hmacKey).update(code).digest('hex');
 }
