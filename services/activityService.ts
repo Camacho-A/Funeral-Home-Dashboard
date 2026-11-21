@@ -3592,6 +3592,25 @@ export function recordCaseSequenceInitialized(
   );
 }
 
+/** Portal-scoped MFA (Phase 5N): a one-time two-step setup code was issued for this portal. Never records the code. */
+export function recordPortalMfaSetupCodeIssued(ctx: ActivityContext, target: { identityId: string; displayName: string | null; expiresAt: string }, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
+  return record(
+    envelope(ctx, {
+      caseId: null,
+      category: 'administration',
+      eventType: ACTIVITY_EVENT_TYPES.PORTAL_MFA_SETUP_CODE_ISSUED,
+      resourceType: 'identity',
+      resourceId: target.identityId,
+      previousValue: null,
+      newValue: JSON.stringify({ expiresAt: target.expiresAt }),
+      description: `One-time two-step setup code issued for ${target.displayName ?? 'a staff member'} (expires ${target.expiresAt})`,
+      metadata: null,
+      severity: 'warning',
+    }),
+    dataAdapterMode,
+  );
+}
+
 /** 2026-11: the organization's case-number prefix changed. */
 export function recordCaseNumberPrefixChanged(ctx: ActivityContext, previousPrefix: string | null, newPrefix: string, dataAdapterMode: DataAdapterMode): Promise<ActivityEvent> {
   return record(

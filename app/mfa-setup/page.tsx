@@ -1,4 +1,5 @@
 import { redirect } from 'next/navigation';
+import { getMfaState } from '@/services/mfaService';
 import { getSession, clearSessionPath } from '@/lib/auth/session';
 import { resolveIdentitySession } from '@/lib/auth/resolveIdentitySession';
 import { sanitizeRedirectPath } from '@/lib/auth/redirect';
@@ -23,13 +24,18 @@ export default async function MfaSetupPage({ searchParams }: { searchParams: Pro
   if (session.user.source !== 'identity') redirect(next);
   const resolved = await resolveIdentitySession(session, getDataAdapterMode());
   if (!resolved.valid) redirect(clearSessionPath(resolved.reason));
-  if (resolved.identity.mfaEnabled) redirect(next);
+  const mfaState = await getMfaState(resolved.identity, getDataAdapterMode());
+  if (mfaState.enabled) redirect(next);
 
   return (
     <div className={styles.page}>
       <div className={styles.card}>
         <h1 className={styles.title}>SOLIS</h1>
-        <p className={styles.subtitle}>Your funeral home requires two-factor authentication. Set it up to continue.</p>
+        <p className={styles.subtitle}>
+          {mfaState.enrolledElsewhere
+            ? 'Set up two-factor authentication for this portal to continue. Your two-factor authentication in your other SOLIS portal keeps working.'
+            : 'Your funeral home requires two-factor authentication. Set it up to continue.'}
+        </p>
         <MfaEnrollmentSetup next={next} />
         <form action={logoutAction} style={{ marginTop: 16 }}>
           <button type="submit" className="sx-btn sx-btn-ghost">

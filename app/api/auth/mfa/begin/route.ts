@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
-import { beginMfaEnrollment } from '@/services/mfaService';
+import { beginMfaEnrollment, getMfaState } from '@/services/mfaService';
 
 /**
  * Phase 40 (MFA & Account Security). Step 1 of enrollment: generates and
@@ -18,7 +18,8 @@ export async function POST(request: Request) {
   if (!access.authorized) return access.response;
   const { identity, dataAdapterMode } = access;
 
-  if (identity.mfaEnabled) {
+  // Portal-scoped MFA (Phase 5N): "enabled" means enabled in THIS portal.
+  if ((await getMfaState(identity, dataAdapterMode)).enabled) {
     return NextResponse.json({ error: 'Two-factor authentication is already enabled.' }, { status: 409 });
   }
 

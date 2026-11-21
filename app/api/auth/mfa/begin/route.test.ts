@@ -28,6 +28,8 @@ vi.mock('@/lib/auth/requireIdentitySession', () => ({
 
 vi.mock('@/services/mfaService', () => ({
   beginMfaEnrollment: async () => ({ secret: 'FAKESECRETBASE32' }),
+  // Legacy (non-portal-scoped) mode: enabled is the identity's own flag.
+  getMfaState: async (identity: { mfaEnabled: boolean }) => ({ portalScoped: false, enabled: identity.mfaEnabled, enrolledElsewhere: false }),
 }));
 
 const { POST } = await import('./route');

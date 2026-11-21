@@ -413,6 +413,8 @@ export const ACTIVITY_EVENT_TYPES = {
       Funeral Directors, with audit). The organization's case-number
       prefix changed (Settings › Case numbering). `'administration'`. */
   CASE_NUMBER_PREFIX_CHANGED: 'case.number_prefix.changed',
+  /** Portal-scoped MFA (Phase 5N): an administrator issued a one-time two-step setup code for this portal. The code itself is never recorded. */
+  PORTAL_MFA_SETUP_CODE_ISSUED: 'identity.portal_mfa.setup_code_issued',
 
   /** 2026-10 (Gus Camacho Jr. service catalog). An administrator set,
       changed or cleared one service catalog row's price in Settings ›

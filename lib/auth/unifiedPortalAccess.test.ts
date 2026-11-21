@@ -51,6 +51,9 @@ const caseRoute = await import('@/app/api/cases/[caseId]/route');
 const { createIdentitySession, getSessionById } = await import('@/services/sessionService');
 const { resolvePermissions } = await import('@/services/permissionService');
 const { organizationAcceptsNewCases } = await import('@/domain/organization/organizationTransition');
+const { POST: issueSetupCode } = await import('@/app/api/auth/mfa/setup-grants/route');
+const { updateIdentity } = await import('@/services/identityService');
+const { portalMfaSetupGrantFixtures } = await import('@/services/portalMfaStore');
 
 let idCounter = 0;
 const idFactory = () => `unified-${++idCounter}`;
@@ -182,5 +185,38 @@ describe('new cases: one specific organization, never a combined context; histor
     const readable = await caseRoute.GET(new Request(`http://localhost/api/cases/${manorsCase.id}?organizationId=${MANORS}`), { params: Promise.resolve({ caseId: manorsCase.id }) });
     expect(readable.status).toBe(200);
     expect(organizationAcceptsNewCases(GUS)).toBe(true);
+  });
+});
+
+describe('portal-scoped MFA on the unified portal (fictional)', () => {
+  const post = (body: unknown) => new Request('http://localhost/api/auth/mfa/setup-grants', { method: 'POST', headers: { origin: 'http://localhost', host: 'localhost', 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+  it('someone with two-step verification elsewhere cannot work here on a password-only session; an administrator issues a one-time setup code (never for themselves, never a non-administrator)', async () => {
+    vi.stubEnv('SOLIS_PORTAL_SCOPED_MFA', 'true');
+    try {
+      // Casey enrolled at "Manors Production" (the original field on the shared record).
+      await updateIdentity(CASEY_DUAL_IDENTITY_ID, { mfaEnabled: true }, 'mock');
+      await signInAs(CASEY_DUAL_IDENTITY_ID);
+      const gate = await requireAuthorizedOrganization(GUS);
+      expect(gate.authorized).toBe(false);
+      if (!gate.authorized) expect((await gate.response.json()).error ?? '').toMatch(/two-factor|MFA|enroll/i);
+      // Casey (Gus Manager) cannot issue codes, for anyone.
+      expect((await issueSetupCode(post({ organizationId: GUS, identityId: ROBIN_DUAL_IDENTITY_ID }))).status).not.toBe(201);
+
+      await signInAs(GUS_ADMIN_IDENTITY_ID);
+      expect((await issueSetupCode(post({ organizationId: GUS, identityId: GUS_ADMIN_IDENTITY_ID }))).status).toBe(403); // self
+      const issued = await issueSetupCode(post({ organizationId: GUS, identityId: CASEY_DUAL_IDENTITY_ID }));
+      expect(issued.status).toBe(201);
+      expect(issued.headers.get('cache-control')).toBe('no-store');
+      const { code } = await issued.json();
+      expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+      expect(JSON.stringify(portalMfaSetupGrantFixtures)).not.toContain(code);
+      // Not for a member of another organization.
+      expect((await issueSetupCode(post({ organizationId: MANORS, identityId: CASEY_DUAL_IDENTITY_ID }))).status).toBe(403);
+    } finally {
+      await updateIdentity(CASEY_DUAL_IDENTITY_ID, { mfaEnabled: false }, 'mock');
+      portalMfaSetupGrantFixtures.length = 0;
+      vi.unstubAllEnvs();
+    }
   });
 });

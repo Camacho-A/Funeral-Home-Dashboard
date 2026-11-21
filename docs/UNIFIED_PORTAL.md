@@ -156,25 +156,62 @@ session from one is never accepted by another (tested). A person who uses
 both portals during the transition has one sign-in per portal (different
 hosts and secrets) but one password, because the password hash is shared.
 
-**MFA finding.**
-- Each deployment encrypts authenticator secrets with its own
-  `MFA_ENCRYPTION_KEY`, and the encrypted secret is stored on the shared
-  identity record. Someone who set up MFA through Manors Production can't
-  have their authenticator codes checked on the unified portal.
-- Previously that showed as a server error at the code prompt. Now
-  (`tryDecryptTotpSecret`, `isMfaSecretReadableHere`) the portal says the
-  authenticator was set up in another portal and offers recovery codes,
-  which are stored as hashes and work everywhere. It is not counted as a
-  failed attempt. Tested.
-- Enrollment is never overwritten: re-enrolling is already refused while
-  MFA is on.
-- MFA requirement is per organization. If any of a person's organizations
-  requires MFA, they enroll before using the portal.
-- **Decision needed:** before Manors staff use the unified portal, either
-  (a) give it the **same** `MFA_ENCRYPTION_KEY` as Manors Production (that
-  is copying a Manors secret, so it needs approval), or (b) have
-  MFA-enrolled Manors staff use recovery codes and later re-enroll, which
-  would break their Manors Production MFA. (a) is the clean option.
+**MFA: portal-scoped enrollment (decided 2026-11-20: the Manors MFA key is NOT copied).**
+
+The original MFA fields on the shared identity record (`mfaEnabled`,
+`mfaSecretReference`, `mfaVerifiedAt`, `mfaRecoveryCodeHashes`) belong to
+the deployment that wrote them: **Manors Production**. The `gus-solis`
+portal (Gus-only or unified) is **portal-scoped**
+(`lib/identity/portalMfaScope.ts`). It never reads or writes those fields;
+it keeps its own enrollments in a separate store
+(`services/portalMfaStore.ts`).
+
+- **Scope:** each enrollment is keyed by a portal scope id, a one-way
+  digest of this portal's `MFA_ENCRYPTION_KEY`. It reveals nothing about
+  the key; rotating the key starts a new scope.
+- **Recovery codes:** per portal, stored only as hashes, single use.
+  Regenerating needs a current authenticator code. Manors recovery codes
+  are neither accepted nor consumed on the unified portal.
+- **Disable:** turning MFA off on the unified portal removes only its own
+  enrollment.
+- **Code:** `services/mfaService.ts` (one legacy backend and one portal
+  backend behind the same functions), `getMfaState`, the MFA gate in
+  `resolveMembershipAuthorizationContext`, `identityMustEnrollMfa`, the
+  `/api/auth/mfa/*` routes and `/mfa-setup`.
+
+**How existing staff transition (no password-only fallback):**
+
+| Person | On the unified portal |
+|---|---|
+| No MFA anywhere | Unchanged: enroll here if an organization requires it. |
+| MFA set up at Manors, not here | After their password they're asked for a **one-time setup code** (`/login/mfa-setup-code`), then must connect an authenticator for this portal before anything else. Every organization refuses their session until they do. Their Manors MFA keeps working. |
+| MFA set up here | Normal code prompt, using this portal's authenticator and recovery codes. |
+
+**One-time setup codes** (`services/portalMfaSetupGrantService.ts`,
+`POST /api/auth/mfa/setup-grants`, and "Issue two-step setup code" in
+Settings › Team):
+- **Who issues:** an administrator (`user.manageRoles`) of one of the
+  person's organizations, never the person themselves.
+- **Only when needed:** a code is issued only for someone with MFA
+  elsewhere and none here.
+- **Handling:** shown once with no-store caching; only its hash is stored.
+- **Lifetime:** valid 30 minutes and single use. Issuing a new code revokes
+  the earlier one. A wrong code counts toward account lockout.
+- **Audit:** recorded as `identity.portal_mfa.setup_code_issued`, without
+  the code.
+- **Delivery:** the administrator gives it to the person in person or by
+  phone (email is off).
+
+**Live requirements (approval):** two new Wix collections,
+`portalMfaEnrollments` and `portalMfaSetupGrants` (server-only, accessed
+with the API key), must exist before anyone can enroll MFA on any live
+`gus-solis` deployment, including the Gus-only first one. Until then this
+runs on fictional data only. No live identity or MFA record is changed by
+any of this.
+
+**Legacy mode** (Manors Production, the sandboxes, local development) is
+unchanged. If a deployment there ever meets an enrollment made under
+another key, it fails safely and offers recovery codes.
 
 ## 7. Wix API key: can the unified portal reuse the existing key?
 
@@ -207,9 +244,18 @@ site-level API key (`WIX_API_KEY` + `WIX_SITE_ID`, `@wix/sdk`
     revoke the old one. Manors is unaffected.
   - With a shared key: the same steps on both projects, with Manors
     redeployed in the same window.
-- **Recommendation:** you create a dedicated key for `gus-solis` with the
-  same permissions as today's key, limited to the Beacon site, and add it
-  in Vercel yourself.
+- **Decided (2026-11-20):** a dedicated key for `gus-solis`, created and
+  configured by you, limited to the Beacon site.
+- **Minimum permissions for the approved operations:**
+  - Wix Data: read, insert, update and delete items in the SOLIS
+    collections. Delete is used by existing operations (report presets,
+    organization role locks) and by turning off portal MFA.
+  - Reading site properties.
+  - Nothing else: no site design, members, payments, media management or
+    account-level permissions.
+- **Note:** Wix API keys are scoped by site and permission category, not by
+  collection, so the app's per-organization authorization remains the data
+  boundary.
 
 ## 8. Deployment implications (nothing changed live)
 
@@ -219,9 +265,12 @@ site-level API key (`WIX_API_KEY` + `WIX_SITE_ID`, `@wix/sdk`
   - Sign-in branding (`LOGIN_ORGANIZATION_ID`, `LOGIN_ORGANIZATION_HOSTS`)
     may only name served organizations.
   - Every Manors integration key is still forbidden.
-- **First controlled deployment (Phase 5M):** can go ahead as Gus-only
-  (`DEPLOYMENT_ORGANIZATION_IDS=gus-camacho-jr`, as configured today), or
-  as the unified portal by adding `managed-cremations`.
+- **First controlled deployment (Phase 5M):** **Gus-only**, decided
+  2026-11-20 (`DEPLOYMENT_ORGANIZATION_IDS=gus-camacho-jr`, as configured
+  today). Unified Manors access stays off until the MFA migration and the
+  integration dependencies are reviewed.
+  - Portal-scoped MFA applies from day one, so the two new MFA
+    collections (§6) are needed before Gus staff can enroll.
   - The unified option also needs: the MFA key decision (§6), Manors
     staff knowing which features remain on the Manors portal (§5), and an
     owner decision that Manors staff may sign in there.

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { PortalMfaSetupCodeDialog } from './PortalMfaSetupCodeDialog';
 import { SelectField } from '@/components/ui/SelectField';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { RowMenu, type RowMenuItem } from '@/components/ui/RowMenu';
@@ -51,6 +52,7 @@ export function TeamMemberList({
   const assignRole = useAssignRole(organizationId);
   const setMembershipStatus = useSetMembershipStatus(organizationId);
   const [pendingAction, setPendingAction] = useState<PendingStatusAction | null>(null);
+  const [setupCodeFor, setSetupCodeFor] = useState<{ identityId: string; displayName: string } | null>(null);
 
   if (members.length === 0) {
     return <EmptyState message="No team members yet." />;
@@ -78,17 +80,23 @@ export function TeamMemberList({
             const isDisabled = member.status === 'disabled';
 
             const items: RowMenuItem[] = [];
-            if (isDisabled) {
-              items.push({ label: 'Reactivate', onSelect: () => setMembershipStatus.mutate({ targetIdentityId: member.identityId, status: 'active' }) });
-            } else {
-              items.push({ label: 'Disable', onSelect: () => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'disabled' }) });
+            if (canRemove) {
+              if (isDisabled) {
+                items.push({ label: 'Reactivate', onSelect: () => setMembershipStatus.mutate({ targetIdentityId: member.identityId, status: 'active' }) });
+              } else {
+                items.push({ label: 'Disable', onSelect: () => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'disabled' }) });
+              }
             }
-            items.push({
-              label: 'Remove',
-              danger: true,
-              dividerBefore: true,
-              onSelect: () => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'removed' }),
-            });
+            // Portal-scoped MFA (Phase 5N): for someone whose two-step verification is in another portal.
+            if (canManageRoles) items.push({ label: 'Issue two-step setup code', onSelect: () => setSetupCodeFor({ identityId: member.identityId, displayName: member.displayName }) });
+            if (canRemove) {
+              items.push({
+                label: 'Remove',
+                danger: true,
+                dividerBefore: true,
+                onSelect: () => setPendingAction({ targetIdentityId: member.identityId, displayName: member.displayName, status: 'removed' }),
+              });
+            }
 
             return (
               <tr key={member.identityId}>
@@ -124,13 +132,15 @@ export function TeamMemberList({
                   <span className={isDisabled ? 'sx-status' : 'sx-status sx-status-ok'}>{isDisabled ? 'Disabled' : 'Active'}</span>
                 </td>
                 <td data-label="Actions" style={{ width: 48 }}>
-                  <div className="sx-row-actions">{canRemove && !isSelf && <RowMenu label={`Actions for ${member.displayName}`} items={items} />}</div>
+                  <div className="sx-row-actions">{(canRemove || canManageRoles) && !isSelf && <RowMenu label={`Actions for ${member.displayName}`} items={items} />}</div>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      {setupCodeFor && <PortalMfaSetupCodeDialog organizationId={organizationId} member={setupCodeFor} onClose={() => setSetupCodeFor(null)} />}
 
       {pendingAction && (
         <ConfirmActionDialog

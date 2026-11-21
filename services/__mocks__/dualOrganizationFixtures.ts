@@ -13,6 +13,11 @@ import { DEFAULT_ORGANIZATION_ID, GUS_ORGANIZATION_ID } from './organizationIds'
  *
  *   Casey Dual — Gus Manager,          Manors Office Staff
  *   Robin Dual — Manors Funeral Director, Gus Read Only
+ *   Sam Transition — Manors and Gus Funeral Director, with two-step
+ *     verification already set up "at Manors" (the original field on the
+ *     shared record) — to walk through portal-scoped MFA: on the unified
+ *     portal Sam needs an administrator's one-time setup code, then enrolls
+ *     there. The stored reference is a placeholder; the portal never reads it.
  *
  * Present only with the sandbox switch (identityFixtures.ts / fixtures.ts
  * include them then); tests push them explicitly. Never real people.
@@ -22,10 +27,12 @@ export const CASEY_DUAL_IDENTITY_ID = 'identity-dual-casey';
 export const ROBIN_DUAL_IDENTITY_ID = 'identity-dual-robin';
 export const CASEY_DUAL_EMAIL = 'casey.dual@unified-demo.test';
 export const ROBIN_DUAL_EMAIL = 'robin.dual@unified-demo.test';
+export const SAM_TRANSITION_IDENTITY_ID = 'identity-dual-sam';
+export const SAM_TRANSITION_EMAIL = 'sam.transition@unified-demo.test';
 
 const NOW = '2026-11-20T12:00:00.000Z';
 
-type Seed = { identityId: string; email: string; displayName: string; roles: { organizationId: string; roleKey: string; staffRole: StaffProfile['role'] }[] };
+type Seed = { identityId: string; email: string; displayName: string; mfaElsewhere?: boolean; roles: { organizationId: string; roleKey: string; staffRole: StaffProfile['role'] }[] };
 
 const SEEDS: readonly Seed[] = [
   {
@@ -46,6 +53,16 @@ const SEEDS: readonly Seed[] = [
       { organizationId: GUS_ORGANIZATION_ID, roleKey: 'readOnly', staffRole: 'staff' },
     ],
   },
+  {
+    identityId: SAM_TRANSITION_IDENTITY_ID,
+    email: SAM_TRANSITION_EMAIL,
+    displayName: 'Sam Transition',
+    mfaElsewhere: true,
+    roles: [
+      { organizationId: DEFAULT_ORGANIZATION_ID, roleKey: 'funeralDirector', staffRole: 'funeral_director' },
+      { organizationId: GUS_ORGANIZATION_ID, roleKey: 'funeralDirector', staffRole: 'funeral_director' },
+    ],
+  },
 ];
 
 const short = (organizationId: string) => (organizationId === GUS_ORGANIZATION_ID ? 'gus' : 'manors');
@@ -63,16 +80,16 @@ export function buildDualOrganizationIdentities(): Array<Identity & IdentitySecr
     status: 'active' as const,
     emailVerified: true,
     passwordVersion: 1,
-    mfaEnabled: false,
+    mfaEnabled: seed.mfaElsewhere === true,
     lastLoginAt: null,
     createdAt: NOW,
     updatedAt: NOW,
     get passwordHash() {
       return hashPassword(UNIFIED_DEMO_PASSWORD);
     },
-    mfaSecretReference: null,
-    mfaVerifiedAt: null,
-    mfaRecoveryCodeHashes: [],
+    mfaSecretReference: seed.mfaElsewhere ? 'fictional-placeholder-enrolled-under-another-portal-key' : null,
+    mfaVerifiedAt: seed.mfaElsewhere ? NOW : null,
+    mfaRecoveryCodeHashes: seed.mfaElsewhere ? ['fictional-placeholder-hash'] : [],
   }));
 }
 

@@ -1,4 +1,6 @@
 import type { IdentitySession } from '../../types/identitySession';
+import { isPortalScopedMfa } from '@/lib/identity/portalMfaScope';
+import { getMfaState } from '@/services/mfaService';
 import type { AuthorizationContext } from '../../types/authorization';
 import type { Membership } from '../../types/membership';
 import type { DataAdapterMode } from '../env';
@@ -84,6 +86,18 @@ export async function resolveMembershipAuthorizationContext(
   const result = await resolveMembershipGrant(identitySession, dataAdapterMode, requestedOrganizationId, prefetched);
   if (!result.granted) return result;
   const known = gate.identity && gate.identity.id === identitySession.identityId ? gate.identity : null;
+  if (isPortalScopedMfa()) {
+    // Portal-scoped MFA (Phase 5N): what counts is enrollment in THIS portal.
+    // Someone protected by MFA elsewhere is never let in on a password alone:
+    // they must enroll here first (after an administrator's one-time setup code).
+    const identity = known ?? (await getIdentityById(identitySession.identityId, dataAdapterMode));
+    if (!identity) return { granted: false, reason: 'mfa_enrollment_required' };
+    const state = await getMfaState(identity, dataAdapterMode);
+    if (state.enabled) return result;
+    if (state.enrolledElsewhere) return { granted: false, reason: 'mfa_enrollment_required' };
+    if (!(await organizationRequiresMfa(result.context.organizationId, dataAdapterMode))) return result;
+    return { granted: false, reason: 'mfa_enrollment_required' };
+  }
   if (known?.mfaEnabled) return result;
   const organizationId = result.context.organizationId;
   if (!(await organizationRequiresMfa(organizationId, dataAdapterMode))) return result;

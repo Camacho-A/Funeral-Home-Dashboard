@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
-import { verifyMfaCode, verifyAndConsumeRecoveryCode, disableMfa } from '@/services/mfaService';
+import { verifyMfaCode, verifyAndConsumeRecoveryCode, disableMfa, getMfaState } from '@/services/mfaService';
 
 /**
  * Phase 40. Disables MFA — but only after proving possession with a current
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   if (!access.authorized) return access.response;
   const { identity, dataAdapterMode } = access;
 
-  if (!identity.mfaEnabled) return NextResponse.json({ ok: true });
+  if (!(await getMfaState(identity, dataAdapterMode)).enabled) return NextResponse.json({ ok: true });
 
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;

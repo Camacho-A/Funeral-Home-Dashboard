@@ -2662,6 +2662,12 @@ describe('GET /api/cases/[caseId] — tenant-isolation hardening (2026-10)', () 
         const matches = options?.filter?.organizationId === DEFAULT_ORGANIZATION_ID && options?.filter?.beaconCaseId === '1042';
         return Promise.resolve({ dataItems: matches ? [{ id: '1042', dataCollectionId: 'cases', data: EXISTING_WIX_CASE_DATA }] : [] });
       }
+      // Portal-scoped MFA (Phase 5N): a Gus deployment checks MFA in its own
+      // store; this administrator has enrolled here, so the test exercises
+      // tenant isolation alone.
+      if (collectionId === 'portalMfaEnrollments') {
+        return Promise.resolve({ dataItems: [{ id: 'enrollment', dataCollectionId: 'portalMfaEnrollments', data: { scopeId: options?.filter?.scopeId, identityId: options?.filter?.identityId, secretReference: 'x', verifiedAt: '2026-11-20T00:00:00.000Z', recoveryCodeHashes: [] } }] });
+      }
       return baseImplementation(collectionId, options);
     });
 

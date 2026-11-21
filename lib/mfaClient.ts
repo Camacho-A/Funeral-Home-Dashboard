@@ -47,3 +47,11 @@ export async function setOrgMfaPolicy(organizationId: string, requireMfa: boolea
   const body = await parseJsonOrThrow(await fetch('/api/organization/mfa-policy', { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ organizationId, requireMfa }) }));
   return body.requireMfa === true;
 }
+
+/** Portal-scoped MFA (Phase 5N): an administrator issues a one-time setup code for a member. Returned once. */
+export async function issuePortalMfaSetupCode(organizationId: string, identityId: string): Promise<{ code: string; expiresAt: string }> {
+  const response = await fetch('/api/auth/mfa/setup-grants', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ organizationId, identityId }) });
+  const body = (await response.json().catch(() => ({}))) as { code?: string; expiresAt?: string; error?: string };
+  if (!response.ok || !body.code || !body.expiresAt) throw new Error(body.error ?? 'The setup code could not be issued.');
+  return { code: body.code, expiresAt: body.expiresAt };
+}

@@ -56,6 +56,15 @@ are never compared). Generate each fresh, per section B.
    `sendToCrematory.sendingEnabled: false`, `requireReleaseAfterService: false`.
 4. Read-only check that Manors Production's project settings and latest Production deployment are unchanged (snapshot JSON kept).
 
+## A2. Live Wix prerequisites — [approval]
+
+- Two new collections for portal-scoped MFA (docs/UNIFIED_PORTAL.md §6):
+  `portalMfaEnrollments` and `portalMfaSetupGrants`, server-only (API key).
+  Without them nobody can enroll MFA on `gus-solis`.
+- A dedicated Wix API key for `gus-solis`, created by the owner, limited to
+  the Beacon site with the minimum permissions in docs/UNIFIED_PORTAL.md §7.
+  It is never a copy of the Manors Production key.
+
 ## B. Environment (Production target only) — [approval]
 
 Generate every secret fresh for Gus (e.g. `openssl rand -base64 48`), paste it
@@ -68,7 +77,7 @@ directly into Vercel, and never reuse a Manors value:
 | `SESSION_JWT_SECRET`, `MFA_ENCRYPTION_KEY`, `CRON_SECRET` | **new, Gus-only** |
 | `APP_BASE_URL`, `NEXT_PUBLIC_APP_URL`, `LOGIN_ORGANIZATION_HOSTS` | once the domain is chosen |
 | `BLOB_READ_WRITE_TOKEN`, `BLOB_STORE_ID` (+ branding pair) | a **Gus-only** Blob store — creating it may have cost implications [approval] |
-| `WIX_SITE_ID`, `WIX_API_KEY` | the shared Beacon site — connecting live Wix is its own [approval] |
+| `WIX_SITE_ID`, `WIX_API_KEY` | the shared Beacon site, with a **dedicated `gus-solis` key** (owner creates it; never the Manors key) — connecting live Wix is its own [approval] |
 | `SOLIS_FD_CREDENTIALS_STORAGE=wix` | only when live credential storage is approved — and the start-up guard's list changed in code at the same time |
 
 Leave unset: `RESEND_*`, `TWILIO_*`, `MICROSOFT_*`, `GOOGLE_*`,

@@ -1,4 +1,5 @@
 import type { DataAdapterMode } from '../lib/env';
+import { getMfaState } from './mfaService';
 import type { Identity } from '../types/identity';
 import { listMembershipsForIdentity, isActiveMembership } from './membershipService';
 import { getOrganization } from './organizationProvisioningService';
@@ -19,7 +20,10 @@ import { getOrganization } from './organizationProvisioningService';
  * here.
  */
 export async function identityMustEnrollMfa(identity: Identity, dataAdapterMode: DataAdapterMode): Promise<boolean> {
-  if (identity.mfaEnabled) return false;
+  // Portal-scoped MFA (Phase 5N): enrollment in THIS portal; MFA set up elsewhere must be set up here too.
+  const state = await getMfaState(identity, dataAdapterMode);
+  if (state.enabled) return false;
+  if (state.enrolledElsewhere) return true;
   const memberships = (await listMembershipsForIdentity(identity.id, dataAdapterMode)).filter(isActiveMembership);
   for (const membership of memberships) {
     const org = await getOrganization(membership.organizationId, dataAdapterMode);
@@ -60,10 +64,12 @@ export function clearOrganizationMfaPolicyCache(): void {
  * affected by another one that does.
  */
 export async function mfaEnrollmentRequiredFor(
-  identity: Pick<Identity, 'mfaEnabled'>,
+  identity: Pick<Identity, 'id' | 'mfaEnabled'>,
   organizationId: string,
   dataAdapterMode: DataAdapterMode,
 ): Promise<boolean> {
-  if (identity.mfaEnabled) return false;
+  const state = await getMfaState(identity, dataAdapterMode);
+  if (state.enabled) return false;
+  if (state.enrolledElsewhere) return true;
   return organizationRequiresMfa(organizationId, dataAdapterMode);
 }

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireSameOrigin } from '@/lib/auth/csrf';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
 import { parseJsonBody } from '@/lib/auth/routeHelpers';
-import { regenerateRecoveryCodes } from '@/services/mfaService';
+import { regenerateRecoveryCodes, getMfaState } from '@/services/mfaService';
 
 /**
  * Phase 40. Regenerates the recovery-code batch (old codes stop working),
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (!access.authorized) return access.response;
   const { identity, dataAdapterMode } = access;
 
-  if (!identity.mfaEnabled) return NextResponse.json({ error: 'Two-factor authentication is not enabled.' }, { status: 409 });
+  if (!(await getMfaState(identity, dataAdapterMode)).enabled) return NextResponse.json({ error: 'Two-factor authentication is not enabled.' }, { status: 409 });
 
   const parsed = await parseJsonBody(request);
   if (!parsed.ok) return parsed.response;

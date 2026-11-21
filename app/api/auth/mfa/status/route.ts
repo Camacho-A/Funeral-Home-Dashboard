@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requireIdentitySession } from '@/lib/auth/requireIdentitySession';
-import { countRemainingRecoveryCodes } from '@/services/mfaService';
+import { countRemainingRecoveryCodes, getMfaState } from '@/services/mfaService';
 
 /**
  * Phase 40. Read-only MFA status for the account-security UI: whether MFA is
@@ -10,6 +10,8 @@ export async function GET() {
   const access = await requireIdentitySession();
   if (!access.authorized) return access.response;
   const { identity, dataAdapterMode } = access;
-  const remainingRecoveryCodes = identity.mfaEnabled ? await countRemainingRecoveryCodes(identity.id, dataAdapterMode) : 0;
-  return NextResponse.json({ mfaEnabled: identity.mfaEnabled, remainingRecoveryCodes });
+  // Portal-scoped MFA (Phase 5N): this portal's enrollment.
+  const state = await getMfaState(identity, dataAdapterMode);
+  const remainingRecoveryCodes = state.enabled ? await countRemainingRecoveryCodes(identity.id, dataAdapterMode) : 0;
+  return NextResponse.json({ mfaEnabled: state.enabled, remainingRecoveryCodes, enrolledElsewhere: state.enrolledElsewhere });
 }

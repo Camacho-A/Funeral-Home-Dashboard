@@ -12,7 +12,8 @@ import { findIdentityByEmail, getIdentityById, recordSuccessfulLogin } from '@/s
 import { verifyPassword } from '@/services/passwordService';
 import { recordLoginActivity, checkAndApplyLockout, unlockIfExpired } from '@/services/accountRecoveryService';
 import { createIdentitySession, revokeSession } from '@/services/sessionService';
-import { isMfaSecretReadableHere, verifyMfaCode, verifyAndConsumeRecoveryCode } from '@/services/mfaService';
+import { getMfaState, isMfaSecretReadableHere, verifyMfaCode, verifyAndConsumeRecoveryCode } from '@/services/mfaService';
+import { redeemPortalMfaSetupCode } from '@/services/portalMfaSetupGrantService';
 import { createMfaChallengeToken, verifyMfaChallengeToken } from '@/lib/auth/mfaChallengeToken';
 import { setMfaChallengeCookie, readMfaChallengeCookie, clearMfaChallengeCookie } from '@/lib/auth/mfaChallengeCookie';
 import { identityMustEnrollMfa } from '@/services/mfaPolicyService';
@@ -169,13 +170,18 @@ async function handleIdentityLogin(
   // session when MFA is required. Issue a short-lived, non-session
   // "challenge pending" token and hand off to the second-factor step; the
   // real IdentitySession is minted only after the factor verifies.
-  if (identity.mfaEnabled) {
+  // Portal-scoped MFA (Phase 5N): "enabled" means enabled in THIS portal.
+  // Someone protected by MFA in another SOLIS portal never gets in here on a
+  // password alone: they need an administrator's one-time setup code, then
+  // enroll here (their other enrollment is untouched).
+  const mfa = await getMfaState(identity, dataAdapterMode);
+  if (mfa.enabled || mfa.enrolledElsewhere) {
     const challengeToken = await createMfaChallengeToken({
       identityId: identity.id,
       passwordVersionAtIssue: identity.passwordVersion,
     });
     await setMfaChallengeCookie(challengeToken);
-    redirect(`/login/mfa?next=${nextParam}`);
+    redirect(mfa.enabled ? `/login/mfa?next=${nextParam}` : `/login/mfa-setup-code?next=${nextParam}`);
   }
 
   await recordLoginActivity({ identityId: identity.id, eventType: 'login_succeeded', ipAddress, userAgent, idFactory }, dataAdapterMode);
@@ -243,7 +249,7 @@ export async function submitMfaChallenge(formData: FormData): Promise<void> {
   }
   // The identity must still exist, still have MFA on, and its password must
   // not have changed since the challenge was issued.
-  if (!identity || !identity.mfaEnabled || identity.passwordVersion !== challenge.passwordVersionAtIssue) {
+  if (!identity || !(await getMfaState(identity, dataAdapterMode)).enabled || identity.passwordVersion !== challenge.passwordVersionAtIssue) {
     await clearMfaChallengeCookie();
     redirect(`/login?error=mfa_challenge_expired&next=${nextParam}`);
   }
@@ -301,4 +307,63 @@ export async function submitMfaChallenge(formData: FormData): Promise<void> {
   );
   await clearMfaChallengeCookie();
   redirect(next);
+}
+
+/**
+ * Portal-scoped MFA (Phase 5N follow-up). The second step for someone
+ * protected by MFA through ANOTHER SOLIS portal who has not enrolled in this
+ * one: after a correct password (the challenge cookie), they enter the
+ * one-time setup code an administrator issued for this portal. Only then is
+ * a session created — and it can do nothing until they enroll an
+ * authenticator here (the MFA gate refuses every organization meanwhile).
+ * A wrong code counts toward lockout like a wrong authenticator code.
+ */
+export async function submitPortalMfaSetupCode(formData: FormData): Promise<void> {
+  const rawNext = typeof formData.get('next') === 'string' ? (formData.get('next') as string) : '/';
+  const next = sanitizeRedirectPath(rawNext);
+  const nextParam = encodeURIComponent(next);
+  const code = typeof formData.get('code') === 'string' ? (formData.get('code') as string).trim() : '';
+  const dataAdapterMode = getDataAdapterMode();
+  const requestHeaders = await headers();
+  const ipAddress = requestHeaders.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+  const userAgent = requestHeaders.get('user-agent');
+  const idFactory = () => crypto.randomUUID();
+
+  const challengeCookie = await readMfaChallengeCookie();
+  const challenge = challengeCookie ? await verifyMfaChallengeToken(challengeCookie) : null;
+  if (!challenge) {
+    await clearMfaChallengeCookie();
+    redirect(`/login?error=mfa_challenge_expired&next=${nextParam}`);
+  }
+  let identity = await getIdentityById(challenge.identityId, dataAdapterMode);
+  if (identity) {
+    await unlockIfExpired(identity.id, dataAdapterMode);
+    identity = await getIdentityById(identity.id, dataAdapterMode);
+  }
+  const state = identity ? await getMfaState(identity, dataAdapterMode) : null;
+  if (!identity || !state?.enrolledElsewhere || identity.passwordVersion !== challenge.passwordVersionAtIssue || identity.status !== 'active') {
+    await clearMfaChallengeCookie();
+    redirect(`/login?error=${identity?.status === 'locked' ? 'account_locked' : 'mfa_challenge_expired'}&next=${nextParam}`);
+  }
+  if (code.length === 0) redirect(`/login/mfa-setup-code?error=invalid_code&next=${nextParam}`);
+
+  if (!(await redeemPortalMfaSetupCode(identity.id, code, dataAdapterMode))) {
+    await recordLoginActivity({ identityId: identity.id, eventType: 'login_failed', ipAddress, userAgent, idFactory }, dataAdapterMode);
+    const { locked } = await checkAndApplyLockout(identity.id, dataAdapterMode);
+    if (locked) {
+      await clearMfaChallengeCookie();
+      redirect(`/login?error=account_locked&next=${nextParam}`);
+    }
+    redirect(`/login/mfa-setup-code?error=invalid_code&next=${nextParam}`);
+  }
+
+  await recordLoginActivity({ identityId: identity.id, eventType: 'login_succeeded', ipAddress, userAgent, idFactory }, dataAdapterMode);
+  await recordSuccessfulLogin(identity.id, dataAdapterMode);
+  const identitySession = await createIdentitySession(
+    { identityId: identity.id, deviceId: idFactory(), deviceName: userAgent, ipAddress, userAgent, passwordVersionAtIssue: identity.passwordVersion, idFactory },
+    dataAdapterMode,
+  );
+  await createSession({ id: identity.id, email: identity.email, displayName: identity.displayName, source: 'identity' }, identitySession.id);
+  await clearMfaChallengeCookie();
+  redirect(`/mfa-setup?next=${nextParam}`);
 }
